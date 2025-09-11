@@ -2,25 +2,30 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import type { OpenSheetMusicDisplay as OSMDClass } from "opensheetmusicdisplay";
 
-// Lazy import so it never runs on the server
-const useOSMD = () =>
-  useMemo(() => import("opensheetmusicdisplay").then(m => m.OpenSheetMusicDisplay), []);
+// Dynamic loader (NOT a hook)
+const loadOSMD = () =>
+  import("opensheetmusicdisplay").then(m => m.OpenSheetMusicDisplay);
 
 export default function ViewerClient() {
   const params = useSearchParams();
   const src = params.get("src") || "/scores/minuet.mxl";
   const title = params.get("title") || "Untitled";
+
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // Stable memo of the loader to avoid re-creating the function identity
+  const getOSMD = useMemo(() => loadOSMD, []);
+
   useEffect(() => {
-    let osmd: any;
+    let osmd: InstanceType<typeof OSMDClass> | null = null;
     let cancelled = false;
 
     (async () => {
       try {
-        const OpenSheetMusicDisplay = await useOSMD();
+        const OpenSheetMusicDisplay = await getOSMD();
         if (cancelled || !containerRef.current) return;
 
         osmd = new OpenSheetMusicDisplay(containerRef.current, {
@@ -30,18 +35,19 @@ export default function ViewerClient() {
 
         await osmd.load(src);
         await osmd.render();
-      } catch (e: any) {
-        setError(e?.message || "Failed to load score.");
+      } catch (e) {
+        const msg =
+          e instanceof Error ? e.message : "Failed to load or render the score.";
+        setError(msg);
       }
     })();
 
     return () => {
       cancelled = true;
-      // OSMD doesn't require explicit dispose, but clearing container helps if re-opened
       if (containerRef.current) containerRef.current.innerHTML = "";
+      osmd = null;
     };
-    // re-run if src changes
-  }, [src]);
+  }, [getOSMD, src]);
 
   return (
     <div className="mx-auto max-w-5xl">
@@ -51,7 +57,9 @@ export default function ViewerClient() {
       ) : (
         <div ref={containerRef} className="border rounded p-3 overflow-auto" />
       )}
-      <p className="mt-3 text-sm opacity-70">Source: <code>{src}</code></p>
+      <p className="mt-3 text-sm opacity-70">
+        Source: <code>{src}</code>
+      </p>
     </div>
   );
 }
