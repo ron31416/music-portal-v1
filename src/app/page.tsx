@@ -1,12 +1,6 @@
-// app/page.tsx
+// src/app/page.tsx
 import Link from "next/link";
-
-type Song = { title: string; src: string };
-
-const SONGS: Song[] = [
-  { title: "Minuet in G", src: "/scores/minuet.mxl" },
-  { title: "Für Elise (excerpt)", src: "/scores/fur-elise.mxl" },
-];
+import { SONGS } from "../lib/songs";
 
 export default function HomePage() {
   return (
