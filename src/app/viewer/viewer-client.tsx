@@ -3,18 +3,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import type { OpenSheetMusicDisplay as OSMDClass } from "opensheetmusicdisplay";
+import { SONGS, type Song } from "@/lib/songs";
 
-type Song = { title: string; src: string };
-
-// Starter library — uses your current files under /public/scores
-const SONGS: Song[] = [
-  { title: "Brahms – Violin Concerto (excerpt)", src: "/scores/Brahms-violin-concerto.musicxml" },
-  { title: "Satie – Gymnopédie No. 1", src: "/scores/gymnopedie-no-1-satie.mxl" },
-  { title: "Parlez-moi", src: "/scores/Parlez-moi.mxl" },
-  { title: "Schumann – The Wild Horseman, Op. 68 No. 8", src: "/scores/Schumann-The-Wild-Horseman-Op.-68-No.-8.mxl" },
-];
-
-// Dynamic loader (NOT a hook) so ESLint doesn’t complain
+// Dynamic loader (NOT a hook)
 const loadOSMD = () =>
   import("opensheetmusicdisplay").then((m) => m.OpenSheetMusicDisplay);
 
@@ -22,11 +13,9 @@ export default function ViewerClient() {
   const params = useSearchParams();
   const router = useRouter();
 
-  // Parse incoming query (if any)
+  // From URL (if provided), else first song
   const paramSrc = params.get("src");
   const paramTitle = params.get("title");
-
-  // Choose initial song: query param if present, otherwise first in list
   const initialSong: Song =
     (paramSrc && { title: paramTitle ?? "Untitled", src: paramSrc }) ||
     SONGS[0];
@@ -36,19 +25,15 @@ export default function ViewerClient() {
   const [loading, setLoading] = useState(false);
 
   const containerRef = useRef<HTMLDivElement | null>(null);
-
-  // Stable memo of the loader
   const getOSMD = useMemo(() => loadOSMD, []);
 
-  // Keep the URL in sync (no full reload)
+  // Keep URL in sync (relative path only)
   useEffect(() => {
-    const url = new URL(window.location.href);
-    url.searchParams.set("src", song.src);
-    url.searchParams.set("title", song.title);
-    router.replace(url.toString());
+    const qs = new URLSearchParams({ src: song.src, title: song.title }).toString();
+    router.replace(`/viewer?${qs}`);
   }, [router, song]);
 
-  // Load + render whenever song changes
+  // Load + render the selected score
   useEffect(() => {
     let osmd: InstanceType<typeof OSMDClass> | null = null;
     let cancelled = false;
@@ -62,8 +47,6 @@ export default function ViewerClient() {
 
         const container = containerRef.current;
         if (!container) return;
-
-        // Clear any previous render
         container.innerHTML = "";
 
         osmd = new OpenSheetMusicDisplay(container, {
@@ -71,8 +54,14 @@ export default function ViewerClient() {
           drawTitle: true,
         });
 
-        await osmd.load(song.src);
+        // Build an ABSOLUTE URL so there’s no ambiguity about where we’re fetching from
+        const href = song.src.startsWith("http")
+          ? song.src
+          : new URL(song.src, window.location.origin).toString();
+
+        await osmd.load(href); // OSMD will fetch this URL
         if (cancelled) return;
+
         await osmd.render();
       } catch (e) {
         const msg =
@@ -85,7 +74,6 @@ export default function ViewerClient() {
 
     return () => {
       cancelled = true;
-      // OSMD has no explicit dispose, clearing the container is sufficient
       if (containerRef.current) containerRef.current.innerHTML = "";
       osmd = null;
     };
@@ -105,8 +93,7 @@ export default function ViewerClient() {
             value={song.src}
             onChange={(e) => {
               const next = SONGS.find((s) => s.src === e.target.value);
-              if (next) setSong(next);
-              else setSong({ title: "Untitled", src: e.target.value });
+              setSong(next ?? { title: "Untitled", src: e.target.value });
             }}
           >
             {SONGS.map((s) => (
@@ -114,10 +101,6 @@ export default function ViewerClient() {
                 {s.title}
               </option>
             ))}
-            {/* If arriving with a src not in SONGS, keep it selectable */}
-            {!SONGS.find((s) => s.src === initialSong.src) && (
-              <option value={initialSong.src}>{initialSong.title}</option>
-            )}
           </select>
         </div>
       </header>
@@ -125,7 +108,20 @@ export default function ViewerClient() {
       <h2 className="text-lg font-medium">{song.title}</h2>
 
       {error ? (
-        <p className="text-red-600">{error}</p>
+        <div className="text-red-600">
+          <p>{error}</p>
+          <p className="mt-2">
+            Try opening the file directly:{" "}
+            <a
+              className="underline"
+              href={song.src}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              {song.src}
+            </a>
+          </p>
+        </div>
       ) : (
         <div
           ref={containerRef}
