@@ -1,6 +1,6 @@
 // src/app/page.tsx
 import Link from "next/link";
-import { SONGS, type Song } from "@/lib/songs";
+import { SONGS, type Song } from "../lib/songs"; // use "@/lib/songs" if you set the alias
 
 export default function HomePage() {
   return (
