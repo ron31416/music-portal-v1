@@ -1,6 +1,6 @@
 // src/app/page.tsx
 import Link from "next/link";
-import { SONGS } from "../lib/songs";
+import { SONGS, type Song } from "@/lib/songs";
 
 export default function HomePage() {
   return (
@@ -10,17 +10,17 @@ export default function HomePage() {
         Choose a score to open it in the Music Viewer (opens in a new tab).
       </p>
 
-      <ul className="divide-y">
-        {SONGS.map((s) => (
-          <li key={s.src} className="py-3 flex items-center justify-between">
-            <span>{s.title}</span>
+      <ul className="space-y-2">
+        {SONGS.map((s: Song) => (
+          <li key={s.src}>
             <Link
               href={{ pathname: "/viewer", query: { src: s.src, title: s.title } }}
               target="_blank"
               rel="noopener noreferrer"
-              className="px-3 py-1 rounded border"
+              className="block rounded border px-3 py-2 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 cursor-pointer"
+              title={`Open ${s.title} in Music Viewer`}
             >
-              Open
+              {s.title}
             </Link>
           </li>
         ))}
