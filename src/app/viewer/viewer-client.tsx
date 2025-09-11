@@ -1,3 +1,4 @@
+// src/app/viewer/viewer-client.tsx
 "use client";
 
 import { useEffect, useState } from "react";
@@ -17,63 +18,62 @@ export default function ViewerClient() {
 
   const [song, setSong] = useState<Song>(initialSong);
 
-  // keep URL params in sync
+  // keep URL query in sync (no full nav)
   useEffect(() => {
     const qs = new URLSearchParams({ src: song.src, title: song.title }).toString();
     router.replace(`/viewer?${qs}`);
   }, [router, song]);
 
   return (
-    // Full-viewport flex column so the viewer gets a concrete height
-    <div style={{ height: "100vh", width: "100vw", display: "flex", flexDirection: "column" }}>
-      {/* Header */}
-      <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "8px 12px" }}>
-        <h1 style={{ fontSize: 28, fontWeight: 600, margin: 0 }}>Music Viewer</h1>
-        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
-          <label htmlFor="song-select" style={{ fontSize: 14, opacity: 0.8 }}>
-            Score:
-          </label>
-          <select
-            id="song-select"
-            value={song.src}
-            onChange={(e) => {
-              const next = SONGS.find((s) => s.src === e.target.value);
-              setSong(next ?? { title: "Untitled", src: e.target.value });
-            }}
-          >
-            {SONGS.map((s) => (
-              <option key={s.src} value={s.src}>
-                {s.title}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
+    // Full-viewport canvas for OSMD; position:relative for overlay controls
+    <div
+      style={{
+        height: "100vh",
+        width: "100vw",
+        position: "relative",
+        background: "#fff", // white canvas so notation is crisp even in dark mode
+      }}
+    >
+      {/* Full-bleed viewer */}
+      <ScoreOSMD
+        src={song.src}
+        // fillParent defaults to true in your component; ensure it expands
+        style={{ height: "100%", width: "100%" }}
+      />
 
-      {/* Title */}
-      <div style={{ padding: "0 12px 8px" }}>
-        <h2 style={{ fontSize: 22, fontWeight: 600, margin: 0 }}>{song.title}</h2>
-      </div>
-
-      {/* Viewer area: flex-grow so it occupies the rest of the screen */}
-      <div style={{ flex: 1, minHeight: 0, padding: "0 12px 12px" }}>
-        <div
-          style={{
-            background: "#fff",
-            border: "1px solid #e5e7eb",
-            borderRadius: 8,
-            height: "100%",        // <-- concrete height for ScoreOSMD to fill
-            width: "100%",
-            overflow: "hidden",
+      {/* Lightweight overlay control (doesn't consume layout space) */}
+      <div
+        style={{
+          position: "absolute",
+          top: 8,
+          right: 8,
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          padding: "6px 8px",
+          borderRadius: 6,
+          background: "rgba(255,255,255,0.85)",
+          boxShadow: "0 1px 4px rgba(0,0,0,0.12)",
+        }}
+      >
+        <label htmlFor="song-select" style={{ fontSize: 12, opacity: 0.8 }}>
+          Score:
+        </label>
+        <select
+          id="song-select"
+          value={song.src}
+          onChange={(e) => {
+            const next = SONGS.find((s) => s.src === e.target.value);
+            setSong(next ?? { title: "Untitled", src: e.target.value });
           }}
+          style={{ fontSize: 14 }}
         >
-          <ScoreOSMD
-            src={song.src}
-            // fillParent defaults to true; we also give the component a 100% box to fill:
-            style={{ height: "100%", width: "100%" }}
-            className=""
-          />
-        </div>
+          {SONGS.map((s) => (
+            <option key={s.src} value={s.src}>
+              {s.title}
+            </option>
+          ))}
+        </select>
       </div>
     </div>
   );
