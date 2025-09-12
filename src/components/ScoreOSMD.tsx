@@ -72,7 +72,12 @@ function measureSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[]
       if (r.height < 8 || r.width < 40) {
         continue;
       }
-      boxes.push({ top: r.top - hostTop, bottom: r.bottom - hostTop, height: r.height, width: r.width });
+      boxes.push({
+        top: r.top - hostTop,
+        bottom: r.bottom - hostTop,
+        height: r.height,
+        width: r.width,
+      });
     }
   }
 
