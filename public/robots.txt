@@ -1,5 +1,0 @@
-User-agent: *
-Disallow:
-
-# Add your public URL when you have it:
-# Sitemap: https://your-domain.com/sitemap.xml
