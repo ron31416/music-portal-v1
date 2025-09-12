@@ -10,7 +10,10 @@ const compat = new FlatCompat({
 });
 
 const eslintConfig = [
+  // Bring in Next.js + TypeScript recommended configs
   ...compat.extends("next/core-web-vitals", "next/typescript"),
+
+  // Ignore build artifacts
   {
     ignores: [
       "node_modules/**",
@@ -19,6 +22,16 @@ const eslintConfig = [
       "build/**",
       "next-env.d.ts",
     ],
+  },
+
+  // Project-specific rules
+  {
+    rules: {
+      "@next/next/no-img-element": "off",              // allow <img>
+      "no-console": ["warn", { allow: ["warn", "error"] }], // console.log discouraged
+      eqeqeq: ["error", "always"],                     // enforce ===
+      curly: ["error", "all"],                         // require curly braces
+    },
   },
 ];
 
