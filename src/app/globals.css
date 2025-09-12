@@ -12,22 +12,17 @@
 
 html,
 body {
-  max-width: 100vw;
-  overflow-x: hidden;
-}
-
-body {
-  color: var(--foreground);
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  min-height: 100%;
   background: var(--background);
+  color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
 }
 
 * {
   box-sizing: border-box;
-  padding: 0;
-  margin: 0;
 }
 
 a {
@@ -35,8 +30,41 @@ a {
   text-decoration: none;
 }
 
-@media (prefers-color-scheme: dark) {
-  html {
-    color-scheme: dark;
-  }
+/* Reset headings */
+h1, h2, h3, h4, h5, h6 {
+  margin: 0;
+  font-weight: inherit;
+  font-size: inherit;
+}
+
+/* Reset lists */
+ul, ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Reset buttons and inputs */
+button,
+input,
+select,
+textarea {
+  margin: 0;
+  padding: 0;
+  border: none;
+  outline: none;
+  background: none;
+  font: inherit;
+  color: inherit;
+}
+
+/* Make buttons behave like plain inline-blocks until styled */
+button {
+  cursor: pointer;
+}
+
+/* Accessible focus styling */
+:focus-visible {
+  outline: 2px solid #0070f3; /* Example blue, easy to change */
+  outline-offset: 2px;
 }
