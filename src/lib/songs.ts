@@ -16,6 +16,8 @@ export const SONGS = [
   { title: "Satie – Gymnopédie No. 1",            src: "/scores/gymnopedie-no-1-satie.mxl" },
   { title: "Parlez-moi",                          src: "/scores/Parlez-moi.mxl" },
   { title: "Schumann – The Wild Horseman, Op. 68 No. 8", src: "/scores/Schumann-The-Wild-Horseman-Op.-68-No.-8.mxl" },
+  { title: "musicalion54541-1", src: "/scores/musicalion54541-1.xml" },
+  { title: "musicalion96385-1", src: "/scores/musicalion96385-1.xml" },
 ] as const satisfies readonly [Song, ...Song[]];
 
 export type SongItem = (typeof SONGS)[number];
