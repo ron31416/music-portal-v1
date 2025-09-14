@@ -16,6 +16,7 @@
     "postbuild": "next-sitemap"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.57.4",
     "next": "15.5.3",
     "opensheetmusicdisplay": "1.9.2",
     "react": "19.1.0",
