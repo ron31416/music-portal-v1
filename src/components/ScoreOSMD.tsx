@@ -22,10 +22,9 @@ type OSMDWithLifecycle = OpenSheetMusicDisplay & { clear?: () => void; dispose?:
 
 const afterPaint = () =>
   new Promise<void>((resolve) => {
+    // 2 RAFs to ensure the browser has a chance to paint before next heavy work
     requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        resolve();
-      });
+      requestAnimationFrame(() => resolve());
     });
   });
 
@@ -38,9 +37,7 @@ function getSvg(outer: HTMLDivElement): SVGSVGElement | null {
 
 function withUntransformedSvg<T>(outer: HTMLDivElement, fn: (svg: SVGSVGElement) => T): T | null {
   const svg = getSvg(outer);
-  if (!svg) {
-    return null;
-  }
+  if (!svg) return null;
   const prev = svg.style.transform;
   svg.style.transform = "none";
   try {
@@ -48,6 +45,35 @@ function withUntransformedSvg<T>(outer: HTMLDivElement, fn: (svg: SVGSVGElement)
   } finally {
     svg.style.transform = prev;
   }
+}
+
+/** Track the *visible* viewport height (accounts for mobile URL/tool bars) */
+function useVisibleViewportHeight() {
+  const vpRef = useRef<number>(0);
+  const [, force] = React.useReducer((x: number) => x + 1, 0);
+
+  useEffect(() => {
+    const update = () => {
+      const h =
+        (window.visualViewport && Math.floor(window.visualViewport.height)) ||
+        Math.floor(document.documentElement.clientHeight);
+      if (h && h !== vpRef.current) {
+        vpRef.current = h;
+        force();
+      }
+    };
+    update();
+    window.visualViewport?.addEventListener("resize", update);
+    window.visualViewport?.addEventListener("scroll", update);
+    window.addEventListener("orientationchange", update);
+    return () => {
+      window.visualViewport?.removeEventListener("resize", update);
+      window.visualViewport?.removeEventListener("scroll", update);
+      window.removeEventListener("orientationchange", update);
+    };
+  }, []);
+
+  return vpRef; // latest visible height in px
 }
 
 /** Cluster OSMD <g> to “systems” and measure them relative to wrapper */
@@ -66,12 +92,8 @@ function measureSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[]
   for (const root of roots) {
     for (const g of Array.from(root.querySelectorAll<SVGGElement>("g"))) {
       const r = g.getBoundingClientRect();
-      if (!Number.isFinite(r.top) || !Number.isFinite(r.height) || !Number.isFinite(r.width)) {
-        continue;
-      }
-      if (r.height < 8 || r.width < 40) {
-        continue;
-      }
+      if (!Number.isFinite(r.top) || !Number.isFinite(r.height) || !Number.isFinite(r.width)) continue;
+      if (r.height < 8 || r.width < 40) continue; // skip tiny artifacts
       boxes.push({
         top: r.top - hostTop,
         bottom: r.bottom - hostTop,
@@ -100,27 +122,21 @@ function measureSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[]
 
 /** Compute page start *indices* so each page shows only full systems */
 function computePageStartIndices(bands: Band[], viewportH: number): number[] {
-  if (bands.length === 0 || viewportH <= 0) {
-    return [0];
-  }
+  if (bands.length === 0 || viewportH <= 0) return [0];
 
   const starts: number[] = [];
   let i = 0;
 
   while (i < bands.length) {
     const current = bands[i];
-    if (!current) {
-      break;
-    }
+    if (!current) break;
 
     const startTop = current.top;
     let last = i;
 
     while (last + 1 < bands.length) {
       const next = bands[last + 1];
-      if (!next) {
-        break;
-      }
+      if (!next) break;
       if (next.bottom - startTop <= viewportH) {
         last++;
       } else {
@@ -154,23 +170,26 @@ export default function ScoreOSMD({
   const pageIdxRef = useRef<number>(0);
   const readyRef = useRef<boolean>(false);
 
+  // Visible viewport height (mobile-safe)
+  const vpHRef = useVisibleViewportHeight();
+
+  // Helper: choose the height we trust for pagination/mask math
+  const getViewportH = useCallback((outer: HTMLDivElement): number => {
+    const v = vpHRef.current;
+    return v > 0 ? Math.min(v, outer.clientHeight || v) : outer.clientHeight || 0;
+  }, [vpHRef]);
+
   /** Apply a page index */
   const applyPage = useCallback((pageIdx: number) => {
     const outer = wrapRef.current;
-    if (!outer) {
-      return;
-    }
+    if (!outer) return;
 
     const svg = getSvg(outer);
-    if (!svg) {
-      return;
-    }
+    if (!svg) return;
 
     const bands = bandsRef.current;
     const starts = pageStartsRef.current;
-    if (bands.length === 0 || starts.length === 0) {
-      return;
-    }
+    if (bands.length === 0 || starts.length === 0) return;
 
     const pages = starts.length;
     const clampedPage = Math.max(0, Math.min(pageIdx, pages - 1));
@@ -178,28 +197,22 @@ export default function ScoreOSMD({
 
     const startIndex = starts[clampedPage] ?? 0;
     const startBand = bands[startIndex];
-    if (!startBand) {
-      return;
-    }
+    if (!startBand) return;
 
     const ySnap = Math.ceil(startBand.top);
     svg.style.transform = `translateY(${-ySnap}px)`;
     svg.style.willChange = "transform";
 
-    const nextStartIndex =
-      clampedPage + 1 < starts.length ? (starts[clampedPage + 1] ?? -1) : -1;
+    const nextStartIndex = clampedPage + 1 < starts.length ? (starts[clampedPage + 1] ?? -1) : -1;
 
+    // Where the mask should start within the viewport (px from top)
     const maskTopPx = (() => {
-      const h = outer.clientHeight;
-      if (nextStartIndex < 0) {
-        return h;
-      }
+      const h = getViewportH(outer);
+      if (nextStartIndex < 0) return h;
       const nextBand = bands[nextStartIndex];
-      if (!nextBand) {
-        return h;
-      }
+      if (!nextBand) return h;
       const nextTopRel = nextBand.top - startBand.top;
-      const overlap = 4;
+      const overlap = 6; // slightly larger overlap for high-DPR rounding safety
       return Math.min(h - 1, Math.max(0, Math.ceil(nextTopRel - overlap)));
     })();
 
@@ -218,21 +231,17 @@ export default function ScoreOSMD({
       outer.appendChild(mask);
     }
     mask.style.top = `${maskTopPx}px`;
-  }, []);
+  }, [getViewportH]);
 
   /** Recompute height-only pagination */
   const recomputePaginationHeightOnly = useCallback(() => {
     const outer = wrapRef.current;
-    if (!outer) {
-      return;
-    }
+    if (!outer) return;
 
     const bands = bandsRef.current;
-    if (bands.length === 0) {
-      return;
-    }
+    if (bands.length === 0) return;
 
-    const starts = computePageStartIndices(bands, outer.clientHeight);
+    const starts = computePageStartIndices(bands, getViewportH(outer));
     const oldStarts = pageStartsRef.current;
     pageStartsRef.current = starts;
 
@@ -245,9 +254,7 @@ export default function ScoreOSMD({
     let best = Number.POSITIVE_INFINITY;
     for (let i = 0; i < starts.length; i++) {
       const s = starts[i];
-      if (s === undefined) {
-        continue;
-      }
+      if (s === undefined) continue;
       const d = Math.abs(s - oldStartIdx);
       if (d < best) {
         best = d;
@@ -255,15 +262,13 @@ export default function ScoreOSMD({
       }
     }
     applyPage(nearest);
-  }, [applyPage]);
+  }, [applyPage, getViewportH]);
 
   /** Full reflow on width change */
   const reflowOnWidthChange = useCallback(async () => {
     const outer = wrapRef.current;
     const osmd = osmdRef.current;
-    if (!outer || !osmd) {
-      return;
-    }
+    if (!outer || !osmd) return;
 
     const oldStarts = pageStartsRef.current;
     const oldPage = pageIdxRef.current;
@@ -274,21 +279,17 @@ export default function ScoreOSMD({
     await afterPaint();
 
     const newBands = withUntransformedSvg(outer, (svg) => measureSystemsPx(outer, svg)) ?? [];
-    if (newBands.length === 0) {
-      return;
-    }
+    if (newBands.length === 0) return;
     bandsRef.current = newBands;
 
-    const newStarts = computePageStartIndices(newBands, outer.clientHeight);
+    const newStarts = computePageStartIndices(newBands, getViewportH(outer));
     pageStartsRef.current = newStarts;
 
     let nearest = 0;
     let best = Number.POSITIVE_INFINITY;
     for (let i = 0; i < newStarts.length; i++) {
       const s = newStarts[i];
-      if (s === undefined) {
-        continue;
-      }
+      if (s === undefined) continue;
       const d = Math.abs(s - oldTopSystem);
       if (d < best) {
         best = d;
@@ -296,7 +297,7 @@ export default function ScoreOSMD({
       }
     }
     applyPage(nearest);
-  }, [applyPage]);
+  }, [applyPage, getViewportH]);
 
   // WebGL purge
   function purgeWebGL(node: HTMLElement): void {
@@ -325,9 +326,7 @@ export default function ScoreOSMD({
     (async () => {
       const host = hostRef.current;
       const outer = wrapRef.current;
-      if (!host || !outer) {
-        return;
-      }
+      if (!host || !outer) return;
 
       const { OpenSheetMusicDisplay } =
         (await import("opensheetmusicdisplay")) as typeof import("opensheetmusicdisplay");
@@ -354,6 +353,9 @@ export default function ScoreOSMD({
       if (isPromise(maybe)) {
         await maybe;
       }
+
+      // Ensure fonts are ready to avoid a second layout shift on mobile
+      await (document as any).fonts?.ready?.catch(() => {});
       osmd.render();
       await afterPaint();
 
@@ -362,16 +364,14 @@ export default function ScoreOSMD({
       const bands = withUntransformedSvg(outer, (svg) => measureSystemsPx(outer, svg)) ?? [];
       bandsRef.current = bands;
 
-      pageStartsRef.current = computePageStartIndices(bands, outer.clientHeight);
+      pageStartsRef.current = computePageStartIndices(bands, getViewportH(outer));
       pageIdxRef.current = 0;
       applyPage(0);
 
       readyRef.current = true;
 
       resizeObs = new ResizeObserver(() => {
-        if (!readyRef.current) {
-          return;
-        }
+        if (!readyRef.current) return;
         const w = outer.clientWidth;
         const h = outer.clientHeight;
 
@@ -403,48 +403,33 @@ export default function ScoreOSMD({
         osmdRef.current = null;
       }
     };
-  }, [applyPage, recomputePaginationHeightOnly, reflowOnWidthChange, src, initialZoom]);
+  }, [applyPage, recomputePaginationHeightOnly, reflowOnWidthChange, src, initialZoom, getViewportH]);
 
   /** Paging helpers */
   const goNext = useCallback(() => {
     const pages = pageStartsRef.current.length;
-    if (!pages) {
-      return;
-    }
+    if (!pages) return;
     const next = Math.min(pageIdxRef.current + 1, pages - 1);
-    if (next !== pageIdxRef.current) {
-      applyPage(next);
-    }
+    if (next !== pageIdxRef.current) applyPage(next);
   }, [applyPage]);
 
   const goPrev = useCallback(() => {
     const prev = Math.max(pageIdxRef.current - 1, 0);
-    if (prev !== pageIdxRef.current) {
-      applyPage(prev);
-    }
+    if (prev !== pageIdxRef.current) applyPage(prev);
   }, [applyPage]);
 
   // Wheel & keyboard paging
   useEffect(() => {
     const onWheel = (e: WheelEvent) => {
-      if (!readyRef.current) {
-        return;
-      }
-      if (Math.abs(e.deltaY) < Math.abs(e.deltaX)) {
-        return;
-      }
+      if (!readyRef.current) return;
+      if (Math.abs(e.deltaY) < Math.abs(e.deltaX)) return;
       e.preventDefault();
-      if (e.deltaY > 0) {
-        goNext();
-      } else {
-        goPrev();
-      }
+      if (e.deltaY > 0) goNext();
+      else goPrev();
     };
 
     const onKey = (e: KeyboardEvent) => {
-      if (!readyRef.current) {
-        return;
-      }
+      if (!readyRef.current) return;
       if (["PageDown", "ArrowDown", " "].includes(e.key)) {
         e.preventDefault();
         goNext();
@@ -472,39 +457,29 @@ export default function ScoreOSMD({
   // Touch swipe paging
   useEffect(() => {
     const outer = wrapRef.current;
-    if (!outer) {
-      return;
-    }
+    if (!outer) return;
 
     let startY = 0;
     let startX = 0;
     let active = false;
 
     const onTouchStart = (e: TouchEvent) => {
-      if (!readyRef.current || e.touches.length === 0) {
-        return;
-      }
+      if (!readyRef.current || e.touches.length === 0) return;
       active = true;
       startY = e.touches[0]?.clientY ?? 0;
       startX = e.touches[0]?.clientX ?? 0;
     };
 
     const onTouchMove = (e: TouchEvent) => {
-      if (!active || !readyRef.current) {
-        return;
-      }
+      if (!active || !readyRef.current) return;
       e.preventDefault();
     };
 
     const onTouchEnd = (e: TouchEvent) => {
-      if (!active) {
-        return;
-      }
+      if (!active) return;
       active = false;
       const t = e.changedTouches[0];
-      if (!t) {
-        return;
-      }
+      if (!t) return;
 
       const dy = t.clientY - startY;
       const dx = t.clientX - startX;
@@ -513,11 +488,8 @@ export default function ScoreOSMD({
       const H_RATIO = 0.6;
 
       if (Math.abs(dy) >= THRESH && Math.abs(dx) <= Math.abs(dy) * H_RATIO) {
-        if (dy < 0) {
-          goNext();
-        } else {
-          goPrev();
-        }
+        if (dy < 0) goNext();
+        else goPrev();
       }
     };
 
@@ -537,8 +509,20 @@ export default function ScoreOSMD({
 
   /* ---------- Styles ---------- */
 
-  const outerStyle: React.CSSProperties = fillParent
-    ? { width: "100%", height: "100%", minHeight: 0, position: "relative", overflow: "hidden", background: "#fff" }
+  const isFill = fillParent;
+  const outerStyle: React.CSSProperties = isFill
+    ? {
+        width: "100%",
+        // Pin to *visible* viewport height in px (mobile-safe)
+        height: vpHRef.current > 0 ? vpHRef.current : "100%",
+        minHeight: 0,
+        position: "relative",
+        overflow: "hidden",
+        background: "#fff",
+        // tiny safe-area + 2px gutter to avoid 1-px peeks on high-DPR screens
+        paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 2px)",
+        boxSizing: "border-box",
+      }
     : {
         width: "100%",
         height: height ?? 600,
@@ -546,6 +530,8 @@ export default function ScoreOSMD({
         position: "relative",
         overflow: "hidden",
         background: "#fff",
+        paddingBottom: "2px",
+        boxSizing: "border-box",
       };
 
   const hostStyle: React.CSSProperties = {
