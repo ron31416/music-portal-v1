@@ -7,21 +7,19 @@ import ScoreOSMD from "../../components/ScoreOSMD";
 
 export default function ViewerClient() {
   const params = useSearchParams();
-
-  // If ?src= is present, use it; otherwise fall back to the first known song.
-  // Because SONGS is a non-empty tuple, SONGS[0].src is always safe.
   const src = params.get("src") ?? SONGS[0].src;
 
   return (
     <div
       style={{
-        height: "100vh",
-        width: "100vw",
+        // no vh/vw here; let the child set its own height using visualViewport
         position: "relative",
         background: "#fff",
+        width: "100%",
+        minHeight: 0,
       }}
     >
-      <ScoreOSMD src={src} style={{ height: "100%", width: "100%" }} />
+      <ScoreOSMD src={src} />
     </div>
   );
 }
