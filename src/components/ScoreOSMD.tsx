@@ -101,6 +101,30 @@ function useVisibleViewportHeight() {
   return vpRef; // latest visible height in px
 }
 
+// Heuristics to improve first-page layout and prevent system splitting on phones
+function dynamicBandGapPx(outer: HTMLDivElement): number {
+  const h = outer.clientHeight || 0;
+  const dpr = typeof window !== 'undefined' && window.devicePixelRatio ? window.devicePixelRatio : 1;
+  let gap = 18;            // base
+  if (h <= 750) gap += 6;  // small visible height => merge more
+  if (dpr >= 2) gap += 4;  // high-DPR rounding safety
+  return gap;
+}
+
+function isTitleLike(first: Band | undefined, rest: Band[]): boolean {
+  if (!first || rest.length === 0) return false;
+  const sample = rest
+    .slice(0, Math.min(5, rest.length))
+    .map((b) => b.height)
+    .filter((n) => Number.isFinite(n) && n > 0)
+    .sort((a, b) => a - b);
+  if (sample.length === 0) return false;
+  const idx = Math.floor(sample.length / 2);
+  const median = sample[idx];
+  if (median === undefined) return false; // handles strict noUncheckedIndexedAccess
+  return first.height < Math.max(36, 0.6 * median);
+}
+
 /** Cluster OSMD <g> to “systems” and measure them relative to wrapper */
 function measureSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[] {
   const pageRoots = Array.from(
@@ -134,7 +158,7 @@ function measureSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[]
 
   boxes.sort((a, b) => a.top - b.top);
 
-  const GAP = 18;
+  const GAP = dynamicBandGapPx(outer);
   const bands: Band[] = [];
   for (const b of boxes) {
     const last = bands.length ? bands[bands.length - 1] : undefined;
@@ -157,6 +181,7 @@ function computePageStartIndices(bands: Band[], viewportH: number): number[] {
 
   const starts: number[] = [];
   let i = 0;
+  const fuseTitle = isTitleLike(bands[0], bands.slice(1));
 
   while (i < bands.length) {
     const current = bands[i];
@@ -172,7 +197,10 @@ function computePageStartIndices(bands: Band[], viewportH: number): number[] {
       if (!next) {
         break;
       }
-      if (next.bottom - startTop <= viewportH) {
+      const isFirstPage = starts.length === 0 && i === 0;
+      const slack = isFirstPage && fuseTitle ? Math.max(12, Math.round(viewportH * 0.06)) : 0;
+
+      if (next.bottom - startTop <= viewportH + slack) {
         last++;
       } else {
         break;
@@ -207,7 +235,7 @@ export default function ScoreOSMD({
   const readyRef = useRef<boolean>(false);
 
   const DEFAULT_BUSY = "Please wait…";
-
+  
   // Busy lock (blocks input while OSMD works)
   const [busy, setBusy] = useState<boolean>(false);
   const [busyMsg, setBusyMsg] = useState<string>(DEFAULT_BUSY);
