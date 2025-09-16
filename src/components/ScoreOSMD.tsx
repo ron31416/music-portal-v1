@@ -17,12 +17,14 @@ type Props = {
 
 type Band = { top: number; bottom: number; height: number };
 type OSMDWithLifecycle = OpenSheetMusicDisplay & { clear?: () => void; dispose?: () => void };
+type OSMDZoomable = { Zoom: number };
 
 /* ---------- Helpers ---------- */
 
+const DEFAULT_BUSY = "Please wait…";
+
 const afterPaint = () =>
   new Promise<void>((resolve) => {
-    // 2 RAFs to ensure the spinner/overlay can paint before heavy work
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         resolve();
@@ -198,7 +200,7 @@ export default function ScoreOSMD({
 
   // Busy lock (blocks input while OSMD works)
   const [busy, setBusy] = useState<boolean>(false);
-  const [busyMsg, setBusyMsg] = useState<string>("");
+  const [busyMsg, setBusyMsg] = useState<string>(DEFAULT_BUSY);
 
   const vpHRef = useVisibleViewportHeight();
 
@@ -322,8 +324,7 @@ export default function ScoreOSMD({
     const oldTopSystem =
       oldStarts.length ? oldStarts[Math.max(0, Math.min(oldPage, oldStarts.length - 1))] ?? 0 : 0;
 
-    // Busy lock during heavy re-render
-    setBusyMsg("Reflowing…");
+    setBusyMsg(DEFAULT_BUSY);
     setBusy(true);
     await afterPaint();
 
@@ -333,7 +334,7 @@ export default function ScoreOSMD({
     const newBands = withUntransformedSvg(outer, (svg) => measureSystemsPx(outer, svg)) ?? [];
     if (newBands.length === 0) {
       setBusy(false);
-      setBusyMsg("");
+      setBusyMsg(DEFAULT_BUSY);
       return;
     }
     bandsRef.current = newBands;
@@ -357,7 +358,7 @@ export default function ScoreOSMD({
     applyPage(nearest);
 
     setBusy(false);
-    setBusyMsg("");
+    setBusyMsg(DEFAULT_BUSY);
   }, [applyPage, getViewportH]);
 
   // WebGL purge
@@ -410,10 +411,9 @@ export default function ScoreOSMD({
       osmdRef.current = osmd;
 
       const z = Math.max(0.5, Math.min(3, initialZoom ?? 0.9));
-      (osmd as unknown as { Zoom: number }).Zoom = z;
 
       // Busy lock during load + first engrave
-      setBusyMsg("Loading score…");
+      setBusyMsg(DEFAULT_BUSY);
       setBusy(true);
       await afterPaint();
 
@@ -422,7 +422,9 @@ export default function ScoreOSMD({
         await maybe;
       }
 
-      setBusyMsg("Engraving…");
+      // << set zoom *after* load, before render >>
+      (osmd as unknown as OSMDZoomable).Zoom = z;
+
       await waitForFonts();
       osmd.render();
       await afterPaint();
@@ -439,7 +441,7 @@ export default function ScoreOSMD({
       readyRef.current = true;
 
       setBusy(false);
-      setBusyMsg("");
+      setBusyMsg(DEFAULT_BUSY);
 
       resizeObs = new ResizeObserver(() => {
         if (!readyRef.current) {
@@ -455,7 +457,6 @@ export default function ScoreOSMD({
         lastH = h;
 
         if (widthChanged) {
-          // Reflow triggers a busy lock internally
           void reflowOnWidthChange();
         } else if (heightChanged) {
           recomputePaginationHeightOnly();
@@ -466,7 +467,7 @@ export default function ScoreOSMD({
       lastH = outer.clientHeight;
     })().catch(() => {
       setBusy(false);
-      setBusyMsg("");
+      setBusyMsg(DEFAULT_BUSY);
     });
 
     const cleanupOuter = wrapRef.current;
@@ -627,13 +628,11 @@ export default function ScoreOSMD({
   const outerStyle: React.CSSProperties = isFill
     ? {
         width: "100%",
-        // Pin to *visible* viewport height in px (mobile-safe)
         height: vpHRef.current > 0 ? vpHRef.current : "100%",
         minHeight: 0,
         position: "relative",
         overflow: "hidden",
         background: "#fff",
-        // tiny safe-area + 2px gutter to avoid 1-px peeks on high-DPR screens
         paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 2px)",
         boxSizing: "border-box",
       }
@@ -680,7 +679,6 @@ export default function ScoreOSMD({
         aria-busy={busy}
         role="status"
         style={blockerStyle}
-        // Block all inputs while busy
         onPointerDown={stop}
         onPointerMove={stop}
         onPointerUp={stop}
@@ -699,6 +697,9 @@ export default function ScoreOSMD({
             padding: "10px 14px",
             boxShadow: "0 6px 20px rgba(0,0,0,0.2)",
             fontSize: 14,
+            color: "#111",
+            textAlign: "center",
+            minWidth: 140,
           }}
         >
           <div
@@ -712,11 +713,10 @@ export default function ScoreOSMD({
               animation: "osmd-spin 0.9s linear infinite",
             }}
           />
-          <div>{busyMsg || "Working…"}</div>
+          <div>{busyMsg || DEFAULT_BUSY}</div>
         </div>
       </div>
 
-      {/* tiny keyframes for spinner */}
       <style>{`@keyframes osmd-spin { from { transform: rotate(0) } to { transform: rotate(360deg) } }`}</style>
     </div>
   );
