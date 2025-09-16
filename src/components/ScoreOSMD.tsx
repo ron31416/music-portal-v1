@@ -106,22 +106,32 @@ function dynamicBandGapPx(outer: HTMLDivElement): number {
   const h = outer.clientHeight || 0;
   const dpr = typeof window !== 'undefined' && window.devicePixelRatio ? window.devicePixelRatio : 1;
   let gap = 18;            // base
-  if (h <= 750) gap += 6;  // small visible height => merge more
-  if (dpr >= 2) gap += 4;  // high-DPR rounding safety
+  if (h <= 750) {
+    gap += 6;
+  }  // small visible height => merge more
+  if (dpr >= 2) {
+    gap += 4;
+  }  // high-DPR rounding safety
   return gap;
 }
 
 function isTitleLike(first: Band | undefined, rest: Band[]): boolean {
-  if (!first || rest.length === 0) return false;
+  if (!first || rest.length === 0) {
+    return false;
+  }
   const sample = rest
     .slice(0, Math.min(5, rest.length))
     .map((b) => b.height)
     .filter((n) => Number.isFinite(n) && n > 0)
     .sort((a, b) => a - b);
-  if (sample.length === 0) return false;
+  if (sample.length === 0) {
+    return false;
+  }
   const idx = Math.floor(sample.length / 2);
   const median = sample[idx];
-  if (median === undefined) return false; // handles strict noUncheckedIndexedAccess
+  if (median === undefined) {
+    return false;
+  } // handles strict noUncheckedIndexedAccess
   return first.height < Math.max(36, 0.6 * median);
 }
 
@@ -235,7 +245,7 @@ export default function ScoreOSMD({
   const readyRef = useRef<boolean>(false);
 
   const DEFAULT_BUSY = "Please wait…";
-  
+
   // Busy lock (blocks input while OSMD works)
   const [busy, setBusy] = useState<boolean>(false);
   const [busyMsg, setBusyMsg] = useState<string>(DEFAULT_BUSY);
