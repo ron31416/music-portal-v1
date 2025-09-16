@@ -437,8 +437,8 @@ export default function ScoreOSMD({
         (await import("opensheetmusicdisplay")) as typeof import("opensheetmusicdisplay");
 
       if (osmdRef.current) {
-        (osmdRef.current as any)?.clear?.();
-        (osmdRef.current as any)?.dispose?.();
+        osmdRef.current?.clear();
+        (osmdRef.current as { dispose?: () => void } | null)?.dispose?.();
         osmdRef.current = null;
       }
       const osmd = new OpenSheetMusicDisplay(host, {
@@ -513,8 +513,8 @@ export default function ScoreOSMD({
         resizeObs.unobserve(cleanupOuter);
       }
       if (osmdRef.current) {
-        (osmdRef.current as any)?.clear?.();
-        (osmdRef.current as any)?.dispose?.();
+        osmdRef.current?.clear();
+        (osmdRef.current as { dispose?: () => void } | null)?.dispose?.();
         osmdRef.current = null;
       }
     };
