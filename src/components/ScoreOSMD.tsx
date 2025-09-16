@@ -19,9 +19,13 @@ interface Props {
 interface Band { top: number; bottom: number; height: number }
 interface OSMDZoomable { Zoom: number }
 
-/* ---------- Helpers ---------- */
 
-const DEFAULT_BUSY = "Please wait…";
+// Device-dependent guard to prevent bottom-of-page leakage on some mobiles
+function leakGuardPx(): number {
+  const dpr = typeof window !== 'undefined' && window.devicePixelRatio ? window.devicePixelRatio : 1;
+  // Base 8px, scaled a bit with DPR to avoid subpixel rounding leaks
+  return Math.max(8, Math.ceil(dpr * 6));
+}
 
 const afterPaint = () =>
   new Promise<void>((resolve) => {
@@ -202,6 +206,8 @@ export default function ScoreOSMD({
   const pageIdxRef = useRef<number>(0);
   const readyRef = useRef<boolean>(false);
 
+  const DEFAULT_BUSY = "Please wait…";
+
   // Busy lock (blocks input while OSMD works)
   const [busy, setBusy] = useState<boolean>(false);
   const [busyMsg, setBusyMsg] = useState<string>(DEFAULT_BUSY);
@@ -274,7 +280,7 @@ export default function ScoreOSMD({
           return hVisible;
         }
         const nextTopRel = nextBand.top - startBand.top;
-        const overlap = 6;
+        const overlap = leakGuardPx();
         return Math.min(hVisible - 1, Math.max(0, Math.ceil(nextTopRel - overlap)));
       })();
 
@@ -289,7 +295,7 @@ export default function ScoreOSMD({
         mask.style.bottom = "0";
         mask.style.background = "#fff";
         mask.style.pointerEvents = "none";
-        mask.style.zIndex = "5";
+        mask.style.zIndex = "10";
         outer.appendChild(mask);
       }
       mask.style.top = `${Math.max(0, topGutterPx) + maskTopWithinMusicPx}px`;
@@ -658,6 +664,35 @@ export default function ScoreOSMD({
       cleanupOuter.removeEventListener("touchend", onTouchEnd);
     };
   }, [goNext, goPrev, busy]);
+
+  // Recompute pagination when the visual viewport height changes (mobile URL/tool bars)
+  useEffect(() => {
+    const vv = typeof window !== 'undefined' ? window.visualViewport : undefined;
+    if (!vv) {
+      return;
+    }
+    let raf = 0;
+    const onChange = () => {
+      if (!readyRef.current) {
+        return;
+      }
+      if (raf) {
+        cancelAnimationFrame(raf);
+      }
+      raf = requestAnimationFrame(() => {
+        recomputePaginationHeightOnly();
+      });
+    };
+    vv.addEventListener('resize', onChange);
+    vv.addEventListener('scroll', onChange);
+    return () => {
+      vv.removeEventListener('resize', onChange);
+      vv.removeEventListener('scroll', onChange);
+      if (raf) {
+        cancelAnimationFrame(raf);
+      }
+    };
+  }, [recomputePaginationHeightOnly]);
 
   /* ---------- Styles ---------- */
 
