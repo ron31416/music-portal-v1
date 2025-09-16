@@ -1,7 +1,7 @@
 // src/components/ScoreOSMD.tsx
 "use client";
 
-import React, { useCallback, useEffect, useRef } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import type { OpenSheetMusicDisplay } from "opensheetmusicdisplay";
 
 /* ---------- Props & Types ---------- */
@@ -12,7 +12,7 @@ type Props = {
   height?: number;
   className?: string;
   style?: React.CSSProperties;
-  initialZoom?: number;
+  initialZoom?: number; // default: 0.9
 };
 
 type Band = { top: number; bottom: number; height: number };
@@ -20,19 +20,9 @@ type OSMDWithLifecycle = OpenSheetMusicDisplay & { clear?: () => void; dispose?:
 
 /* ---------- Helpers ---------- */
 
-async function waitForFonts(): Promise<void> {
-  try {
-    const fonts = (document as Document & { fonts?: FontFaceSet }).fonts;
-    if (fonts?.ready) {
-      await fonts.ready;
-    }
-  } catch {
-    // no-op
-  }
-}
-
 const afterPaint = () =>
   new Promise<void>((resolve) => {
+    // 2 RAFs to ensure the spinner/overlay can paint before heavy work
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         resolve();
@@ -58,6 +48,18 @@ function withUntransformedSvg<T>(outer: HTMLDivElement, fn: (svg: SVGSVGElement)
     return fn(svg);
   } finally {
     svg.style.transform = prev;
+  }
+}
+
+/** Wait for web fonts to be ready to avoid late reflow on mobile */
+async function waitForFonts(): Promise<void> {
+  try {
+    const fonts = (document as Document & { fonts?: FontFaceSet }).fonts;
+    if (fonts?.ready) {
+      await fonts.ready;
+    }
+  } catch {
+    // no-op
   }
 }
 
@@ -87,7 +89,7 @@ function useVisibleViewportHeight() {
     };
   }, []);
 
-  return vpRef;
+  return vpRef; // latest visible height in px
 }
 
 /** Cluster OSMD <g> to “systems” and measure them relative to wrapper */
@@ -183,7 +185,7 @@ export default function ScoreOSMD({
   height = 600,
   className = "",
   style,
-  initialZoom = 1,
+  initialZoom = 0.9, // default to 90%
 }: Props) {
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -193,6 +195,10 @@ export default function ScoreOSMD({
   const pageStartsRef = useRef<number[]>([0]);
   const pageIdxRef = useRef<number>(0);
   const readyRef = useRef<boolean>(false);
+
+  // Busy lock (blocks input while OSMD works)
+  const [busy, setBusy] = useState<boolean>(false);
+  const [busyMsg, setBusyMsg] = useState<string>("");
 
   const vpHRef = useVisibleViewportHeight();
 
@@ -303,7 +309,7 @@ export default function ScoreOSMD({
     applyPage(nearest);
   }, [applyPage, getViewportH]);
 
-  /** Full reflow on width change */
+  /** Full reflow on width change (heavy) */
   const reflowOnWidthChange = useCallback(async () => {
     const outer = wrapRef.current;
     const osmd = osmdRef.current;
@@ -316,11 +322,18 @@ export default function ScoreOSMD({
     const oldTopSystem =
       oldStarts.length ? oldStarts[Math.max(0, Math.min(oldPage, oldStarts.length - 1))] ?? 0 : 0;
 
+    // Busy lock during heavy re-render
+    setBusyMsg("Reflowing…");
+    setBusy(true);
+    await afterPaint();
+
     osmd.render();
     await afterPaint();
 
     const newBands = withUntransformedSvg(outer, (svg) => measureSystemsPx(outer, svg)) ?? [];
     if (newBands.length === 0) {
+      setBusy(false);
+      setBusyMsg("");
       return;
     }
     bandsRef.current = newBands;
@@ -342,6 +355,9 @@ export default function ScoreOSMD({
       }
     }
     applyPage(nearest);
+
+    setBusy(false);
+    setBusyMsg("");
   }, [applyPage, getViewportH]);
 
   // WebGL purge
@@ -393,14 +409,20 @@ export default function ScoreOSMD({
       }) as OSMDWithLifecycle;
       osmdRef.current = osmd;
 
-      const z = Math.max(0.5, Math.min(3, initialZoom ?? 1));
+      const z = Math.max(0.5, Math.min(3, initialZoom ?? 0.9));
       (osmd as unknown as { Zoom: number }).Zoom = z;
+
+      // Busy lock during load + first engrave
+      setBusyMsg("Loading score…");
+      setBusy(true);
+      await afterPaint();
 
       const maybe = osmd.load(src);
       if (isPromise(maybe)) {
         await maybe;
       }
 
+      setBusyMsg("Engraving…");
       await waitForFonts();
       osmd.render();
       await afterPaint();
@@ -416,6 +438,9 @@ export default function ScoreOSMD({
 
       readyRef.current = true;
 
+      setBusy(false);
+      setBusyMsg("");
+
       resizeObs = new ResizeObserver(() => {
         if (!readyRef.current) {
           return;
@@ -430,7 +455,8 @@ export default function ScoreOSMD({
         lastH = h;
 
         if (widthChanged) {
-          reflowOnWidthChange();
+          // Reflow triggers a busy lock internally
+          void reflowOnWidthChange();
         } else if (heightChanged) {
           recomputePaginationHeightOnly();
         }
@@ -438,7 +464,10 @@ export default function ScoreOSMD({
       resizeObs.observe(outer);
       lastW = outer.clientWidth;
       lastH = outer.clientHeight;
-    })().catch(() => {});
+    })().catch(() => {
+      setBusy(false);
+      setBusyMsg("");
+    });
 
     const cleanupOuter = wrapRef.current;
     return () => {
@@ -455,6 +484,9 @@ export default function ScoreOSMD({
 
   /** Paging helpers */
   const goNext = useCallback(() => {
+    if (busy) {
+      return;
+    }
     const pages = pageStartsRef.current.length;
     if (!pages) {
       return;
@@ -463,19 +495,22 @@ export default function ScoreOSMD({
     if (next !== pageIdxRef.current) {
       applyPage(next);
     }
-  }, [applyPage]);
+  }, [applyPage, busy]);
 
   const goPrev = useCallback(() => {
+    if (busy) {
+      return;
+    }
     const prev = Math.max(pageIdxRef.current - 1, 0);
     if (prev !== pageIdxRef.current) {
       applyPage(prev);
     }
-  }, [applyPage]);
+  }, [applyPage, busy]);
 
-  // Wheel & keyboard paging
+  // Wheel & keyboard paging (disabled while busy)
   useEffect(() => {
     const onWheel = (e: WheelEvent) => {
-      if (!readyRef.current) {
+      if (!readyRef.current || busy) {
         return;
       }
       if (Math.abs(e.deltaY) < Math.abs(e.deltaX)) {
@@ -490,7 +525,7 @@ export default function ScoreOSMD({
     };
 
     const onKey = (e: KeyboardEvent) => {
-      if (!readyRef.current) {
+      if (!readyRef.current || busy) {
         return;
       }
       if (["PageDown", "ArrowDown", " "].includes(e.key)) {
@@ -515,9 +550,9 @@ export default function ScoreOSMD({
       window.removeEventListener("wheel", onWheel);
       window.removeEventListener("keydown", onKey);
     };
-  }, [applyPage, goNext, goPrev]);
+  }, [applyPage, goNext, goPrev, busy]);
 
-  // Touch swipe paging
+  // Touch swipe paging (disabled while busy)
   useEffect(() => {
     const outer = wrapRef.current;
     if (!outer) {
@@ -529,7 +564,7 @@ export default function ScoreOSMD({
     let active = false;
 
     const onTouchStart = (e: TouchEvent) => {
-      if (!readyRef.current || e.touches.length === 0) {
+      if (!readyRef.current || busy || e.touches.length === 0) {
         return;
       }
       active = true;
@@ -538,7 +573,7 @@ export default function ScoreOSMD({
     };
 
     const onTouchMove = (e: TouchEvent) => {
-      if (!active || !readyRef.current) {
+      if (!active || !readyRef.current || busy) {
         return;
       }
       e.preventDefault();
@@ -549,6 +584,9 @@ export default function ScoreOSMD({
         return;
       }
       active = false;
+      if (busy) {
+        return;
+      }
       const t = e.changedTouches[0];
       if (!t) {
         return;
@@ -581,7 +619,7 @@ export default function ScoreOSMD({
       cleanupOuter.removeEventListener("touchmove", onTouchMove);
       cleanupOuter.removeEventListener("touchend", onTouchEnd);
     };
-  }, [goNext, goPrev]);
+  }, [goNext, goPrev, busy]);
 
   /* ---------- Styles ---------- */
 
@@ -617,10 +655,69 @@ export default function ScoreOSMD({
     minWidth: 0,
   };
 
+  /* ---------- Busy overlay ---------- */
+  const blockerStyle: React.CSSProperties = {
+    position: "absolute",
+    inset: 0,
+    zIndex: 50,
+    display: busy ? "grid" : "none",
+    placeItems: "center",
+    background: "rgba(0,0,0,0.25)",
+    backdropFilter: "blur(2px)",
+    cursor: "wait",
+  };
+
+  const stop = (e: React.SyntheticEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
   return (
     <div ref={wrapRef} className={className} style={{ ...outerStyle, ...style }}>
       <div ref={hostRef} style={hostStyle} />
+      {/* Input-blocking overlay while busy */}
+      <div
+        aria-busy={busy}
+        role="status"
+        style={blockerStyle}
+        // Block all inputs while busy
+        onPointerDown={stop}
+        onPointerMove={stop}
+        onPointerUp={stop}
+        onTouchStart={stop}
+        onTouchMove={stop}
+        onWheel={stop}
+        onScroll={stop}
+        onMouseDown={stop}
+        onContextMenu={stop}
+        onKeyDown={stop}
+      >
+        <div
+          style={{
+            background: "rgba(255,255,255,0.92)",
+            borderRadius: 12,
+            padding: "10px 14px",
+            boxShadow: "0 6px 20px rgba(0,0,0,0.2)",
+            fontSize: 14,
+          }}
+        >
+          <div
+            style={{
+              width: 20,
+              height: 20,
+              borderRadius: "50%",
+              border: "2px solid rgba(0,0,0,0.4)",
+              borderTopColor: "transparent",
+              margin: "0 auto 8px",
+              animation: "osmd-spin 0.9s linear infinite",
+            }}
+          />
+          <div>{busyMsg || "Working…"}</div>
+        </div>
+      </div>
+
+      {/* tiny keyframes for spinner */}
+      <style>{`@keyframes osmd-spin { from { transform: rotate(0) } to { transform: rotate(360deg) } }`}</style>
     </div>
   );
 }
-
