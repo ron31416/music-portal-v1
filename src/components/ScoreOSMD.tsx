@@ -20,6 +20,17 @@ type OSMDWithLifecycle = OpenSheetMusicDisplay & { clear?: () => void; dispose?:
 
 /* ---------- Helpers ---------- */
 
+async function waitForFonts(): Promise<void> {
+  try {
+    const fonts = (document as Document & { fonts?: FontFaceSet }).fonts;
+    if (fonts?.ready) {
+      await fonts.ready;
+    }
+  } catch {
+    // no-op
+  }
+}
+
 const afterPaint = () =>
   new Promise<void>((resolve) => {
     requestAnimationFrame(() => {
@@ -390,7 +401,7 @@ export default function ScoreOSMD({
         await maybe;
       }
 
-      await (document as any).fonts?.ready?.catch(() => {});
+      await waitForFonts();
       osmd.render();
       await afterPaint();
 
