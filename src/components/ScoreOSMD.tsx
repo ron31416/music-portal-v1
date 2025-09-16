@@ -14,6 +14,7 @@ interface Props {
   style?: React.CSSProperties;
   initialZoom?: number; // default: 0.9 (90%)
   topGutterPx?: number; // default: 3 (small white space at very top)
+  debugShowAllMeasureNumbers?: boolean; // default: false (dev aid)
 }
 
 interface Band { top: number; bottom: number; height: number }
@@ -154,7 +155,10 @@ function measureSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[]
       if (!Number.isFinite(r.top) || !Number.isFinite(r.height) || !Number.isFinite(r.width)) {
         continue;
       }
-      if (r.height < 8 || r.width < 40) {
+      // Looser thresholds so very narrow measures on phones are still captured
+      const MIN_H = 4;   // was 8
+      const MIN_W = 16;  // was 40
+      if (r.height < MIN_H || r.width < MIN_W) {
         continue;
       }
       boxes.push({
@@ -234,6 +238,7 @@ export default function ScoreOSMD({
   style,
   initialZoom = 0.9, // default to 90%
   topGutterPx = 3, // small white strip at the very top
+  debugShowAllMeasureNumbers = false,
 }: Props) {
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -492,6 +497,9 @@ export default function ScoreOSMD({
         drawSubtitle: true,
         drawComposer: true,
         drawLyricist: true,
+        // Dev aid: render numbers each measure if requested to verify continuity
+        drawMeasureNumbers: true,
+        measureNumberInterval: debugShowAllMeasureNumbers ? 1 : undefined,
       }) as OpenSheetMusicDisplay;
       osmdRef.current = osmd;
 
