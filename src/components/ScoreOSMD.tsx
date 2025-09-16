@@ -25,7 +25,7 @@ interface OSMDZoomable { Zoom: number }
 function leakGuardPx(): number {
   const dpr = typeof window !== 'undefined' && window.devicePixelRatio ? window.devicePixelRatio : 1;
   // Base 8px, scaled a bit with DPR to avoid subpixel rounding leaks
-  return Math.max(8, Math.ceil(dpr * 6));
+  return Math.max(10, Math.ceil(dpr * 8));
 }
 
 const afterPaint = () =>
@@ -156,8 +156,8 @@ function measureSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[]
         continue;
       }
       // Looser thresholds so very narrow measures on phones are still captured
-      const MIN_H = 4;   // was 8
-      const MIN_W = 16;  // was 40
+      const MIN_H = 2;   // was 8 → 4 → 2 (capture ultra-thin groups)
+      const MIN_W = 8;   // was 40 → 16 → 8
       if (r.height < MIN_H || r.width < MIN_W) {
         continue;
       }
