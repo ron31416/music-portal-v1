@@ -2,5 +2,4 @@ node_modules
 .next
 out
 build
-public/scores
-public/**/*.mxl
+
