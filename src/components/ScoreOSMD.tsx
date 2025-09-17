@@ -507,11 +507,105 @@ export default function ScoreOSMD({
       setBusy(true);
       await afterPaint();
 
+      // Load score:
+      // - If src starts with /api/, fetch bytes and hand OSMD a File/Uint8Array.
+      // - Otherwise keep the original URL-based path (static file names etc.).
+      if (src.startsWith("/api/")) {
+        const res = await fetch(src, { cache: "no-store" });
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}`);
+        }
+
+        const ab = await res.arrayBuffer();
+        /*console.log("[OSMD] fetched bytes:", ab.byteLength, "from", src);*/
+
+        // Unzip .mxl and resolve the primary score via META-INF/container.xml
+        const { default: JSZip } = await import("jszip");
+        const zip = await JSZip.loadAsync(ab);
+
+        // 1) Try to read META-INF/container.xml to locate the main score
+        let entryName: string | undefined = undefined;
+        const containerEntry = zip.file("META-INF/container.xml");
+
+        if (containerEntry) {
+          const containerXml = await containerEntry.async("string");
+          const cdoc = new DOMParser().parseFromString(containerXml, "application/xml");
+          const rootfile =
+            cdoc.querySelector('rootfile[full-path]') ||
+            cdoc.querySelector("rootfile");
+
+          const fullPath =
+            rootfile?.getAttribute("full-path") ||
+            rootfile?.getAttribute("path") ||
+            rootfile?.getAttribute("href") ||
+            undefined;
+
+          if (fullPath && zip.file(fullPath)) {
+            entryName = fullPath;
+          }
+        }
+
+        // 2) Fallback: pick the best-looking .musicxml/.xml (ignore META-INF)
+        if (!entryName) {
+          const candidates: string[] = [];
+          zip.forEach((relPath, file) => {
+            if (file.dir) {
+              return;
+            }
+            const p = relPath.toLowerCase();
+            if (p.startsWith("meta-inf/")) {
+              return;
+            }
+            if (p.endsWith(".musicxml") || p.endsWith(".xml")) {
+              candidates.push(relPath);
+            }
+          });
+          candidates.sort((a, b) => {
+            const aa = a.toLowerCase();
+            const bb = b.toLowerCase();
+            const scoreA = /score|partwise|timewise/.test(aa) ? 0 : 1;
+            const scoreB = /score|partwise|timewise/.test(bb) ? 0 : 1;
+            if (scoreA !== scoreB) return scoreA - scoreB;
+            const extA = aa.endsWith(".musicxml") ? 0 : 1;
+            const extB = bb.endsWith(".musicxml") ? 0 : 1;
+            if (extA !== extB) return extA - extB;
+            return aa.length - bb.length; // shorter path first
+          });
+          entryName = candidates[0];
+        }
+
+        if (!entryName) {
+          throw new Error("No MusicXML file found in .mxl archive");
+        }
+
+        /*console.log("[OSMD] selected entry:", entryName);*/
+
+        // 3) Load selected entry as text, parse XML, hand Document to OSMD
+        const xmlText = await zip.file(entryName)!.async("string");
+        const doc = new DOMParser().parseFromString(xmlText, "application/xml");
+
+        const hasPartwise = doc.getElementsByTagName("score-partwise").length > 0;
+        const hasTimewise = doc.getElementsByTagName("score-timewise").length > 0;
+        if (!hasPartwise && !hasTimewise) {
+          // Surface a helpful snippet for debugging if needed
+          /*console.error("[OSMD] root tag:", doc.documentElement?.tagName, "first 200:", xmlText.slice(0, 200));*/
+          throw new Error("MusicXML parse error: no score-partwise/score-timewise");
+        }
+
+        await (osmd as any).load(doc);
+      } else {
+        const maybe = osmd.load(src);
+        if (isPromise(maybe)) {
+          await maybe;
+        }
+      }
+      
+      /*
       const maybe = osmd.load(src);
       if (isPromise(maybe)) {
         await maybe;
       }
-
+*/
       applyZoom();
 
       await waitForFonts();

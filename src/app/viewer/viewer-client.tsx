@@ -5,21 +5,28 @@ import { useSearchParams } from "next/navigation";
 import { SONGS } from "../../lib/songs";
 import ScoreOSMD from "../../components/ScoreOSMD";
 
-export default function ViewerClient() {
+type Props = { src?: string };
+
+export default function ViewerClient({ src }: Props) {
   const params = useSearchParams();
-  const src = params.get("src") ?? SONGS[0].src;
+  const paramSrc = params.get("src") ?? undefined;
+
+  const effectiveSrc = src ?? paramSrc ?? SONGS[0]?.src;
+
+  if (!effectiveSrc) {
+    return <p style={{ color: "crimson" }}>No score source provided.</p>;
+  }
 
   return (
     <div
       style={{
-        // no vh/vw here; let the child set its own height using visualViewport
         position: "relative",
         background: "#fff",
         width: "100%",
         minHeight: 0,
       }}
     >
-      <ScoreOSMD src={src} />
+      <ScoreOSMD src={effectiveSrc} />
     </div>
   );
 }
