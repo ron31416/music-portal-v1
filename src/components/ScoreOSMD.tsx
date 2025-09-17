@@ -20,6 +20,17 @@ interface Props {
 interface Band { top: number; bottom: number; height: number }
 interface OSMDZoomable { Zoom: number }
 
+// Await OSMD.load(...) whether it returns void or a Promise.
+// (No "maybe" checks needed.)
+async function awaitLoad(
+  osmd: OpenSheetMusicDisplay,
+  input: string | Document | ArrayBuffer | Uint8Array
+): Promise<void> {
+  // Cast only inside the helper to keep the rest of the file clean.
+  await Promise.resolve(
+    (osmd as unknown as { load: (i: any) => void | Promise<unknown> }).load(input)
+  );
+}
 
 // Device-dependent guard to prevent bottom-of-page leakage on some mobiles
 function leakGuardPx(): number {
@@ -36,9 +47,6 @@ const afterPaint = () =>
       });
     });
   });
-
-const isPromise = (x: unknown): x is Promise<unknown> =>
-  typeof x === "object" && x !== null && typeof (x as { then?: unknown }).then === "function";
 
 function getSvg(outer: HTMLDivElement): SVGSVGElement | null {
   return outer.querySelector("svg");
@@ -565,10 +573,10 @@ export default function ScoreOSMD({
             const bb = b.toLowerCase();
             const scoreA = /score|partwise|timewise/.test(aa) ? 0 : 1;
             const scoreB = /score|partwise|timewise/.test(bb) ? 0 : 1;
-            if (scoreA !== scoreB) return scoreA - scoreB;
+            if (scoreA !== scoreB) { return scoreA - scoreB };
             const extA = aa.endsWith(".musicxml") ? 0 : 1;
             const extB = bb.endsWith(".musicxml") ? 0 : 1;
-            if (extA !== extB) return extA - extB;
+            if (extA !== extB) { return extA - extB };
             return aa.length - bb.length; // shorter path first
           });
           entryName = candidates[0];
@@ -592,20 +600,12 @@ export default function ScoreOSMD({
           throw new Error("MusicXML parse error: no score-partwise/score-timewise");
         }
 
-        await (osmd as any).load(doc);
+        const xmlString = new XMLSerializer().serializeToString(doc);
+        await awaitLoad(osmd, xmlString);     
       } else {
-        const maybe = osmd.load(src);
-        if (isPromise(maybe)) {
-          await maybe;
-        }
+        await awaitLoad(osmd, src);
       }
-      
-      /*
-      const maybe = osmd.load(src);
-      if (isPromise(maybe)) {
-        await maybe;
-      }
-*/
+
       applyZoom();
 
       await waitForFonts();
