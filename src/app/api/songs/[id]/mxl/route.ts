@@ -21,7 +21,7 @@ function toArrayBufferExact(u8: Uint8Array): ArrayBuffer {
 
 /** Normalize Supabase bytea-like values to a fresh ArrayBuffer */
 function normalizeToArrayBuffer(raw: unknown): ArrayBuffer {
-  if (raw === null || raw === undefined) throw new Error('song_mxl is null');
+  if (raw === null || raw === undefined) { throw new Error('song_mxl is null') };
 
   // Most common: "\x..." hex string from Postgres bytea
   if (typeof raw === 'string') {
