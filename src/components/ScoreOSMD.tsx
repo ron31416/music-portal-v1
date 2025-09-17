@@ -26,10 +26,11 @@ async function awaitLoad(
   osmd: OpenSheetMusicDisplay,
   input: string | Document | ArrayBuffer | Uint8Array
 ): Promise<void> {
-  // Cast only inside the helper to keep the rest of the file clean.
-  await Promise.resolve(
-    (osmd as unknown as { load: (i: any) => void | Promise<unknown> }).load(input)
-  );
+  type LoadInput = string | Document | ArrayBuffer | Uint8Array;
+  type OSMDHasLoad = { load: (i: LoadInput) => void | Promise<unknown> };
+
+  const o = osmd as unknown as OSMDHasLoad;
+  await Promise.resolve(o.load(input));
 }
 
 // Device-dependent guard to prevent bottom-of-page leakage on some mobiles
