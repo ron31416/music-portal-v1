@@ -20,6 +20,15 @@ interface Props {
 interface Band { top: number; bottom: number; height: number }
 interface OSMDZoomable { Zoom: number }
 
+// minimal helper so we don't use `any` when calling osmd.load(...)
+type OSMDLoadArg = string | Document | ArrayBuffer | Blob | Uint8Array;
+function osmdLoad(
+  osmd: OpenSheetMusicDisplay,
+  input: OSMDLoadArg
+): Promise<unknown> {
+  const load = (osmd as unknown as { load: (x: OSMDLoadArg) => Promise<unknown> }).load;
+  return load.call(osmd, input);
+}
 
 // Device-dependent guard to prevent bottom-of-page leakage on some mobiles
 function leakGuardPx(): number {
@@ -37,8 +46,10 @@ const afterPaint = () =>
     });
   });
 
+/*
 const isPromise = (x: unknown): x is Promise<unknown> =>
   typeof x === "object" && x !== null && typeof (x as { then?: unknown }).then === "function";
+*/
 
 function getSvg(outer: HTMLDivElement): SVGSVGElement | null {
   return outer.querySelector("svg");
@@ -565,10 +576,10 @@ export default function ScoreOSMD({
             const bb = b.toLowerCase();
             const scoreA = /score|partwise|timewise/.test(aa) ? 0 : 1;
             const scoreB = /score|partwise|timewise/.test(bb) ? 0 : 1;
-            if (scoreA !== scoreB) return scoreA - scoreB;
+            if (scoreA !== scoreB) { return scoreA - scoreB };
             const extA = aa.endsWith(".musicxml") ? 0 : 1;
             const extB = bb.endsWith(".musicxml") ? 0 : 1;
-            if (extA !== extB) return extA - extB;
+            if (extA !== extB) { return extA - extB} ;
             return aa.length - bb.length; // shorter path first
           });
           entryName = candidates[0];
@@ -592,20 +603,13 @@ export default function ScoreOSMD({
           throw new Error("MusicXML parse error: no score-partwise/score-timewise");
         }
 
-        await (osmd as any).load(doc);
+        await osmdLoad(osmd, doc);
       } else {
-        const maybe = osmd.load(src);
-        if (isPromise(maybe)) {
-          await maybe;
-        }
+        
+        await osmdLoad(osmd, src);
       }
       
-      /*
-      const maybe = osmd.load(src);
-      if (isPromise(maybe)) {
-        await maybe;
-      }
-*/
+
       applyZoom();
 
       await waitForFonts();
@@ -664,7 +668,7 @@ export default function ScoreOSMD({
         osmdRef.current = null;
       }
     };
-  }, [applyZoom, applyPage, recomputePaginationHeightOnly, reflowOnWidthChange, src, getViewportH]);
+  }, [applyZoom, applyPage, recomputePaginationHeightOnly, reflowOnWidthChange, src, getViewportH, debugShowAllMeasureNumbers]);
 
   /** Paging helpers */
   const goNext = useCallback((): void => {
