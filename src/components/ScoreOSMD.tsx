@@ -33,15 +33,6 @@ async function awaitLoad(
   await Promise.resolve(o.load(input));
 }
 
-/*
-// Device-dependent guard to prevent bottom-of-page leakage on some mobiles
-function leakGuardPx(): number {
-  const dpr = typeof window !== 'undefined' && window.devicePixelRatio ? window.devicePixelRatio : 1;
-  // Base 8px, scaled a bit with DPR to avoid subpixel rounding leaks
-  return Math.max(10, Math.ceil(dpr * 8));
-}
-*/
-
 const afterPaint = () =>
   new Promise<void>((resolve) => {
     requestAnimationFrame(() => {
@@ -326,123 +317,108 @@ export default function ScoreOSMD({
       const hVisible = getViewportH(outer);
 
 
-// ---- stale page-starts guard: recompute if last-included doesn't fit ----
-const SAFETY = 8; // small buffer
-const assumedLastIdx = (clampedPage + 1 < starts.length)
-  ? Math.max(startIndex, (starts[clampedPage + 1] ?? startIndex) - 1)
-  : Math.max(startIndex, bands.length - 1);
+      // ---- stale page-starts guard: recompute if last-included doesn't fit ----
+      const SAFETY = 8; // small buffer
+      const assumedLastIdx = (clampedPage + 1 < starts.length)
+        ? Math.max(startIndex, (starts[clampedPage + 1] ?? startIndex) - 1)
+        : Math.max(startIndex, bands.length - 1);
 
-const assumedLast = bands[assumedLastIdx];
-const lastBottomRel = assumedLast ? (assumedLast.bottom - startBand.top) : 0;
+      const assumedLast = bands[assumedLastIdx];
+      const lastBottomRel = assumedLast ? (assumedLast.bottom - startBand.top) : 0;
 
-if (assumedLast && lastBottomRel > hVisible - SAFETY) {
-  // Our breaks were computed for a taller viewport. Fix them now and re-apply.
-  const freshStarts = computePageStartIndices(bands, hVisible);
-  if (freshStarts.length) {
-    pageStartsRef.current = freshStarts;
+      if (assumedLast && lastBottomRel > hVisible - SAFETY) {
+        // Our breaks were computed for a taller viewport. Fix them now and re-apply.
+        const freshStarts = computePageStartIndices(bands, hVisible);
+        if (freshStarts.length) {
+          pageStartsRef.current = freshStarts;
 
-    // Pick the page whose start index is nearest to our old startIndex
-    let nearest = 0;
-    let best = Number.POSITIVE_INFINITY;
-    for (let i = 0; i < freshStarts.length; i++) {
-      const s = freshStarts[i] ?? 0;
-      const d = Math.abs(s - startIndex);
-      if (d < best) { best = d; nearest = i; }
-    }
+          // Pick the page whose start index is nearest to our old startIndex
+          let nearest = 0;
+          let best = Number.POSITIVE_INFINITY;
+          for (let i = 0; i < freshStarts.length; i++) {
+            const s = freshStarts[i] ?? 0;
+            const d = Math.abs(s - startIndex);
+            if (d < best) { best = d; nearest = i; }
+          }
 
-    applyPage(nearest);
-    return; // bail; next run will use corrected starts
-  }
-}
-
-const MASK_BOTTOM_SAFETY_PX = 6; // try 6–8 if needed
-
-const maskTopWithinMusicPx = (() => {
-  if (nextStartIndex < 0) { return hVisible };
-
-  const lastIncludedIdx = Math.max(startIndex, nextStartIndex - 1);
-  const lastBand = bands[lastIncludedIdx];
-  if (!lastBand) { return hVisible };
-
-  const relBottom = lastBand.bottom - startBand.top; // px within page
-
-  // Start the mask just after the last system’s bottom,
-  // but NEVER earlier than that (no hard early cutoff).
-  const start = Math.min(
-    hVisible - 2,                              // keep a tiny gap to avoid rounding artifacts
-    Math.max(0, Math.ceil(relBottom) + MASK_BOTTOM_SAFETY_PX)
-  );
-
-  // (optional HUD/lines you added can stay as-is; just feed them `relBottom` and `start`)
-  return start;
-})();
-
-let mask = outer.querySelector<HTMLDivElement>("[data-osmd-mask='1']");
-      if (!mask) {
-        mask = document.createElement("div");
-        mask.dataset.osmdMask = "1";
-        mask.style.position = "absolute";
-        mask.style.left = "0";
-        mask.style.right = "0";
-        mask.style.top = "0";
-        mask.style.bottom = "0";
-        mask.style.background = "#fff";
-        mask.style.pointerEvents = "none";
-        mask.style.zIndex = "10";
-        outer.appendChild(mask);
+          applyPage(nearest);
+          return; // bail; next run will use corrected starts
+        }
       }
-      mask.style.top = `${Math.max(0, topGutterPx) + maskTopWithinMusicPx}px`;
 
-      let topCutter = outer.querySelector<HTMLDivElement>("[data-osmd-topcutter='1']");
-      if (!topCutter) {
-        topCutter = document.createElement("div");
-        topCutter.dataset.osmdTopcutter = "1";
-        topCutter.style.position = "absolute";
-        topCutter.style.left = "0";
-        topCutter.style.right = "0";
-        topCutter.style.top = "0";
-        topCutter.style.height = `${Math.max(0, topGutterPx)}px`;
-        topCutter.style.background = "#fff";
-        topCutter.style.pointerEvents = "none";
-        topCutter.style.zIndex = "6";
-        outer.appendChild(topCutter);
-      } else {
-        topCutter.style.height = `${Math.max(0, topGutterPx)}px`;
+      const MASK_BOTTOM_SAFETY_PX = 6; // try 6–8 if needed
+
+      const maskTopWithinMusicPx = (() => {
+        if (nextStartIndex < 0) { return hVisible }
+
+        const lastIncludedIdx = Math.max(startIndex, nextStartIndex - 1);
+        const lastBand = bands[lastIncludedIdx];
+        if (!lastBand) { return hVisible }
+
+        const relBottom = lastBand.bottom - startBand.top; // px within page
+
+        // Start the mask just after the last system’s bottom,
+        // but NEVER earlier than that (no hard early cutoff).
+        const start = Math.min(
+          hVisible - 2,                              // keep a tiny gap to avoid rounding artifacts
+          Math.max(0, Math.ceil(relBottom) + MASK_BOTTOM_SAFETY_PX)
+        );
+
+        // (optional HUD/lines you added can stay as-is; just feed them `relBottom` and `start`)
+        return start;
+      })();
+
+        let mask = outer.querySelector<HTMLDivElement>("[data-osmd-mask='1']");
+        if (!mask) {
+          mask = document.createElement("div");
+          mask.dataset.osmdMask = "1";
+          mask.style.position = "absolute";
+          mask.style.left = "0";
+          mask.style.right = "0";
+          mask.style.top = "0";
+          mask.style.bottom = "0";
+          mask.style.background = "#fff";
+          mask.style.pointerEvents = "none";
+          mask.style.zIndex = "10";
+          outer.appendChild(mask);
+        }
+        mask.style.top = `${Math.max(0, topGutterPx) + maskTopWithinMusicPx}px`;
+
+        let topCutter = outer.querySelector<HTMLDivElement>("[data-osmd-topcutter='1']");
+        if (!topCutter) {
+          topCutter = document.createElement("div");
+          topCutter.dataset.osmdTopcutter = "1";
+          topCutter.style.position = "absolute";
+          topCutter.style.left = "0";
+          topCutter.style.right = "0";
+          topCutter.style.top = "0";
+          topCutter.style.height = `${Math.max(0, topGutterPx)}px`;
+          topCutter.style.background = "#fff";
+          topCutter.style.pointerEvents = "none";
+          topCutter.style.zIndex = "6";
+          outer.appendChild(topCutter);
+        } else {
+          topCutter.style.height = `${Math.max(0, topGutterPx)}px`;
+        }
+      },
+      [getViewportH, topGutterPx]
+    );
+
+    /** Recompute height-only pagination */
+    const recomputePaginationHeightOnly = useCallback((): void => {
+      const outer = wrapRef.current;
+      if (!outer) {
+        return;
       }
-    },
-    [getViewportH, topGutterPx]
-  );
 
-  /** Recompute height-only pagination */
-  const recomputePaginationHeightOnly = useCallback((): void => {
-    const outer = wrapRef.current;
-    if (!outer) {
-      return;
-    }
+      const bands = bandsRef.current;
+      if (bands.length === 0) {
+        return;
+      }
 
-    const bands = bandsRef.current;
-    if (bands.length === 0) {
-      return;
-    }
-
-    const starts = computePageStartIndices(bands, getViewportH(outer));
-    const oldStarts = pageStartsRef.current;
-    pageStartsRef.current = starts;
-
-    // --- TEMP DEBUG: show measured systems & page starts ---
-    console.warn("[OSMD] bands measured:", bands.length, " viewportH:", getViewportH(outer));
-    try {
-      console.table(
-        bands.slice(0, 12).map((b, i) => ({
-          i,
-          top: Math.round(b.top),
-          bottom: Math.round(b.bottom),
-          h: Math.round(b.height),
-        }))
-      );
-    } catch {}
-    console.warn("[OSMD] pageStarts:", pageStartsRef.current);
-    // --- END TEMP DEBUG ---
+      const starts = computePageStartIndices(bands, getViewportH(outer));
+      const oldStarts = pageStartsRef.current;
+      pageStartsRef.current = starts;
 
 
     const oldPage = pageIdxRef.current;
@@ -630,10 +606,10 @@ let mask = outer.querySelector<HTMLDivElement>("[data-osmd-mask='1']");
             const bb = b.toLowerCase();
             const scoreA = /score|partwise|timewise/.test(aa) ? 0 : 1;
             const scoreB = /score|partwise|timewise/.test(bb) ? 0 : 1;
-            if (scoreA !== scoreB) { return scoreA - scoreB };
+            if (scoreA !== scoreB) { return scoreA - scoreB }
             const extA = aa.endsWith(".musicxml") ? 0 : 1;
             const extB = bb.endsWith(".musicxml") ? 0 : 1;
-            if (extA !== extB) { return extA - extB };
+            if (extA !== extB) { return extA - extB }
             return aa.length - bb.length; // shorter path first
           });
           entryName = candidates[0];
