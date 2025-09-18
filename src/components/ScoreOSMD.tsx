@@ -326,6 +326,30 @@ export default function ScoreOSMD({
 
       const hVisible = getViewportH(outer);
 
+      // If the top of the *next* system is already inside the visible window,
+      // our page breaks were computed for a different height. Recompute once.
+      if (nextStartIndex >= 0) {
+        const nextBand = bands[nextStartIndex];
+        if (nextBand) {
+          const nextTopRel = nextBand.top - startBand.top;
+          if (nextTopRel < hVisible - 1) {
+            const fresh = computePageStartIndices(bands, hVisible);
+            if (fresh.length) {
+              pageStartsRef.current = fresh;
+              // keep the page near the same starting system
+              let nearest = 0, best = Number.POSITIVE_INFINITY;
+              for (let i = 0; i < fresh.length; i++) {
+                const s = fresh[i] ?? 0;
+                const d = Math.abs(s - startIndex);
+                if (d < best) { best = d; nearest = i; }
+              }
+              applyPage(nearest);
+              return;
+            }
+          }
+        }
+      }
+
       // --- last-page margin rule: push final system to a new page if too close ---
       const LAST_PAGE_BOTTOM_PAD_PX = 12; // try 10–14
 
