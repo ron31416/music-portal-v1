@@ -555,7 +555,7 @@ export default function ScoreOSMD({
         let nearest = 0, best = Number.POSITIVE_INFINITY;
         for (let i = 0; i < newStarts.length; i++) {
           const s = newStarts[i];
-          if (s === undefined) continue;
+          if (s === undefined) { continue; }
           const d = Math.abs(s - oldTopSystem);
           if (d < best) { best = d; nearest = i; }
         }
