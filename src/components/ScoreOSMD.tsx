@@ -257,6 +257,13 @@ export default function ScoreOSMD({
   const [busy, setBusy] = useState<boolean>(false);
   const [busyMsg, setBusyMsg] = useState<string>(DEFAULT_BUSY);
 
+  // Debounce + reentry guards for resize/viewport changes
+  const busyRef = useRef(false);
+  useEffect(() => { busyRef.current = busy; }, [busy]);
+
+  const resizeTimerRef = useRef<number | null>(null); // ResizeObserver debounce
+  const vvTimerRef = useRef<number | null>(null);     // visualViewport debounce
+
   const vpHRef = useVisibleViewportHeight();
 
   const getViewportH = useCallback(
@@ -681,9 +688,8 @@ export default function ScoreOSMD({
       setBusyMsg(DEFAULT_BUSY);
 
       resizeObs = new ResizeObserver(() => {
-        if (!readyRef.current) {
-          return;
-        }
+        if (!readyRef.current) return;
+
         const w = outer.clientWidth;
         const h = outer.clientHeight;
 
@@ -693,12 +699,21 @@ export default function ScoreOSMD({
         lastW = w;
         lastH = h;
 
-        if (widthChanged) {
-          void reflowOnWidthChange(true);        // reset to page 1 on width/zoom changes
-        } else if (heightChanged) {
-          recomputePaginationHeightOnly(true);   // reset to page 1 on height-only changes
+        // Debounce to avoid reflow storms (esp. big scores)
+        if (resizeTimerRef.current) {
+          window.clearTimeout(resizeTimerRef.current);
         }
+        resizeTimerRef.current = window.setTimeout(() => {
+          resizeTimerRef.current = null;
+          if (busyRef.current) return; // don’t re-enter while rendering
+          if (widthChanged) {
+            void reflowOnWidthChange(true);       // reset to page 1
+          } else if (heightChanged) {
+            recomputePaginationHeightOnly(true);  // reset to page 1
+          }
+        }, 120);
       });
+      
       resizeObs.observe(outer);
       lastW = outer.clientWidth;
       lastH = outer.clientHeight;
@@ -711,6 +726,10 @@ export default function ScoreOSMD({
     return () => {
       if (resizeObs && cleanupOuter) {
         resizeObs.unobserve(cleanupOuter);
+      }
+      if (resizeTimerRef.current) {
+        window.clearTimeout(resizeTimerRef.current);
+        resizeTimerRef.current = null;
       }
       if (osmdRef.current) {
         osmdRef.current?.clear();
@@ -862,28 +881,28 @@ export default function ScoreOSMD({
   // Recompute pagination when the visual viewport height changes (mobile URL/tool bars)
   useEffect(() => {
     const vv = typeof window !== 'undefined' ? window.visualViewport : undefined;
-    if (!vv) {
-      return;
-    }
-    let raf = 0;
+    if (!vv) return;
+
     const onChange = () => {
-      if (!readyRef.current) {
-        return;
+      if (!readyRef.current) {return; }
+      if (vvTimerRef.current) {
+        window.clearTimeout(vvTimerRef.current);
       }
-      if (raf) {
-        cancelAnimationFrame(raf);
-      }
-      raf = requestAnimationFrame(() => {
-        recomputePaginationHeightOnly(true);   // jump to first page on vv changes
-      });
+      vvTimerRef.current = window.setTimeout(() => {
+        vvTimerRef.current = null;
+        if (busyRef.current) { return; } // don’t re-enter while rendering
+        recomputePaginationHeightOnly(true); // reset to page 1 on vv changes
+      }, 120);
     };
+
     vv.addEventListener('resize', onChange);
     vv.addEventListener('scroll', onChange);
     return () => {
       vv.removeEventListener('resize', onChange);
       vv.removeEventListener('scroll', onChange);
-      if (raf) {
-        cancelAnimationFrame(raf);
+      if (vvTimerRef.current) {
+        window.clearTimeout(vvTimerRef.current);
+        vvTimerRef.current = null;
       }
     };
   }, [recomputePaginationHeightOnly]);
