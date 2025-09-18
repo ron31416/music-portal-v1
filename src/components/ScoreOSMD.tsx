@@ -323,6 +323,24 @@ export default function ScoreOSMD({
 
       const hVisible = getViewportH(outer);
 
+      const BOTTOM_MASK_CUSHION_PX = 2; // try 2; bump to 3–4 if you still see cropping
+
+      const maskTopWithinMusicPx = (() => {
+        if (nextStartIndex < 0) { return hVisible };
+        const nextBand = bands[nextStartIndex];
+        if (!nextBand) { return hVisible };
+
+        const nextTopRel = nextBand.top - startBand.top;
+        const overlap = leakGuardPx();
+
+        // Start the mask a touch LOWER to avoid shaving the last staff line.
+        return Math.min(
+          hVisible, // was hVisible - 1
+          Math.max(0, Math.ceil(nextTopRel - overlap) + BOTTOM_MASK_CUSHION_PX)
+        );
+      })();
+
+      /*
       const maskTopWithinMusicPx = (() => {
         if (nextStartIndex < 0) {
           return hVisible;
@@ -335,7 +353,8 @@ export default function ScoreOSMD({
         const overlap = leakGuardPx();
         return Math.min(hVisible - 1, Math.max(0, Math.ceil(nextTopRel - overlap)));
       })();
-
+      */
+     
       let mask = outer.querySelector<HTMLDivElement>("[data-osmd-mask='1']");
       if (!mask) {
         mask = document.createElement("div");
