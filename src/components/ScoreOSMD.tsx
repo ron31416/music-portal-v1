@@ -63,6 +63,30 @@ function withUntransformedSvg<T>(outer: HTMLDivElement, fn: (svg: SVGSVGElement)
   }
 }
 
+/** Very small debug HUD + data-* breadcrumbs (shows even when console is stripped) */
+function hud(outer: HTMLDivElement, text: string) {
+  let el = outer.querySelector<HTMLDivElement>('[data-osmd-hud]');
+  if (!el) {
+    el = document.createElement('div');
+    el.dataset.osmdHud = '1';
+    Object.assign(el.style, {
+      position: 'absolute',
+      top: '6px',
+      right: '6px',
+      zIndex: '99999',
+      font: '12px/1.2 monospace',
+      color: '#0f0',
+      background: 'rgba(0,0,0,0.6)',
+      padding: '4px 6px',
+      borderRadius: '6px',
+      pointerEvents: 'none',
+    } as CSSStyleDeclaration);
+    outer.appendChild(el);
+  }
+  el.textContent = text;
+}
+
+
 /** Wait for web fonts to be ready to avoid late reflow on mobile */
 async function waitForFonts(): Promise<void> {
   try {
@@ -447,6 +471,14 @@ export default function ScoreOSMD({
 
         return start;
       })();
+
+      // Breadcrumbs + HUD (no console needed)
+      outer.dataset.osmdLastApply = String(Date.now());
+      outer.dataset.osmdPage = String(pageIdxRef.current);
+      outer.dataset.osmdMaskTop = String(maskTopWithinMusicPx);
+      hud(outer, `apply • page:${outer.dataset.osmdPage} • bands:${bands.length} • pages:${pageStartsRef.current.length} • maskTop:${maskTopWithinMusicPx}`);
+
+      
       // eslint-disable-next-line no-console
       console.log("[ScoreOSMD/applyPage]", {
         pageIdx: pageIdxRef.current,
@@ -506,6 +538,8 @@ export default function ScoreOSMD({
     const outer = wrapRef.current;
     if (!outer) { return; }
 
+    outer.dataset.osmdRecompute = String(Date.now());
+
     const bands = bandsRef.current;
     if (bands.length === 0) { return; }
 
@@ -528,6 +562,9 @@ export default function ScoreOSMD({
       });
 
       pageStartsRef.current = starts;
+
+      outer.dataset.osmdPages = String(starts.length);
+      hud(outer, `recompute • bands:${bands.length} • pages:${starts.length}`);
 
       if (resetToFirst) {
         applyPage(0);
@@ -766,9 +803,17 @@ export default function ScoreOSMD({
       const bands = withUntransformedSvg(outer, (svg) => measureSystemsPx(outer, svg)) ?? [];
       bandsRef.current = bands;
 
+      outer.dataset.osmdSvg = String(!!getSvg(outer));
+      outer.dataset.osmdBands = String(bands.length);
+
       pageStartsRef.current = computePageStartIndices(bands, getViewportH(outer));
+      outer.dataset.osmdPages = String(pageStartsRef.current.length);
+
       pageIdxRef.current = 0;
       applyPage(0);
+
+      // show a first HUD snapshot
+      hud(outer, `init • svg:${outer.dataset.osmdSvg} • bands:${outer.dataset.osmdBands} • pages:${outer.dataset.osmdPages}`);
 
       recomputePaginationHeightOnly(true /* resetToFirst */, false /* no spinner on boot */);
 
