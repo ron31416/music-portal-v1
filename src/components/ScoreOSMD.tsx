@@ -472,10 +472,16 @@ export default function ScoreOSMD({
         return start;
       })();
 
+
+
       // Breadcrumbs + HUD (no console needed)
       outer.dataset.osmdLastApply = String(Date.now());
       outer.dataset.osmdPage = String(pageIdxRef.current);
       outer.dataset.osmdMaskTop = String(maskTopWithinMusicPx);
+      outer.dataset.osmdPages  = String(pages);
+      outer.dataset.osmdStarts = JSON.stringify(starts);
+      outer.dataset.osmdTy     = String(-ySnap + Math.max(0, topGutterPx));
+      outer.dataset.osmdH      = String(hVisible);
       hud(outer, `apply • page:${outer.dataset.osmdPage} • bands:${bands.length} • pages:${pageStartsRef.current.length} • maskTop:${maskTopWithinMusicPx}`);
 
       
@@ -551,6 +557,14 @@ export default function ScoreOSMD({
 
       const starts = computePageStartIndices(bands, getViewportH(outer));
       const oldStarts = pageStartsRef.current;
+
+
+      hud(
+        outer,
+        `recompute • h:${getViewportH(outer)} • bands:${bands.length} • old:${oldStarts.join(',')} • new:${starts.join(',')} • page:${pageIdxRef.current}`
+      );
+
+
       // eslint-disable-next-line no-console
       console.log("[ScoreOSMD/recomputePaginationHeightOnly]", {
         hVisible: getViewportH(outer),
@@ -570,6 +584,10 @@ export default function ScoreOSMD({
         applyPage(0);
         return;
       }
+
+      
+      hud(outer, 'boot • applied page 1');
+
 
       const oldPage = pageIdxRef.current;
       const oldStartIdx = oldStarts.length
@@ -1116,8 +1134,15 @@ export default function ScoreOSMD({
   };
 
   return (
-    <div ref={wrapRef} className={className} style={{ ...outerStyle, ...style }}>
-      <div ref={hostRef} style={hostStyle} />
+      <div
+        ref={wrapRef}
+        data-osmd-wrapper="1"
+        className={className}
+        style={{ ...outerStyle, ...style }}
+      >
+      <div
+        ref={hostRef}
+        style={hostStyle} />
       {/* Input-blocking overlay while busy */}
       <div
         aria-busy={busy}
