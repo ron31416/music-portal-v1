@@ -83,8 +83,8 @@ function useVisibleViewportHeight() {
   useEffect(() => {
     const update = () => {
       // prefer visualViewport when available, otherwise fall back to doc height
-      const vv = (window as any).visualViewport;
-      const vvH = vv && Math.floor(vv.height);
+      const vv = typeof window !== "undefined" ? window.visualViewport : undefined;
+      const vvH = vv ? Math.floor(vv.height) : 0;
       const docH = Math.floor(document.documentElement?.clientHeight || 0);
       const h = (vvH && vvH > 0) ? vvH : docH;
       if (h && h !== vpRef.current) {
