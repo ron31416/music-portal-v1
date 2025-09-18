@@ -223,9 +223,7 @@ function computePageStartIndices(bands: Band[], viewportH: number): number[] {
       const isFirstPage = starts.length === 0 && i === 0;
       const slack = isFirstPage && fuseTitle ? Math.max(12, Math.round(viewportH * 0.06)) : 0;
 
-      /* if (next.bottom - startTop <= viewportH + slack) { */
-      const BOTTOM_GUARD = 20; // try 12–20
-      if (next.bottom - startTop <= viewportH - BOTTOM_GUARD + slack) {
+      if (next.bottom - startTop <= viewportH + slack) {
         last++;
       } else {
         break;
@@ -325,7 +323,69 @@ export default function ScoreOSMD({
 
       const hVisible = getViewportH(outer);
 
+
+      // --- TEMP DEBUG + safer masking based on last-included system bottom ---
+      const MASK_BOTTOM_SAFETY_PX = 6; // tweak 4–10 if needed
+
       const maskTopWithinMusicPx = (() => {
+        if (nextStartIndex < 0) return hVisible;
+
+        const lastIncludedIdx = Math.max(startIndex, nextStartIndex - 1);
+        const lastBand = bands[lastIncludedIdx];
+        if (!lastBand) return hVisible;
+
+        const relBottom = lastBand.bottom - startBand.top; // px within current page
+        const start = Math.min(hVisible, Math.max(0, Math.ceil(relBottom) + MASK_BOTTOM_SAFETY_PX));
+
+        // Console: correlate numbers with the two guide lines
+        console.log("[OSMD] applyPage", {
+          pageIdx: clampedPage,
+          startIndex,
+          nextStartIndex,
+          lastIncludedIdx,
+          viewportH: hVisible,
+          topGutterPx,
+          startBandTop: Math.round(startBand.top),
+          startBandBottom: Math.round(startBand.bottom),
+          lastIncluded_relBottom: Math.round(relBottom),
+          maskTopWithinMusicPx: Math.round(start),
+        });
+
+        // On-screen guides: green = last included system bottom, red = mask start
+        let red = outer.querySelector<HTMLDivElement>("[data-osmd-debug='maskline']");
+        if (!red) {
+          red = document.createElement("div");
+          red.dataset.osmdDebug = "maskline";
+          red.style.position = "absolute";
+          red.style.left = "0";
+          red.style.right = "0";
+          red.style.height = "2px";
+          red.style.background = "rgba(255,0,0,0.6)";
+          red.style.zIndex = "999";
+          outer.appendChild(red);
+        }
+        red.style.top = `${Math.max(0, topGutterPx) + start}px`;
+
+        let green = outer.querySelector<HTMLDivElement>("[data-osmd-debug='lastbottom']");
+        if (!green) {
+          green = document.createElement("div");
+          green.dataset.osmdDebug = "lastbottom";
+          green.style.position = "absolute";
+          green.style.left = "0";
+          green.style.right = "0";
+          green.style.height = "2px";
+          green.style.background = "rgba(0,180,0,0.6)";
+          green.style.zIndex = "999";
+          outer.appendChild(green);
+        }
+        green.style.top = `${Math.max(0, topGutterPx) + Math.min(hVisible, Math.max(0, Math.ceil(relBottom)))}px`;
+
+        return start;
+      })();
+      // --- END TEMP DEBUG ---
+
+
+/*      const maskTopWithinMusicPx = (() => {
         if (nextStartIndex < 0) {
           return hVisible;
         }
@@ -337,7 +397,7 @@ export default function ScoreOSMD({
         const overlap = leakGuardPx();
         return Math.min(hVisible - 1, Math.max(0, Math.ceil(nextTopRel - overlap)));
       })();
-     
+ */    
       let mask = outer.querySelector<HTMLDivElement>("[data-osmd-mask='1']");
       if (!mask) {
         mask = document.createElement("div");
@@ -389,6 +449,22 @@ export default function ScoreOSMD({
     const starts = computePageStartIndices(bands, getViewportH(outer));
     const oldStarts = pageStartsRef.current;
     pageStartsRef.current = starts;
+
+    // --- TEMP DEBUG: show measured systems & page starts ---
+    console.log("[OSMD] bands measured:", bands.length, " viewportH:", getViewportH(outer));
+    try {
+      console.table(
+        bands.slice(0, 12).map((b, i) => ({
+          i,
+          top: Math.round(b.top),
+          bottom: Math.round(b.bottom),
+          h: Math.round(b.height),
+        }))
+      );
+    } catch {}
+    console.log("[OSMD] pageStarts:", pageStartsRef.current);
+    // --- END TEMP DEBUG ---
+
 
     const oldPage = pageIdxRef.current;
     const oldStartIdx = oldStarts.length
