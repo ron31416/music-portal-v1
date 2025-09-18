@@ -326,6 +326,35 @@ export default function ScoreOSMD({
       const hVisible = getViewportH(outer);
 
 
+// ---- stale page-starts guard: recompute if last-included doesn't fit ----
+const SAFETY = 8; // small buffer
+const assumedLastIdx = (clampedPage + 1 < starts.length)
+  ? Math.max(startIndex, (starts[clampedPage + 1] ?? startIndex) - 1)
+  : Math.max(startIndex, bands.length - 1);
+
+const assumedLast = bands[assumedLastIdx];
+const lastBottomRel = assumedLast ? (assumedLast.bottom - startBand.top) : 0;
+
+if (assumedLast && lastBottomRel > hVisible - SAFETY) {
+  // Our breaks were computed for a taller viewport. Fix them now and re-apply.
+  const freshStarts = computePageStartIndices(bands, hVisible);
+  if (freshStarts.length) {
+    pageStartsRef.current = freshStarts;
+
+    // Pick the page whose start index is nearest to our old startIndex
+    let nearest = 0;
+    let best = Number.POSITIVE_INFINITY;
+    for (let i = 0; i < freshStarts.length; i++) {
+      const s = freshStarts[i] ?? 0;
+      const d = Math.abs(s - startIndex);
+      if (d < best) { best = d; nearest = i; }
+    }
+
+    applyPage(nearest);
+    return; // bail; next run will use corrected starts
+  }
+}
+
 // --- TEMP DEBUG + robust masking ---
 const MASK_BOTTOM_SAFETY_PX = 6;     // usually 4–8
 const FALLBACK_EARLY_CUTOFF = 120;   // hide at least last 120px if our calc lands at bottom
@@ -395,21 +424,7 @@ const maskTopWithinMusicPx = (() => {
 })();
 // --- END TEMP DEBUG ---
 
-
-/*      const maskTopWithinMusicPx = (() => {
-        if (nextStartIndex < 0) {
-          return hVisible;
-        }
-        const nextBand = bands[nextStartIndex];
-        if (!nextBand) {
-          return hVisible;
-        }
-        const nextTopRel = nextBand.top - startBand.top;
-        const overlap = leakGuardPx();
-        return Math.min(hVisible - 1, Math.max(0, Math.ceil(nextTopRel - overlap)));
-      })();
- */    
-      let mask = outer.querySelector<HTMLDivElement>("[data-osmd-mask='1']");
+let mask = outer.querySelector<HTMLDivElement>("[data-osmd-mask='1']");
       if (!mask) {
         mask = document.createElement("div");
         mask.dataset.osmdMask = "1";
