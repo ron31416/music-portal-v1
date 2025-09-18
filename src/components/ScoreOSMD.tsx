@@ -316,6 +316,20 @@ export default function ScoreOSMD({
 
       const hVisible = getViewportH(outer);
 
+      // Ensure a small white margin below the last system on the *last page*
+      const LAST_PAGE_BOTTOM_PAD_PX = 12; // try 10–14 if you want more/less space
+      if (nextStartIndex < 0) { // last page
+        const last = bands[bands.length - 1];
+        if (last) {
+          const relBottom = Math.ceil(last.bottom - startBand.top); // bottom within this page
+          const need = relBottom - (hVisible - LAST_PAGE_BOTTOM_PAD_PX);
+          if (need > 0) {
+            // push content up a bit so bottom has the desired pad
+            const newYSnap = ySnap + need;
+            svg.style.transform = `translateY(${-newYSnap + Math.max(0, topGutterPx)}px)`;
+          }
+        }
+      }
 
       // ---- stale page-starts guard: recompute if last-included doesn't fit ----
       const SAFETY = 8; // small buffer
