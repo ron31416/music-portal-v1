@@ -325,7 +325,7 @@ export default function ScoreOSMD({
 
         for (let i = startIndex; i < bands.length; i++) {
           const b = bands[i];
-          if (!b) continue;                        // TS guard: b is Band
+          if (!b) { continue }                        // TS guard: b is Band
           const relBottom = b.bottom - startBand.top; // bottom within current page
 
           if (relBottom > hVisible - LAST_PAGE_BOTTOM_PAD_PX) {
