@@ -698,6 +698,9 @@ export default function ScoreOSMD({
       pageIdxRef.current = 0;
       applyPage(0);
 
+      // 👉 add this line to re-evaluate with the exact, final viewport
+      recomputePaginationHeightOnly(true, false);
+
       // record the dimensions this layout corresponds to
       handledWRef.current = outer.clientWidth;
       handledHRef.current = outer.clientHeight;
@@ -942,6 +945,55 @@ export default function ScoreOSMD({
       }
     };
   }, [recomputePaginationHeightOnly]);
+
+  useEffect(() => {
+    let winTimer: number | null = null;
+
+    const onWindowResize = () => {
+      if (!readyRef.current) { return; }
+
+      if (winTimer) {
+        window.clearTimeout(winTimer);
+      }
+      winTimer = window.setTimeout(() => {
+        winTimer = null;
+        if (busyRef.current) { return; }
+
+        const outer = wrapRef.current;
+        if (!outer) { return; }
+
+        const currW = outer.clientWidth;
+        const currH = outer.clientHeight;
+
+        const widthChangedSinceHandled =
+          handledWRef.current === -1 || Math.abs(currW - handledWRef.current) >= 1;
+        const heightChangedSinceHandled =
+          handledHRef.current === -1 || Math.abs(currH - handledHRef.current) >= 1;
+
+        (async () => {
+          if (widthChangedSinceHandled) {
+            await reflowOnWidthChange(true);           // spinner + recompute + go to page 1
+          } else if (heightChangedSinceHandled) {
+            recomputePaginationHeightOnly(true, true); // spinner + recompute + go to page 1
+          } else {
+            return;
+          }
+          handledWRef.current = currW;
+          handledHRef.current = currH;
+        })();
+      }, 200);
+    };
+
+    window.addEventListener('resize', onWindowResize);
+    return () => {
+      window.removeEventListener('resize', onWindowResize);
+      if (winTimer) {
+        window.clearTimeout(winTimer);
+        winTimer = null;
+      }
+    };
+  }, [reflowOnWidthChange, recomputePaginationHeightOnly]);
+
 
   /* ---------- Styles ---------- */
 
