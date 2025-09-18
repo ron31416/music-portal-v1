@@ -688,7 +688,7 @@ export default function ScoreOSMD({
       setBusyMsg(DEFAULT_BUSY);
 
       resizeObs = new ResizeObserver(() => {
-        if (!readyRef.current) return;
+        if (!readyRef.current) { return; }
 
         const w = outer.clientWidth;
         const h = outer.clientHeight;
@@ -705,7 +705,7 @@ export default function ScoreOSMD({
         }
         resizeTimerRef.current = window.setTimeout(() => {
           resizeTimerRef.current = null;
-          if (busyRef.current) return; // don’t re-enter while rendering
+          if (busyRef.current) { return; } // don’t re-enter while rendering
           if (widthChanged) {
             void reflowOnWidthChange(true);       // reset to page 1
           } else if (heightChanged) {
@@ -881,7 +881,7 @@ export default function ScoreOSMD({
   // Recompute pagination when the visual viewport height changes (mobile URL/tool bars)
   useEffect(() => {
     const vv = typeof window !== 'undefined' ? window.visualViewport : undefined;
-    if (!vv) return;
+    if (!vv) { return; }
 
     const onChange = () => {
       if (!readyRef.current) {return; }
