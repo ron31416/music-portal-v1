@@ -355,74 +355,27 @@ if (assumedLast && lastBottomRel > hVisible - SAFETY) {
   }
 }
 
-// --- TEMP DEBUG + robust masking ---
-const MASK_BOTTOM_SAFETY_PX = 6;     // usually 4–8
-const FALLBACK_EARLY_CUTOFF = 120;   // hide at least last 120px if our calc lands at bottom
+const MASK_BOTTOM_SAFETY_PX = 6; // try 6–8 if needed
 
 const maskTopWithinMusicPx = (() => {
-  // No next page → no bottom mask
-  if (nextStartIndex < 0) { return hVisible };
+  if (nextStartIndex < 0) return hVisible;
 
-  // Last system we *intend* to show on this page
   const lastIncludedIdx = Math.max(startIndex, nextStartIndex - 1);
   const lastBand = bands[lastIncludedIdx];
+  if (!lastBand) return hVisible;
 
-  // Bottom of that system relative to the current page start
-  const relBottom = lastBand ? (lastBand.bottom - startBand.top) : hVisible;
+  const relBottom = lastBand.bottom - startBand.top; // px within page
 
-  // Normal mask start: a few px after the last system’s bottom
-  let start = Math.ceil(relBottom) + MASK_BOTTOM_SAFETY_PX;
+  // Start the mask just after the last system’s bottom,
+  // but NEVER earlier than that (no hard early cutoff).
+  const start = Math.min(
+    hVisible - 2,                              // keep a tiny gap to avoid rounding artifacts
+    Math.max(0, Math.ceil(relBottom) + MASK_BOTTOM_SAFETY_PX)
+  );
 
-  // Fallback: if our start ends up at/below the viewport (or we couldn't compute),
-  // force an early cutoff so the next system can't peek in.
-  if (!lastBand || start >= hVisible - 4) {
-    start = Math.max(0, Math.floor(hVisible - FALLBACK_EARLY_CUTOFF));
-  }
-
-  // Clamp
-  start = Math.min(hVisible, Math.max(0, start));
-
-  // --------- On-screen HUD (no console needed) ----------
-  let hud = outer.querySelector<HTMLDivElement>("[data-osmd-hud='1']");
-  if (!hud) {
-    hud = document.createElement("div");
-    hud.dataset.osmdHud = "1";
-    hud.style.cssText =
-      "position:absolute;top:4px;left:4px;padding:4px 6px;" +
-      "background:rgba(0,0,0,0.55);color:#fff;font:12px/1.3 system-ui;" +
-      "z-index:10000;border-radius:4px;pointer-events:none";
-    outer.appendChild(hud);
-  }
-  hud.textContent =
-    `page=${clampedPage} start=${Math.round(start)} ` +
-    `hVis=${hVisible} relBottom=${Math.round(relBottom)} ` +
-    `nextIdx=${nextStartIndex}`;
-
-  // Guide lines (green = last system bottom, red = mask start)
-  let red = outer.querySelector<HTMLDivElement>("[data-osmd-debug='maskline']");
-  if (!red) {
-    red = document.createElement("div");
-    red.dataset.osmdDebug = "maskline";
-    red.style.cssText =
-      "position:absolute;left:0;right:0;height:2px;background:rgba(255,0,0,0.7);z-index:10000";
-    outer.appendChild(red);
-  }
-  red.style.top = `${Math.max(0, topGutterPx) + start}px`;
-
-  let green = outer.querySelector<HTMLDivElement>("[data-osmd-debug='lastbottom']");
-  if (!green) {
-    green = document.createElement("div");
-    green.dataset.osmdDebug = "lastbottom";
-    green.style.cssText =
-      "position:absolute;left:0;right:0;height:2px;background:rgba(0,180,0,0.7);z-index:10000";
-    outer.appendChild(green);
-  }
-  green.style.top = `${Math.max(0, topGutterPx) + Math.min(hVisible, Math.max(0, Math.ceil(relBottom)))}px`;
-  // ------------------------------------------------------
-
+  // (optional HUD/lines you added can stay as-is; just feed them `relBottom` and `start`)
   return start;
 })();
-// --- END TEMP DEBUG ---
 
 let mask = outer.querySelector<HTMLDivElement>("[data-osmd-mask='1']");
       if (!mask) {
