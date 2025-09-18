@@ -269,14 +269,17 @@ export default function ScoreOSMD({
 
   const vpHRef = useVisibleViewportHeight();
 
-  const getViewportH = useCallback(
-    (outer: HTMLDivElement): number => {
-      const v = vpHRef.current;
-      const raw = v > 0 ? Math.min(v, outer.clientHeight || v) : outer.clientHeight || 0;
-      return Math.max(0, raw - Math.max(0, topGutterPx));
-    },
-    [vpHRef, topGutterPx]
-  );
+  const getViewportH = useCallback((outer: HTMLDivElement): number => {
+    const v = vpHRef.current || 0;                              // visualViewport
+    const outerH = outer.clientHeight || 0;                     // wrapper height
+    const docH = Math.floor(document.documentElement?.clientHeight || 0); // fallback
+
+    // Prefer wrapper height; fall back to visualViewport; then to document
+    const base = outerH > 0 ? outerH : (v > 0 ? v : docH);
+
+    // Always return a positive, integer px height minus the gutter
+    return Math.max(1, Math.floor(base) - Math.max(0, topGutterPx));
+  }, [vpHRef, topGutterPx]);
 
   /** Ensure OSMD zoom is applied before every render */
   const applyZoom = useCallback((): void => {
@@ -725,6 +728,8 @@ export default function ScoreOSMD({
       pageStartsRef.current = computePageStartIndices(bands, getViewportH(outer));
       pageIdxRef.current = 0;
       applyPage(0);
+
+      recomputePaginationHeightOnly(true /* resetToFirst */, false /* no spinner on boot */);
 
       // record the dimensions this layout corresponds to
       handledWRef.current = outer.clientWidth;
