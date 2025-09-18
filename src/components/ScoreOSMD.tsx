@@ -264,6 +264,9 @@ export default function ScoreOSMD({
   const resizeTimerRef = useRef<number | null>(null); // ResizeObserver debounce
   const vvTimerRef = useRef<number | null>(null);     // visualViewport debounce
 
+  const handledWRef = useRef<number>(-1);
+  const handledHRef = useRef<number>(-1);
+
   const vpHRef = useVisibleViewportHeight();
 
   const getViewportH = useCallback(
@@ -492,7 +495,7 @@ export default function ScoreOSMD({
     const osmd = osmdRef.current;
     if (!outer || !osmd) { return; }
 
-    // NEW: bail if another render is in progress
+    // bail if another render is in progress
     if (busyRef.current) { return; }
 
     setBusyMsg(DEFAULT_BUSY);
@@ -508,6 +511,14 @@ export default function ScoreOSMD({
       if (newBands.length === 0) { return; }
       bandsRef.current = newBands;
 
+      // IMPORTANT: capture previous starts/page BEFORE recompute
+      const prevStarts = pageStartsRef.current.slice();
+      const prevPage = pageIdxRef.current;
+      const oldTopSystem =
+        prevStarts.length
+          ? prevStarts[Math.max(0, Math.min(prevPage, prevStarts.length - 1))] ?? 0
+          : 0;
+
       const newStarts = computePageStartIndices(newBands, getViewportH(outer));
       pageStartsRef.current = newStarts;
 
@@ -515,11 +526,6 @@ export default function ScoreOSMD({
         applyPage(0);
         return;
       }
-
-      const oldStarts = pageStartsRef.current; // after recompute
-      const oldPage = pageIdxRef.current;
-      const oldTopSystem =
-        oldStarts.length ? oldStarts[Math.max(0, Math.min(oldPage, oldStarts.length - 1))] ?? 0 : 0;
 
       let nearest = 0;
       let best = Number.POSITIVE_INFINITY;
@@ -557,8 +563,6 @@ export default function ScoreOSMD({
   /** Init OSMD */
   useEffect(() => {
     let resizeObs: ResizeObserver | null = null;
-    let lastW = -1;
-    let lastH = -1;
 
     (async () => {
       const host = hostRef.current;
@@ -694,6 +698,10 @@ export default function ScoreOSMD({
       pageIdxRef.current = 0;
       applyPage(0);
 
+      // record the dimensions this layout corresponds to
+      handledWRef.current = outer.clientWidth;
+      handledHRef.current = outer.clientHeight;
+
       readyRef.current = true;
 
       setBusy(false);
@@ -702,34 +710,41 @@ export default function ScoreOSMD({
       resizeObs = new ResizeObserver(() => {
         if (!readyRef.current) { return; }
 
-        const w = outer.clientWidth;
-        const h = outer.clientHeight;
-
-        const widthChanged = lastW !== -1 && Math.abs(w - lastW) >= 1;
-        const heightChanged = lastH !== -1 && Math.abs(h - lastH) >= 1;
-
-        lastW = w;
-        lastH = h;
-
-        // Debounce to avoid reflow storms (esp. big scores)
+        // debounce bursts
         if (resizeTimerRef.current) {
           window.clearTimeout(resizeTimerRef.current);
-          resizeTimerRef.current = null;
         }
         resizeTimerRef.current = window.setTimeout(() => {
           resizeTimerRef.current = null;
-          if (!readyRef.current || busyRef.current) { return; }
-          if (widthChanged) {
-            void reflowOnWidthChange(true);                  // reset to page 1, spinner shown by reflow
-          } else if (heightChanged) {
-            recomputePaginationHeightOnly(true, true);       // reset to page 1, SHOW spinner
-          }
-        }, 200); // bumped from 120 → 200ms
+          if (busyRef.current) { return; }
+
+          const outerNow = wrapRef.current;
+          if (!outerNow) { return; }
+
+          const currW = outerNow.clientWidth;
+          const currH = outerNow.clientHeight;
+
+          const widthChangedSinceHandled =
+            handledWRef.current === -1 || Math.abs(currW - handledWRef.current) >= 1;
+          const heightChangedSinceHandled =
+            handledHRef.current === -1 || Math.abs(currH - handledHRef.current) >= 1;
+
+          // Run the appropriate path, then update handled sizes
+          (async () => {
+            if (widthChangedSinceHandled) {
+              await reflowOnWidthChange(true);            // shows spinner
+            } else if (heightChangedSinceHandled) {
+              recomputePaginationHeightOnly(true, true);  // shows spinner
+            } else {
+              return; // nothing meaningful changed
+            }
+            handledWRef.current = currW;
+            handledHRef.current = currH;
+          })();
+        }, 200);
       });
       
       resizeObs.observe(outer);
-      lastW = outer.clientWidth;
-      lastH = outer.clientHeight;
     })().catch(() => {
       setBusy(false);
       setBusyMsg(DEFAULT_BUSY);
@@ -898,15 +913,21 @@ export default function ScoreOSMD({
 
     const onChange = () => {
       if (!readyRef.current) { return; }
+
+      // debounce vv events
       if (vvTimerRef.current) {
         window.clearTimeout(vvTimerRef.current);
-        vvTimerRef.current = null;
       }
       vvTimerRef.current = window.setTimeout(() => {
         vvTimerRef.current = null;
-        if (busyRef.current) { return; }
-        recomputePaginationHeightOnly(true, true); // reset to page 1, SHOW spinner
-      }, 200); // debounce matches RO
+        if (busyRef.current) { return; } // don’t run while rendering
+        recomputePaginationHeightOnly(true, true); // reset to page 1 + show spinner
+        const outerNow = wrapRef.current;
+        if (outerNow) {
+          handledWRef.current = outerNow.clientWidth;
+          handledHRef.current = outerNow.clientHeight;
+        }
+      }, 200);
     };
 
     vv.addEventListener('resize', onChange);
@@ -914,6 +935,7 @@ export default function ScoreOSMD({
     return () => {
       vv.removeEventListener('resize', onChange);
       vv.removeEventListener('scroll', onChange);
+      // clear the *vv* debounce timer here
       if (vvTimerRef.current) {
         window.clearTimeout(vvTimerRef.current);
         vvTimerRef.current = null;
