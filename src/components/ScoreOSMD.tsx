@@ -33,12 +33,14 @@ async function awaitLoad(
   await Promise.resolve(o.load(input));
 }
 
+/*
 // Device-dependent guard to prevent bottom-of-page leakage on some mobiles
 function leakGuardPx(): number {
   const dpr = typeof window !== 'undefined' && window.devicePixelRatio ? window.devicePixelRatio : 1;
   // Base 8px, scaled a bit with DPR to avoid subpixel rounding leaks
   return Math.max(10, Math.ceil(dpr * 8));
 }
+*/
 
 const afterPaint = () =>
   new Promise<void>((resolve) => {
@@ -328,17 +330,17 @@ export default function ScoreOSMD({
       const MASK_BOTTOM_SAFETY_PX = 6; // tweak 4–10 if needed
 
       const maskTopWithinMusicPx = (() => {
-        if (nextStartIndex < 0) return hVisible;
+        if (nextStartIndex < 0) { return hVisible };
 
         const lastIncludedIdx = Math.max(startIndex, nextStartIndex - 1);
         const lastBand = bands[lastIncludedIdx];
-        if (!lastBand) return hVisible;
+        if (!lastBand) { return hVisible };
 
         const relBottom = lastBand.bottom - startBand.top; // px within current page
         const start = Math.min(hVisible, Math.max(0, Math.ceil(relBottom) + MASK_BOTTOM_SAFETY_PX));
 
         // Console: correlate numbers with the two guide lines
-        console.log("[OSMD] applyPage", {
+        console.warn("[OSMD] applyPage", {
           pageIdx: clampedPage,
           startIndex,
           nextStartIndex,
@@ -451,7 +453,7 @@ export default function ScoreOSMD({
     pageStartsRef.current = starts;
 
     // --- TEMP DEBUG: show measured systems & page starts ---
-    console.log("[OSMD] bands measured:", bands.length, " viewportH:", getViewportH(outer));
+    console.warn("[OSMD] bands measured:", bands.length, " viewportH:", getViewportH(outer));
     try {
       console.table(
         bands.slice(0, 12).map((b, i) => ({
@@ -462,7 +464,7 @@ export default function ScoreOSMD({
         }))
       );
     } catch {}
-    console.log("[OSMD] pageStarts:", pageStartsRef.current);
+    console.warn("[OSMD] pageStarts:", pageStartsRef.current);
     // --- END TEMP DEBUG ---
 
 
@@ -604,7 +606,6 @@ export default function ScoreOSMD({
         }
 
         const ab = await res.arrayBuffer();
-        /*console.log("[OSMD] fetched bytes:", ab.byteLength, "from", src);*/
 
         // Unzip .mxl and resolve the primary score via META-INF/container.xml
         const { default: JSZip } = await import("jszip");
@@ -665,8 +666,6 @@ export default function ScoreOSMD({
           throw new Error("No MusicXML file found in .mxl archive");
         }
 
-        /*console.log("[OSMD] selected entry:", entryName);*/
-
         // 3) Load selected entry as text, parse XML, hand Document to OSMD
         const xmlText = await zip.file(entryName)!.async("string");
         const doc = new DOMParser().parseFromString(xmlText, "application/xml");
@@ -675,7 +674,6 @@ export default function ScoreOSMD({
         const hasTimewise = doc.getElementsByTagName("score-timewise").length > 0;
         if (!hasPartwise && !hasTimewise) {
           // Surface a helpful snippet for debugging if needed
-          /*console.error("[OSMD] root tag:", doc.documentElement?.tagName, "first 200:", xmlText.slice(0, 200));*/
           throw new Error("MusicXML parse error: no score-partwise/score-timewise");
         }
 
