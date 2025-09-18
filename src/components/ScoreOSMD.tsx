@@ -326,29 +326,6 @@ export default function ScoreOSMD({
 
       const hVisible = getViewportH(outer);
 
-      // If the top of the *next* system is inside the visible window, our breaks are stale.
-      // Recompute for the current height and re-apply near the same start system.
-      if (nextStartIndex >= 0) {
-        const nextBand = bands[nextStartIndex];
-        if (nextBand) {
-          const nextTopRel = nextBand.top - startBand.top;
-          if (nextTopRel < hVisible - 1) {
-            const fresh = computePageStartIndices(bands, hVisible);
-            if (fresh.length) {
-              pageStartsRef.current = fresh;
-              let nearest = 0, best = Number.POSITIVE_INFINITY;
-              for (let i = 0; i < fresh.length; i++) {
-                const s = fresh[i] ?? 0;
-                const d = Math.abs(s - startIndex);
-                if (d < best) { best = d; nearest = i; }
-              }
-              applyPage(nearest);
-              return;
-            }
-          }
-        }
-      }
-
       // --- last-page margin rule: push final system to a new page if too close ---
       const LAST_PAGE_BOTTOM_PAD_PX = 12; // try 10–14
 
@@ -413,25 +390,15 @@ export default function ScoreOSMD({
 
       const maskTopWithinMusicPx = (() => {
         if (nextStartIndex < 0) { return hVisible; }
-
         const lastIncludedIdx = Math.max(startIndex, nextStartIndex - 1);
         const lastBand = bands[lastIncludedIdx];
-        const nextBand = bands[nextStartIndex];
-        if (!lastBand || !nextBand) { return hVisible; }
+        if (!lastBand) { return hVisible; }
 
-        const relBottom = lastBand.bottom - startBand.top; // last included bottom (relative)
-        const nextTopRel = nextBand.top - startBand.top;   // next system top (relative)
-
-        // Start the mask just after the last included system *but also*
-        // never above the next system’s top (prevents slivers).
+        const relBottom = lastBand.bottom - startBand.top; // px within page
         const start = Math.min(
-          hVisible - 2,
-          Math.max(
-            0,
-            Math.max(Math.ceil(relBottom) + MASK_BOTTOM_SAFETY_PX, Math.ceil(nextTopRel) - 1)
-          )
+          hVisible - 2,                              // tiny gap avoids rounding artifacts
+          Math.max(0, Math.ceil(relBottom) + MASK_BOTTOM_SAFETY_PX)
         );
-
         return start;
       })();
 
@@ -532,6 +499,7 @@ export default function ScoreOSMD({
       await afterPaint();
 
       applyZoom();
+      await waitForFonts();
       osmd.render();
       await afterPaint();
 
@@ -725,9 +693,6 @@ export default function ScoreOSMD({
       pageStartsRef.current = computePageStartIndices(bands, getViewportH(outer));
       pageIdxRef.current = 0;
       applyPage(0);
-
-      // 👉 add this line to re-evaluate with the exact, final viewport
-      recomputePaginationHeightOnly(true, false);
 
       // record the dimensions this layout corresponds to
       handledWRef.current = outer.clientWidth;
