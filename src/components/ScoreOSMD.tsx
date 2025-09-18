@@ -325,7 +325,7 @@ export default function ScoreOSMD({
 
         for (let i = startIndex; i < bands.length; i++) {
           const b = bands[i];
-          if (!b) { continue }                        // TS guard: b is Band
+          if (!b) { continue; }                        // TS guard: b is Band
           const relBottom = b.bottom - startBand.top; // bottom within current page
 
           if (relBottom > hVisible - LAST_PAGE_BOTTOM_PAD_PX) {
@@ -380,11 +380,11 @@ export default function ScoreOSMD({
       const MASK_BOTTOM_SAFETY_PX = 6; // try 6–8 if needed
 
       const maskTopWithinMusicPx = (() => {
-        if (nextStartIndex < 0) { return hVisible }
+        if (nextStartIndex < 0) { return hVisible; }
 
         const lastIncludedIdx = Math.max(startIndex, nextStartIndex - 1);
         const lastBand = bands[lastIncludedIdx];
-        if (!lastBand) { return hVisible }
+        if (!lastBand) { return hVisible; }
 
         const relBottom = lastBand.bottom - startBand.top; // px within page
 
