@@ -224,7 +224,7 @@ function computePageStartIndices(bands: Band[], viewportH: number): number[] {
       const slack = isFirstPage && fuseTitle ? Math.max(12, Math.round(viewportH * 0.06)) : 0;
 
       /* if (next.bottom - startTop <= viewportH + slack) { */
-      const BOTTOM_GUARD = 16; // try 12–20
+      const BOTTOM_GUARD = 20; // try 12–20
       if (next.bottom - startTop <= viewportH - BOTTOM_GUARD + slack) {
         last++;
       } else {
