@@ -82,21 +82,30 @@ function useVisibleViewportHeight() {
 
   useEffect(() => {
     const update = () => {
-      const h =
-        (window.visualViewport && Math.floor(window.visualViewport.height)) ||
-        Math.floor(document.documentElement.clientHeight);
+      // prefer visualViewport when available, otherwise fall back to doc height
+      const vv = (window as any).visualViewport;
+      const vvH = vv && Math.floor(vv.height);
+      const docH = Math.floor(document.documentElement?.clientHeight || 0);
+      const h = (vvH && vvH > 0) ? vvH : docH;
       if (h && h !== vpRef.current) {
         vpRef.current = h;
         force();
       }
     };
     update();
+
+    // visualViewport when present
     window.visualViewport?.addEventListener("resize", update);
     window.visualViewport?.addEventListener("scroll", update);
+
+    // always also listen to window.resize (desktop / Safari / VV quirks)
+    window.addEventListener("resize", update);
     window.addEventListener("orientationchange", update);
+
     return () => {
       window.visualViewport?.removeEventListener("resize", update);
       window.visualViewport?.removeEventListener("scroll", update);
+      window.removeEventListener("resize", update);
       window.removeEventListener("orientationchange", update);
     };
   }, []);
@@ -413,7 +422,7 @@ export default function ScoreOSMD({
         }
       }
 
-      const MASK_BOTTOM_SAFETY_PX = 10;
+      const MASK_BOTTOM_SAFETY_PX = 12;
 
       const maskTopWithinMusicPx = (() => {
         if (nextStartIndex < 0) { return hVisible; }
@@ -430,11 +439,31 @@ export default function ScoreOSMD({
         // never above the next system’s top (prevents slivers).
         const start = Math.min(
           hVisible - 2,
-          Math.max(0, Math.ceil(relBottom) + MASK_BOTTOM_SAFETY_PX, Math.ceil(nextTopRel))
+          Math.max(0,
+            Math.ceil(relBottom) + MASK_BOTTOM_SAFETY_PX,
+            Math.ceil(nextTopRel) + 1 // hide a possible 1px peek
+          )
         );
 
         return start;
       })();
+      // eslint-disable-next-line no-console
+      console.log("[ScoreOSMD/applyPage]", {
+        pageIdx: pageIdxRef.current,
+        startIndex,
+        nextStartIndex,
+        hVisible,
+        ySnap,
+        maskTopWithinMusicPx,
+        lastIncludedIdx: nextStartIndex >= 0 ? Math.max(startIndex, nextStartIndex - 1) : null,
+        relBottom: (nextStartIndex >= 0 && bands[Math.max(startIndex, nextStartIndex - 1)])
+          ? (bands[Math.max(startIndex, nextStartIndex - 1)]!.bottom - startBand.top)
+          : null,
+        nextTopRel: (nextStartIndex >= 0 && bands[nextStartIndex])
+          ? (bands[nextStartIndex]!.top - startBand.top)
+          : null,
+      });
+
 
       let mask = outer.querySelector<HTMLDivElement>("[data-osmd-mask='1']");
       if (!mask) {
@@ -488,6 +517,16 @@ export default function ScoreOSMD({
 
       const starts = computePageStartIndices(bands, getViewportH(outer));
       const oldStarts = pageStartsRef.current;
+      // eslint-disable-next-line no-console
+      console.log("[ScoreOSMD/recomputePaginationHeightOnly]", {
+        hVisible: getViewportH(outer),
+        bands: bands.length,
+        oldStarts,
+        newStarts: starts,
+        resetToFirst,
+        oldPage: pageIdxRef.current,
+      });
+
       pageStartsRef.current = starts;
 
       if (resetToFirst) {
@@ -522,8 +561,10 @@ export default function ScoreOSMD({
       const outer = wrapRef.current;
       const osmd = osmdRef.current;
       if (!outer || !osmd) { return; }
-      if (busyRef.current) { return; }
-
+      // If the caller asked this function to show the spinner itself (showBusy === true),
+      // we must NOT early-return on busy, because the caller likely set busy elsewhere.
+      if (busyRef.current && !showBusy) { return; }
+      
       if (showBusy) {
         setBusyMsg(DEFAULT_BUSY);
         setBusy(true);
@@ -764,35 +805,17 @@ export default function ScoreOSMD({
 
           (async () => {
             if (widthChangedSinceHandled) {
-              setBusyMsg(DEFAULT_BUSY);
-              setBusy(true);
-              await afterPaint();
-              await new Promise(r => setTimeout(r, 0));
-              try {
-                await reflowOnWidthChange(true /* resetToFirst */, false /* showBusy inside */);
-              } finally {
-                setBusy(false);
-                setBusyMsg(DEFAULT_BUSY);
-                handledWRef.current = currW;
-                handledHRef.current = currH;
-              }
+              await reflowOnWidthChange(true /* resetToFirst */, true /* showBusy */);
+              handledWRef.current = currW;
+              handledHRef.current = currH;
             } else if (heightChangedSinceHandled) {
-              setBusyMsg(DEFAULT_BUSY);
-              setBusy(true);
-              await afterPaint();
-              await new Promise(r => setTimeout(r, 0));
-              try {
-                recomputePaginationHeightOnly(true /* resetToFirst */, false /* showBusy inside */);
-              } finally {
-                setBusy(false);
-                setBusyMsg(DEFAULT_BUSY);
-                handledWRef.current = currW;
-                handledHRef.current = currH;
-              }
+              recomputePaginationHeightOnly(true /* resetToFirst */, true /* showBusy */);
+              handledWRef.current = currW;
+              handledHRef.current = currH;
             } else {
               return;
             }
-          })();
+         })();
         }, 200);
       });
       
@@ -994,74 +1017,6 @@ export default function ScoreOSMD({
       }
     };
   }, [recomputePaginationHeightOnly]);
-
-  useEffect(() => {
-    let winTimer: number | null = null;
-
-    const onWindowResize = () => {
-      if (!readyRef.current) { return; }
-
-      if (winTimer) {
-        window.clearTimeout(winTimer);
-      }
-      winTimer = window.setTimeout(() => {
-        winTimer = null;
-        if (busyRef.current) { return; }
-
-        const outer = wrapRef.current;
-        if (!outer) { return; }
-
-        const currW = outer.clientWidth;
-        const currH = outer.clientHeight;
-
-        const widthChangedSinceHandled =
-          handledWRef.current === -1 || Math.abs(currW - handledWRef.current) >= 1;
-        const heightChangedSinceHandled =
-          handledHRef.current === -1 || Math.abs(currH - handledHRef.current) >= 1;
-
-        (async () => {
-          if (widthChangedSinceHandled) {
-            setBusyMsg(DEFAULT_BUSY);
-            setBusy(true);
-            await afterPaint();
-            await new Promise(r => setTimeout(r, 0));
-            try {
-              await reflowOnWidthChange(true /* resetToFirst */, false /* showBusy inside */);
-            } finally {
-              setBusy(false);
-              setBusyMsg(DEFAULT_BUSY);
-              handledWRef.current = currW;
-              handledHRef.current = currH;
-            }
-          } else if (heightChangedSinceHandled) {
-            setBusyMsg(DEFAULT_BUSY);
-            setBusy(true);
-            await afterPaint();
-            await new Promise(r => setTimeout(r, 0));
-            try {
-              recomputePaginationHeightOnly(true /* resetToFirst */, false /* showBusy inside */);
-            } finally {
-              setBusy(false);
-              setBusyMsg(DEFAULT_BUSY);
-              handledWRef.current = currW;
-              handledHRef.current = currH;
-            }
-          } else {
-            return;
-          }
-        })();
-      }, 200);
-    };
-
-    window.addEventListener('resize', onWindowResize);
-    return () => {
-      window.removeEventListener('resize', onWindowResize);
-      if (winTimer) {
-        window.clearTimeout(winTimer);
-        winTimer = null;
-      }
-    };
-  }, [reflowOnWidthChange, recomputePaginationHeightOnly]);
 
 
   /* ---------- Styles ---------- */
