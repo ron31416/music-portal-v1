@@ -323,7 +323,7 @@ export default function ScoreOSMD({
 
       const hVisible = getViewportH(outer);
 
-      const BOTTOM_MASK_CUSHION_PX = 2; // try 2; bump to 3–4 if you still see cropping
+      const EXTRA_HIDE_PX = 10; // try 10; bump to 12–14 if a sliver still shows
 
       const maskTopWithinMusicPx = (() => {
         if (nextStartIndex < 0) { return hVisible };
@@ -331,13 +331,11 @@ export default function ScoreOSMD({
         if (!nextBand) { return hVisible };
 
         const nextTopRel = nextBand.top - startBand.top;
-        const overlap = leakGuardPx();
+        const overlap = leakGuardPx() + EXTRA_HIDE_PX;
 
-        // Start the mask a touch LOWER to avoid shaving the last staff line.
-        return Math.min(
-          hVisible, // was hVisible - 1
-          Math.max(0, Math.ceil(nextTopRel - overlap) + BOTTOM_MASK_CUSHION_PX)
-        );
+        // Start mask a bit earlier (higher) to fully cover the next system.
+        const start = Math.max(0, Math.floor(nextTopRel - overlap));
+        return Math.min(hVisible, start);
       })();
 
       /*
