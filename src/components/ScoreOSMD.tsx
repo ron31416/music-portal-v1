@@ -323,7 +323,7 @@ export default function ScoreOSMD({
 
       const hVisible = getViewportH(outer);
 
-      const EXTRA_HIDE_PX = 10; // try 10; bump to 12–14 if a sliver still shows
+      const EXTRA_HIDE_PX = 14; // try 10; bump to 12–14 if a sliver still shows
 
       const maskTopWithinMusicPx = (() => {
         if (nextStartIndex < 0) { return hVisible };
