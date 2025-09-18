@@ -358,11 +358,11 @@ if (assumedLast && lastBottomRel > hVisible - SAFETY) {
 const MASK_BOTTOM_SAFETY_PX = 6; // try 6–8 if needed
 
 const maskTopWithinMusicPx = (() => {
-  if (nextStartIndex < 0) return hVisible;
+  if (nextStartIndex < 0) { return hVisible };
 
   const lastIncludedIdx = Math.max(startIndex, nextStartIndex - 1);
   const lastBand = bands[lastIncludedIdx];
-  if (!lastBand) return hVisible;
+  if (!lastBand) { return hVisible };
 
   const relBottom = lastBand.bottom - startBand.top; // px within page
 
