@@ -386,19 +386,26 @@ export default function ScoreOSMD({
         }
       }
 
-      const MASK_BOTTOM_SAFETY_PX = 6;
+      const MASK_BOTTOM_SAFETY_PX = 10;
 
       const maskTopWithinMusicPx = (() => {
         if (nextStartIndex < 0) { return hVisible; }
+
         const lastIncludedIdx = Math.max(startIndex, nextStartIndex - 1);
         const lastBand = bands[lastIncludedIdx];
-        if (!lastBand) { return hVisible; }
+        const nextBand = bands[nextStartIndex];
+        if (!lastBand || !nextBand) { return hVisible; }
 
-        const relBottom = lastBand.bottom - startBand.top; // px within page
+        const relBottom  = lastBand.bottom - startBand.top; // last included bottom (relative)
+        const nextTopRel = nextBand.top    - startBand.top; // next system top (relative)
+
+        // Start the mask just after the last included system BUT
+        // never above the next system’s top (prevents slivers).
         const start = Math.min(
-          hVisible - 2,                              // tiny gap avoids rounding artifacts
-          Math.max(0, Math.ceil(relBottom) + MASK_BOTTOM_SAFETY_PX)
+          hVisible - 2,
+          Math.max(0, Math.ceil(relBottom) + MASK_BOTTOM_SAFETY_PX, Math.ceil(nextTopRel))
         );
+
         return start;
       })();
 
@@ -483,60 +490,61 @@ export default function ScoreOSMD({
     }
   }, [applyPage, getViewportH]);
 
-  const reflowOnWidthChange = useCallback(async (resetToFirst: boolean = false): Promise<void> => {
-    const outer = wrapRef.current;
-    const osmd = osmdRef.current;
-    if (!outer || !osmd) { return; }
+  const reflowOnWidthChange = useCallback(
+    async (resetToFirst: boolean = false, showBusy: boolean = false): Promise<void> => {
+      const outer = wrapRef.current;
+      const osmd = osmdRef.current;
+      if (!outer || !osmd) { return; }
+      if (busyRef.current) { return; }
 
-    // bail if another render is in progress
-    if (busyRef.current) { return; }
-
-    setBusyMsg(DEFAULT_BUSY);
-    setBusy(true);
-    // Let the overlay paint before heavy work
-    await new Promise((r) => setTimeout(r, 0));
-    try {
-      await afterPaint();
-
-      applyZoom();
-      await waitForFonts();
-      osmd.render();
-      await afterPaint();
-
-      const newBands = withUntransformedSvg(outer, (svg) => measureSystemsPx(outer, svg)) ?? [];
-      if (newBands.length === 0) { return; }
-      bandsRef.current = newBands;
-
-      // IMPORTANT: capture previous starts/page BEFORE recompute
-      const prevStarts = pageStartsRef.current.slice();
-      const prevPage = pageIdxRef.current;
-      const oldTopSystem =
-        prevStarts.length
-          ? prevStarts[Math.max(0, Math.min(prevPage, prevStarts.length - 1))] ?? 0
-          : 0;
-
-      const newStarts = computePageStartIndices(newBands, getViewportH(outer));
-      pageStartsRef.current = newStarts;
-
-      if (resetToFirst) {
-        applyPage(0);
-        return;
+      if (showBusy) {
+        setBusyMsg(DEFAULT_BUSY);
+        setBusy(true);
+        await afterPaint();
+        await new Promise(r => setTimeout(r, 0));
       }
+      try {
+        await afterPaint();
+        applyZoom();
+        osmd.render();
+        await afterPaint();
 
-      let nearest = 0;
-      let best = Number.POSITIVE_INFINITY;
-      for (let i = 0; i < newStarts.length; i++) {
-        const s = newStarts[i];
-        if (s === undefined) { continue; }
-        const d = Math.abs(s - oldTopSystem);
-        if (d < best) { best = d; nearest = i; }
+        const newBands = withUntransformedSvg(outer, (svg) => measureSystemsPx(outer, svg)) ?? [];
+        if (newBands.length === 0) { return; }
+        bandsRef.current = newBands;
+
+        const prevStarts = pageStartsRef.current.slice();
+        const prevPage = pageIdxRef.current;
+        const oldTopSystem =
+          prevStarts.length
+            ? prevStarts[Math.max(0, Math.min(prevPage, prevStarts.length - 1))] ?? 0
+            : 0;
+
+        const newStarts = computePageStartIndices(newBands, getViewportH(outer));
+        pageStartsRef.current = newStarts;
+
+        if (resetToFirst) {
+          applyPage(0);
+          return;
+        }
+
+        let nearest = 0, best = Number.POSITIVE_INFINITY;
+        for (let i = 0; i < newStarts.length; i++) {
+          const s = newStarts[i];
+          if (s === undefined) continue;
+          const d = Math.abs(s - oldTopSystem);
+          if (d < best) { best = d; nearest = i; }
+        }
+        applyPage(nearest);
+      } finally {
+        if (showBusy) {
+          setBusy(false);
+          setBusyMsg(DEFAULT_BUSY);
+        }
       }
-      applyPage(nearest);
-    } finally {
-      setBusy(false);
-      setBusyMsg(DEFAULT_BUSY);
-    }
-  }, [applyZoom, applyPage, getViewportH]);
+    },
+    [applyZoom, applyPage, getViewportH]
+  );
 
   // WebGL purge
   function purgeWebGL(node: HTMLElement): void {
@@ -725,17 +733,36 @@ export default function ScoreOSMD({
           const heightChangedSinceHandled =
             handledHRef.current === -1 || Math.abs(currH - handledHRef.current) >= 1;
 
-          // Run the appropriate path, then update handled sizes
           (async () => {
             if (widthChangedSinceHandled) {
-              await reflowOnWidthChange(true);            // shows spinner
+              setBusyMsg(DEFAULT_BUSY);
+              setBusy(true);
+              await afterPaint();
+              await new Promise(r => setTimeout(r, 0));
+              try {
+                await reflowOnWidthChange(true /* resetToFirst */, false /* showBusy inside */);
+              } finally {
+                setBusy(false);
+                setBusyMsg(DEFAULT_BUSY);
+                handledWRef.current = currW;
+                handledHRef.current = currH;
+              }
             } else if (heightChangedSinceHandled) {
-              recomputePaginationHeightOnly(true, true);  // shows spinner
+              setBusyMsg(DEFAULT_BUSY);
+              setBusy(true);
+              await afterPaint();
+              await new Promise(r => setTimeout(r, 0));
+              try {
+                recomputePaginationHeightOnly(true /* resetToFirst */, false /* showBusy inside */);
+              } finally {
+                setBusy(false);
+                setBusyMsg(DEFAULT_BUSY);
+                handledWRef.current = currW;
+                handledHRef.current = currH;
+              }
             } else {
-              return; // nothing meaningful changed
+              return;
             }
-            handledWRef.current = currW;
-            handledHRef.current = currH;
           })();
         }, 200);
       });
@@ -965,14 +992,34 @@ export default function ScoreOSMD({
 
         (async () => {
           if (widthChangedSinceHandled) {
-            await reflowOnWidthChange(true);           // spinner + recompute + go to page 1
+            setBusyMsg(DEFAULT_BUSY);
+            setBusy(true);
+            await afterPaint();
+            await new Promise(r => setTimeout(r, 0));
+            try {
+              await reflowOnWidthChange(true /* resetToFirst */, false /* showBusy inside */);
+            } finally {
+              setBusy(false);
+              setBusyMsg(DEFAULT_BUSY);
+              handledWRef.current = currW;
+              handledHRef.current = currH;
+            }
           } else if (heightChangedSinceHandled) {
-            recomputePaginationHeightOnly(true, true); // spinner + recompute + go to page 1
+            setBusyMsg(DEFAULT_BUSY);
+            setBusy(true);
+            await afterPaint();
+            await new Promise(r => setTimeout(r, 0));
+            try {
+              recomputePaginationHeightOnly(true /* resetToFirst */, false /* showBusy inside */);
+            } finally {
+              setBusy(false);
+              setBusyMsg(DEFAULT_BUSY);
+              handledWRef.current = currW;
+              handledHRef.current = currH;
+            }
           } else {
             return;
           }
-          handledWRef.current = currW;
-          handledHRef.current = currH;
         })();
       }, 200);
     };
