@@ -223,7 +223,9 @@ function computePageStartIndices(bands: Band[], viewportH: number): number[] {
       const isFirstPage = starts.length === 0 && i === 0;
       const slack = isFirstPage && fuseTitle ? Math.max(12, Math.round(viewportH * 0.06)) : 0;
 
-      if (next.bottom - startTop <= viewportH + slack) {
+      /* if (next.bottom - startTop <= viewportH + slack) { */
+      const BOTTOM_GUARD = 16; // try 12–20
+      if (next.bottom - startTop <= viewportH - BOTTOM_GUARD + slack) {
         last++;
       } else {
         break;
@@ -323,22 +325,6 @@ export default function ScoreOSMD({
 
       const hVisible = getViewportH(outer);
 
-      const EXTRA_HIDE_PX = 14; // try 10; bump to 12–14 if a sliver still shows
-
-      const maskTopWithinMusicPx = (() => {
-        if (nextStartIndex < 0) { return hVisible };
-        const nextBand = bands[nextStartIndex];
-        if (!nextBand) { return hVisible };
-
-        const nextTopRel = nextBand.top - startBand.top;
-        const overlap = leakGuardPx() + EXTRA_HIDE_PX;
-
-        // Start mask a bit earlier (higher) to fully cover the next system.
-        const start = Math.max(0, Math.floor(nextTopRel - overlap));
-        return Math.min(hVisible, start);
-      })();
-
-      /*
       const maskTopWithinMusicPx = (() => {
         if (nextStartIndex < 0) {
           return hVisible;
@@ -351,7 +337,6 @@ export default function ScoreOSMD({
         const overlap = leakGuardPx();
         return Math.min(hVisible - 1, Math.max(0, Math.ceil(nextTopRel - overlap)));
       })();
-      */
      
       let mask = outer.querySelector<HTMLDivElement>("[data-osmd-mask='1']");
       if (!mask) {
