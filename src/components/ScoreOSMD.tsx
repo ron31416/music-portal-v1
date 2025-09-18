@@ -316,20 +316,37 @@ export default function ScoreOSMD({
 
       const hVisible = getViewportH(outer);
 
-      // Ensure a small white margin below the last system on the *last page*
-      const LAST_PAGE_BOTTOM_PAD_PX = 12; // try 10–14 if you want more/less space
-      if (nextStartIndex < 0) { // last page
-        const last = bands[bands.length - 1];
-        if (last) {
-          const relBottom = Math.ceil(last.bottom - startBand.top); // bottom within this page
-          const need = relBottom - (hVisible - LAST_PAGE_BOTTOM_PAD_PX);
-          if (need > 0) {
-            // push content up a bit so bottom has the desired pad
-            const newYSnap = ySnap + need;
-            svg.style.transform = `translateY(${-newYSnap + Math.max(0, topGutterPx)}px)`;
+
+      // --- last-page margin rule: push final system to a new page if too close ---
+      const LAST_PAGE_BOTTOM_PAD_PX = 12; // try 10–14
+
+      if (nextStartIndex < 0) { // we are on the last page
+        let cutIdx = -1;
+
+        for (let i = startIndex; i < bands.length; i++) {
+          const b = bands[i];
+          if (!b) continue;                        // TS guard: b is Band
+          const relBottom = b.bottom - startBand.top; // bottom within current page
+
+          if (relBottom > hVisible - LAST_PAGE_BOTTOM_PAD_PX) {
+            cutIdx = i;
+            break;
           }
         }
+
+        if (cutIdx !== -1 && cutIdx > startIndex) {
+          const freshStarts = starts.slice(0, clampedPage + 1);
+          if (freshStarts[freshStarts.length - 1] !== cutIdx) {
+            freshStarts.push(cutIdx);
+            pageStartsRef.current = freshStarts;
+          }
+          // Re-apply current page; now it ends before cutIdx, next page starts at cutIdx.
+          applyPage(clampedPage);
+          return;
+        }
+        // If cutIdx === startIndex, the single system is taller than the page; do nothing.
       }
+
 
       // ---- stale page-starts guard: recompute if last-included doesn't fit ----
       const SAFETY = 8; // small buffer
