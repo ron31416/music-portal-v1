@@ -665,7 +665,7 @@ export default function ScoreOSMD({
         osmdRef.current = null;
       }
     };
-  }, [applyZoom, applyPage, recomputePaginationHeightOnly, reflowOnWidthChange, src, getViewportH]);
+  }, [applyZoom, applyPage, recomputePaginationHeightOnly, reflowOnWidthChange, src, getViewportH, debugShowAllMeasureNumbers]);
 
   /** Paging helpers */
   const goNext = useCallback((): void => {
