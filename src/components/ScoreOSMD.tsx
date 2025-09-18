@@ -435,22 +435,23 @@ export default function ScoreOSMD({
       [getViewportH, topGutterPx]
     );
 
-    /** Recompute height-only pagination */
-    const recomputePaginationHeightOnly = useCallback((): void => {
-      const outer = wrapRef.current;
-      if (!outer) {
-        return;
-      }
 
-      const bands = bandsRef.current;
-      if (bands.length === 0) {
-        return;
-      }
+  const recomputePaginationHeightOnly = useCallback((resetToFirst: boolean = false): void => {
+    const outer = wrapRef.current;
+    if (!outer) { return; }
 
-      const starts = computePageStartIndices(bands, getViewportH(outer));
-      const oldStarts = pageStartsRef.current;
-      pageStartsRef.current = starts;
+    const bands = bandsRef.current;
+    if (bands.length === 0) { return; }
 
+    const starts = computePageStartIndices(bands, getViewportH(outer));
+    const oldStarts = pageStartsRef.current;
+    pageStartsRef.current = starts;
+
+    // Jump to page 1 if asked
+    if (resetToFirst) {
+      applyPage(0);
+      return;
+    }
 
     const oldPage = pageIdxRef.current;
     const oldStartIdx = oldStarts.length
@@ -461,25 +462,17 @@ export default function ScoreOSMD({
     let best = Number.POSITIVE_INFINITY;
     for (let i = 0; i < starts.length; i++) {
       const s = starts[i];
-      if (s === undefined) {
-        continue;
-      }
+      if (s === undefined) continue;
       const d = Math.abs(s - oldStartIdx);
-      if (d < best) {
-        best = d;
-        nearest = i;
-      }
+      if (d < best) { best = d; nearest = i; }
     }
     applyPage(nearest);
   }, [applyPage, getViewportH]);
 
-  /** Full reflow on width change (heavy) */
-  const reflowOnWidthChange = useCallback(async (): Promise<void> => {
+  const reflowOnWidthChange = useCallback(async (resetToFirst: boolean = false): Promise<void> => {
     const outer = wrapRef.current;
     const osmd = osmdRef.current;
-    if (!outer || !osmd) {
-      return;
-    }
+    if (!outer || !osmd) { return; }
 
     const oldStarts = pageStartsRef.current;
     const oldPage = pageIdxRef.current;
@@ -495,34 +488,34 @@ export default function ScoreOSMD({
     await afterPaint();
 
     const newBands = withUntransformedSvg(outer, (svg) => measureSystemsPx(outer, svg)) ?? [];
-    if (newBands.length === 0) {
-      setBusy(false);
-      setBusyMsg(DEFAULT_BUSY);
-      return;
-    }
+    if (newBands.length === 0) { setBusy(false); setBusyMsg(DEFAULT_BUSY); return; }
     bandsRef.current = newBands;
 
     const newStarts = computePageStartIndices(newBands, getViewportH(outer));
     pageStartsRef.current = newStarts;
 
+    // Jump to page 1 if asked
+    if (resetToFirst) {
+      applyPage(0);
+      setBusy(false);
+      setBusyMsg(DEFAULT_BUSY);
+      return;
+    }
+
     let nearest = 0;
     let best = Number.POSITIVE_INFINITY;
     for (let i = 0; i < newStarts.length; i++) {
       const s = newStarts[i];
-      if (s === undefined) {
-        continue;
-      }
+      if (s === undefined) { continue; }
       const d = Math.abs(s - oldTopSystem);
-      if (d < best) {
-        best = d;
-        nearest = i;
-      }
+      if (d < best) { best = d; nearest = i; }
     }
     applyPage(nearest);
 
     setBusy(false);
     setBusyMsg(DEFAULT_BUSY);
   }, [applyZoom, applyPage, getViewportH]);
+
 
   // WebGL purge
   function purgeWebGL(node: HTMLElement): void {
@@ -701,9 +694,9 @@ export default function ScoreOSMD({
         lastH = h;
 
         if (widthChanged) {
-          void reflowOnWidthChange();
+          void reflowOnWidthChange(true);        // reset to page 1 on width/zoom changes
         } else if (heightChanged) {
-          recomputePaginationHeightOnly();
+          recomputePaginationHeightOnly(true);   // reset to page 1 on height-only changes
         }
       });
       resizeObs.observe(outer);
@@ -881,7 +874,7 @@ export default function ScoreOSMD({
         cancelAnimationFrame(raf);
       }
       raf = requestAnimationFrame(() => {
-        recomputePaginationHeightOnly();
+        recomputePaginationHeightOnly(true);   // jump to first page on vv changes
       });
     };
     vv.addEventListener('resize', onChange);
