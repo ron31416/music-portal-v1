@@ -689,7 +689,7 @@ export default function ScoreOSMD({
   // Super-early mount probe (before OSMD init)
   useEffect(() => {
     const el = wrapRef.current;
-    if (!el) return;
+    if (!el) { return; }
 
     // breadcrumbs
     el.dataset.osmdProbeMounted = "true";
@@ -926,7 +926,6 @@ export default function ScoreOSMD({
 
       const outerNow = wrapRef.current;
 
-      // eslint-disable-next-line no-console
       console.error("[ScoreOSMD init crash]", err);
 
       if (outerNow) {
