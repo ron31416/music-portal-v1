@@ -326,7 +326,12 @@ export default function ScoreOSMD({
 
   /** Apply a page index */
   const applyPage = useCallback(
-    (pageIdx: number): void => {
+    (pageIdx: number, depth: number = 0): void => {
+      if (depth > 3) {           // hard stop if anything oscillates
+        // eslint-disable-next-line no-console
+        console.warn("[applyPage] bailout at depth>3");
+        return;
+      }
       const outer = wrapRef.current;
       if (!outer) {
         return;
@@ -365,21 +370,22 @@ export default function ScoreOSMD({
       const BOTTOM_PEEK_PAD = (window.devicePixelRatio || 1) >= 2 ? 6 : 5; // was 4/3
       const hVisible = Math.max(1, hVisibleRaw - BOTTOM_PEEK_PAD);
 
-      const arraysEqual = (a: number[], b: number[]) =>
-        a.length === b.length && a.every((v, i) => v === b[i]);
+      // NEW: unify all repagination to one height
+      const FILL_SLOP_PX = 8;                                 // keep your slop
+      const TOL = (window.devicePixelRatio || 1) >= 2 ? 2 : 1; // tiny tolerance
+      const PAGE_H = hVisible + FILL_SLOP_PX;                 // use this everywhere
 
       // If the top of the next system is already inside the window...
       if (nextStartIndex >= 0) {
         const nextBand = bands[nextStartIndex];
         if (nextBand) {
           const nextTopRel = nextBand.top - startBand.top;
-          const FILL_SLOP_PX = 8;
-          const TOL = (window.devicePixelRatio || 1) >= 2 ? 2 : 1;
 
           if (nextTopRel <= hVisible - TOL) {
-            const fresh = computePageStartIndices(bands, hVisible + FILL_SLOP_PX);
+            const fresh = computePageStartIndices(bands, PAGE_H); // ← unified height
             if (fresh.length) {
-              let lb = fresh.length - 1;                 // lower bound: first start >= startIndex
+              // lower bound: first start >= startIndex
+              let lb = fresh.length - 1;
               for (let i = 0; i < fresh.length; i++) {
                 const s = fresh[i] ?? 0;
                 if (s >= startIndex) { lb = i; break; }
@@ -392,7 +398,7 @@ export default function ScoreOSMD({
 
               if (!noChange) {
                 pageStartsRef.current = fresh;
-                applyPage(lb);
+                applyPage(lb, depth + 1); // ← pass recursion depth
                 return;
               }
             }
@@ -423,8 +429,7 @@ export default function ScoreOSMD({
             freshStarts.push(cutIdx);
             pageStartsRef.current = freshStarts;
           }
-          // Re-apply current page; now it ends before cutIdx, next page starts at cutIdx.
-          applyPage(clampedPage);
+          applyPage(clampedPage, depth + 1);                    // ← depth+1
           return;
         }
         // If cutIdx === startIndex, the single system is taller than the page; do nothing.
@@ -441,8 +446,7 @@ export default function ScoreOSMD({
       const lastBottomRel = assumedLast ? (assumedLast.bottom - startBand.top) : 0;
 
       if (assumedLast && lastBottomRel > hVisible - SAFETY) {
-        // Our breaks were computed for a taller viewport. Fix them now and re-apply.
-        const freshStarts = computePageStartIndices(bands, hVisible);
+        const freshStarts = computePageStartIndices(bands, PAGE_H); // ← PAGE_H
         if (freshStarts.length) {
           let nearest = 0, best = Number.POSITIVE_INFINITY;
           for (let i = 0; i < freshStarts.length; i++) {
@@ -450,13 +454,16 @@ export default function ScoreOSMD({
             const d = Math.abs(s - startIndex);
             if (d < best) { best = d; nearest = i; }
           }
-          const noChange = arraysEqual(freshStarts, starts) && nearest === clampedPage;
+          const noChange =
+            freshStarts.length === starts.length &&
+            freshStarts.every((v, i) => v === (starts[i] ?? -1)) &&
+            nearest === clampedPage;
+
           if (!noChange) {
             pageStartsRef.current = freshStarts;
-            applyPage(nearest);
+            applyPage(nearest, depth + 1);                     // ← depth+1
             return;
           }
-          // else: nothing changed—fall through without recursing
         }
       }
 
@@ -479,7 +486,7 @@ export default function ScoreOSMD({
         const high = Math.floor(nextTopRel) - PEEK_GUARD;
 
         if (low > high) {
-          const fresh = computePageStartIndices(bands, hVisible);
+          const fresh = computePageStartIndices(bands, PAGE_H); // ← PAGE_H
           if (fresh.length) {
             let nearest = 0, best = Number.POSITIVE_INFINITY;
             for (let i = 0; i < fresh.length; i++) {
@@ -494,7 +501,7 @@ export default function ScoreOSMD({
 
             if (!same) {
               pageStartsRef.current = fresh;
-              applyPage(nearest);
+              applyPage(nearest, depth + 1);                     // ← depth+1
               return hVisible;
             }
           }
