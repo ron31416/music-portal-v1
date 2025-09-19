@@ -303,6 +303,10 @@ export default function ScoreOSMD({
 
   const vpHRef = useVisibleViewportHeight();
 
+  // Unified pagination height everywhere we compute page starts
+  const FILL_SLOP_PX = 8; // keep your existing value
+  const getPAGE_H = (outer: HTMLDivElement) => pageHeight(outer) + FILL_SLOP_PX;
+
   const getViewportH = useCallback((outer: HTMLDivElement): number => {
     const v = vpHRef.current || 0;                              // visualViewport
     const outerH = outer.clientHeight || 0;                     // wrapper height
@@ -379,9 +383,8 @@ export default function ScoreOSMD({
       const hVisible = pageHeight(outer);
 
       // NEW: unify all repagination to one height
-      const FILL_SLOP_PX = 8;                                 // keep your slop
       const TOL = (window.devicePixelRatio || 1) >= 2 ? 2 : 1; // tiny tolerance
-      const PAGE_H = hVisible + FILL_SLOP_PX;                 // use this everywhere
+      const PAGE_H = getPAGE_H(outer);                         // unified height
 
       // If the top of the next system is already inside the window...
       if (nextStartIndex >= 0) {
@@ -445,7 +448,8 @@ export default function ScoreOSMD({
 
 
       // ---- stale page-starts guard: recompute if last-included doesn't fit ----
-      const SAFETY = 8; // small buffer
+
+      const SAFETY = (window.devicePixelRatio || 1) >= 2 ? 12 : 10;  // roughly MASK_BOTTOM_SAFETY_PX + (PEEK_GUARD - 2), avoids edge-shave on Hi-DPR
       const assumedLastIdx = (clampedPage + 1 < starts.length)
         ? Math.max(startIndex, (starts[clampedPage + 1] ?? startIndex) - 1)
         : Math.max(startIndex, bands.length - 1);
@@ -621,7 +625,7 @@ export default function ScoreOSMD({
         setBusy(true);
       }
 
-      const H = pageHeight(outer);
+      const H = getPAGE_H(outer);
       const starts = computePageStartIndices(bands, H);
       const oldStarts = pageStartsRef.current;
 
@@ -674,7 +678,7 @@ export default function ScoreOSMD({
         setBusyMsg(DEFAULT_BUSY);
       }
     }
-  }, [applyPage, getViewportH]);
+  }, [applyPage, pageHeight]); // it now calls getPAGE_H which depends on pageHeight
 
   const reflowOnWidthChange = useCallback(
     async (resetToFirst: boolean = false, showBusy: boolean = false): Promise<void> => {
@@ -708,7 +712,7 @@ export default function ScoreOSMD({
             ? prevStarts[Math.max(0, Math.min(prevPage, prevStarts.length - 1))] ?? 0
             : 0;
 
-        const newStarts = computePageStartIndices(newBands, pageHeight(outer));
+        const newStarts = computePageStartIndices(newBands, getPAGE_H(outer));
         pageStartsRef.current = newStarts;
 
         if (resetToFirst) {
@@ -991,7 +995,7 @@ export default function ScoreOSMD({
       outer.dataset.osmdSvg = String(!!getSvg(outer));
       outer.dataset.osmdBands = String(bands.length);
 
-      pageStartsRef.current = computePageStartIndices(bands, pageHeight(outer));
+      pageStartsRef.current = computePageStartIndices(bands, getPAGE_H(outer));
       outer.dataset.osmdPages = String(pageStartsRef.current.length);
 
       pageIdxRef.current = 0;
@@ -1116,7 +1120,7 @@ export default function ScoreOSMD({
       const outer = wrapRef.current;
       if (!outer) { return; }
 
-      const fresh = computePageStartIndices(bandsRef.current, pageHeight(outer));
+      const fresh = computePageStartIndices(bandsRef.current, getPAGE_H(outer));
       if (!fresh.length) { return; }
 
       pageStartsRef.current = fresh;
