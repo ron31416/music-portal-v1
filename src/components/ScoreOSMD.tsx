@@ -763,7 +763,7 @@ export default function ScoreOSMD({
   useEffect(() => {
     const outer = wrapRef.current;
     const osmd  = osmdRef.current;
-    if (!outer || !osmd) return;
+    if (!outer || !osmd) { return; }
 
     // Reuse our existing pipeline; show spinner briefly
     reflowOnWidthChange(false /* keep current page if possible */, true /* showBusy */);
