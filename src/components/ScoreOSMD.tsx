@@ -315,10 +315,6 @@ export default function ScoreOSMD({
 
   const vpHRef = useVisibleViewportHeight();
 
-  // Unified pagination height everywhere we compute page starts
-  const FILL_SLOP_PX = 8; // keep your existing value
-  const getPAGE_H = (outer: HTMLDivElement) => pageHeight(outer) + FILL_SLOP_PX;
-
   const getViewportH = useCallback((outer: HTMLDivElement): number => {
     const v = vpHRef.current || 0;                              // visualViewport
     const outerH = outer.clientHeight || 0;                     // wrapper height
@@ -339,6 +335,13 @@ export default function ScoreOSMD({
   const pageHeight = useCallback(
     (outer: HTMLDivElement) => Math.max(1, getViewportH(outer) - bottomPeekPad()),
     [getViewportH, bottomPeekPad]
+  );
+
+  // --- Unify pagination height (memoized so identity is stable) ---
+  const FILL_SLOP_PX = 8; // keep your existing slop
+  const getPAGE_H = React.useCallback(
+    (outer: HTMLDivElement) => pageHeight(outer) + FILL_SLOP_PX,
+    [pageHeight]
   );
 
   /** Ensure OSMD zoom is applied before every render */
@@ -1108,8 +1111,10 @@ export default function ScoreOSMD({
         osmdRef.current = null;
       }
     };
-  }, [applyZoom, applyPage, recomputePaginationHeightOnly, reflowOnWidthChange,
-          src, getViewportH, pageHeight, getPAGE_H, debugShowAllMeasureNumbers]
+    // Intentionally only re-init when the score source or measure-number mode changes.
+    // Width/height changes are handled by ResizeObserver + visualViewport effects.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [src, debugShowAllMeasureNumbers]
 );
 
 
