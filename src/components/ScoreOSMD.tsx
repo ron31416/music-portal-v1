@@ -320,6 +320,14 @@ export default function ScoreOSMD({
   const reflowAgainRef = useRef<"none" | "width" | "height">("none");
   const repagRunningRef = useRef(false);    // guards height-only repagination
 
+  // ---- callback ref proxies (used by queued setTimeouts) ----
+  const reflowFnRef = useRef<
+    (resetToFirst?: boolean, showBusy?: boolean) => void | Promise<void>
+  >(() => {});
+  const repagFnRef = useRef<
+    (resetToFirst?: boolean, showBusy?: boolean) => void
+  >(() => {});
+  
   const vpHRef = useVisibleViewportHeight();
 
   const getViewportH = useCallback((outer: HTMLDivElement): number => {
@@ -639,9 +647,9 @@ export default function ScoreOSMD({
   const recomputePaginationHeightOnly = useCallback(
     (resetToFirst: boolean = false, showBusy: boolean = false): void => {
       const outer = wrapRef.current;
-      if (!outer) return;
+      if (!outer) { return; }
 
-      if (repagRunningRef.current) return;   // prevent overlap
+      if (repagRunningRef.current) { return; }   // prevent overlap
       repagRunningRef.current = true;
 
       outer.dataset.osmdRecompute = String(Date.now());
@@ -677,7 +685,7 @@ export default function ScoreOSMD({
 
         let nearest = 0, best = Number.POSITIVE_INFINITY;
         for (let i = 0; i < starts.length; i++) {
-          const s = starts[i]; if (s === undefined) continue;
+          const s = starts[i]; if (s === undefined) { continue; }
           const d = Math.abs(s - oldStartIdx);
           if (d < best) { best = d; nearest = i; }
         }
@@ -689,9 +697,8 @@ export default function ScoreOSMD({
         }
         // if a width change arrived while we were repaginating, honor it once
         if (reflowAgainRef.current === "width") {
-          const queued = reflowAgainRef.current;
           reflowAgainRef.current = "none";
-          setTimeout(() => { reflowOnWidthChange(true, true); }, 0);
+          setTimeout(() => { reflowFnRef.current(true, true); }, 0);
         }
         repagRunningRef.current = false;     // <- release the guard
       }
@@ -699,14 +706,19 @@ export default function ScoreOSMD({
     [applyPage, getPAGE_H]
   );
 
+  // keep ref pointing to latest repagination callback
+  useEffect(() => {
+    repagFnRef.current = recomputePaginationHeightOnly;
+  }, [recomputePaginationHeightOnly]);
+
   const reflowOnWidthChange = useCallback(
     async (resetToFirst: boolean = false, showBusy: boolean = false): Promise<void> => {
       const outer = wrapRef.current;
       const osmd  = osmdRef.current;
-      if (!outer || !osmd) return;
+      if (!outer || !osmd) { return; }
 
       // don’t start another while one is running
-      if (reflowRunningRef.current) return;
+      if (reflowRunningRef.current) { return; }
       reflowRunningRef.current = true;
 
       // If caller didn’t request spinner and we’re already busy somewhere else, skip.
@@ -726,7 +738,7 @@ export default function ScoreOSMD({
 
         // Re-measure bands without any SVG transform applied
         const newBands = withUntransformedSvg(outer, (svg) => measureSystemsPx(outer, svg)) ?? [];
-        if (newBands.length === 0) return;
+        if (newBands.length === 0) { return; }
 
         // Save current reading position BEFORE replacing starts
         const prevStarts = pageStartsRef.current.slice();
@@ -756,7 +768,7 @@ export default function ScoreOSMD({
         let nearest = 0, best = Number.POSITIVE_INFINITY;
         for (let i = 0; i < newStarts.length; i++) {
           const s = newStarts[i];
-          if (s === undefined) continue;
+          if (s === undefined) { continue; }
           const d = Math.abs(s - oldTopIdx);
           if (d < best) { best = d; nearest = i; }
         }
@@ -774,14 +786,19 @@ export default function ScoreOSMD({
         const queued = reflowAgainRef.current;
         reflowAgainRef.current = "none";
         if (queued === "width") {
-          setTimeout(() => { reflowOnWidthChange(true, true); }, 0);
+          setTimeout(() => { reflowFnRef.current(true, true); }, 0);
         } else if (queued === "height") {
-          setTimeout(() => { recomputePaginationHeightOnly(true, false); }, 0);
+          setTimeout(() => { repagFnRef.current(true, false); }, 0);
         }
       }
     },
     [applyZoom, applyPage, getPAGE_H]
   );
+
+  // keep ref pointing to latest width-reflow callback
+  useEffect(() => {
+    reflowFnRef.current = reflowOnWidthChange;
+  }, [reflowOnWidthChange]);
 
   // WebGL purge
   function purgeWebGL(node: HTMLElement): void {
@@ -1133,8 +1150,8 @@ export default function ScoreOSMD({
 
     return () => {
       if (resizeObs) {
-        if (cleanupOuter) resizeObs.unobserve(cleanupOuter);
-        if (cleanupHost)  resizeObs.unobserve(cleanupHost); 
+        if (cleanupOuter) { resizeObs.unobserve(cleanupOuter); }
+        if (cleanupHost)  { resizeObs.unobserve(cleanupHost); }
         resizeObs.disconnect();                               // optional, but tidy
       }
       if (resizeTimerRef.current) {
