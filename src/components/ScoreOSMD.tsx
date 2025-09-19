@@ -244,7 +244,7 @@ function computePageStartIndices(bands: Band[], viewportH: number): number[] {
 
     while (last + 1 < bands.length) {
       const next = bands[last + 1];
-      if (!next) break;
+      if (!next) { break; }
 
       const isFirstPage = starts.length === 0 && i === 0;
       const slack = isFirstPage && fuseTitle
@@ -497,29 +497,24 @@ export default function ScoreOSMD({
 
       const maskTopWithinMusicPx = (() => {
         // Last page → never mask; show full height
-        if (nextStartIndex < 0) return hVisible;
+        if (nextStartIndex < 0) { return hVisible; }
 
         const lastIncludedIdx = Math.max(startIndex, nextStartIndex - 1);
         const lastBand = bands[lastIncludedIdx];
         const nextBand = bands[nextStartIndex];
-        if (!lastBand || !nextBand) return hVisible;
+        if (!lastBand || !nextBand) { return hVisible; }
 
         const relBottom  = lastBand.bottom - startBand.top;
         const nextTopRel = nextBand.top    - startBand.top;
 
         // If nothing from the next page peeks into the viewport, don't mask at all.
-        // Let the music run right down to the edge (except the bottom pad).
-        if (nextTopRel >= hVisible - PEEK_GUARD - 1) {
-          return hVisible;
-        }
+        if (nextTopRel >= hVisible - PEEK_GUARD - 1) { return hVisible; }
 
-        // Otherwise, we need to hide the peeking next system.
-        // Nudge up slightly so ornaments (pedals/hairpins) that hang below band.bottom aren't shaved.
+        // Otherwise, hide just the peeking sliver.
         const nudge = (window.devicePixelRatio || 1) >= 2 ? 3 : 2;
         const low  = Math.ceil(relBottom) + MASK_BOTTOM_SAFETY_PX - nudge;
         const high = Math.floor(nextTopRel) - PEEK_GUARD;
 
-        // If our current page packing is stale/tight, recompute starts, then retry.
         if (low > high) {
           const fresh = computePageStartIndices(bands, PAGE_H);
           if (fresh.length) {
@@ -541,8 +536,6 @@ export default function ScoreOSMD({
           }
         }
 
-        // Mask only the sliver that actually belongs to the next page.
-        // Do NOT force an extra bottom gap when no peek occurs.
         const m = Math.min(hVisible, Math.max(0, Math.max(low, Math.min(high, hVisible))));
         return Math.floor(m);
       })();
@@ -629,7 +622,7 @@ export default function ScoreOSMD({
         topCutter.style.height = `${Math.max(0, topGutterPx)}px`;
       }
     },
-    [pageHeight, topGutterPx]
+    [pageHeight, topGutterPx, bottomPeekPad, getPAGE_H]
   );
 
 
@@ -701,7 +694,7 @@ export default function ScoreOSMD({
         setBusyMsg(DEFAULT_BUSY);
       }
     }
-  }, [applyPage, pageHeight]); // it now calls getPAGE_H which depends on pageHeight
+  }, [applyPage, getPAGE_H]); // it now calls getPAGE_H which depends on pageHeight
 
   const reflowOnWidthChange = useCallback(
     async (resetToFirst: boolean = false, showBusy: boolean = false): Promise<void> => {
@@ -1115,7 +1108,9 @@ export default function ScoreOSMD({
         osmdRef.current = null;
       }
     };
-  }, [applyZoom, applyPage, recomputePaginationHeightOnly, reflowOnWidthChange, src, getViewportH, pageHeight, debugShowAllMeasureNumbers]);
+  }, [applyZoom, applyPage, recomputePaginationHeightOnly, reflowOnWidthChange,
+          src, getViewportH, pageHeight, getPAGE_H, debugShowAllMeasureNumbers]
+);
 
 
   /** Paging helpers */
@@ -1161,7 +1156,8 @@ export default function ScoreOSMD({
 
       if (idx !== beforePage) { applyPage(idx); }
     });
-  }, [applyPage, busy, getViewportH]);
+  }, [applyPage, busy, getPAGE_H]
+);
 
   const goNext = useCallback(() => tryAdvance(1),  [tryAdvance]);
   const goPrev = useCallback(() => tryAdvance(-1), [tryAdvance]);
