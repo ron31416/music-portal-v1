@@ -361,7 +361,9 @@ export default function ScoreOSMD({
 
       const nextStartIndex = clampedPage + 1 < starts.length ? (starts[clampedPage + 1] ?? -1) : -1;
 
-      const hVisible = getViewportH(outer);
+      const hVisibleRaw = getViewportH(outer);
+      const BOTTOM_PEEK_PAD = (window.devicePixelRatio || 1) >= 2 ? 4 : 3; // 3–4 px
+      const hVisible = Math.max(1, hVisibleRaw - BOTTOM_PEEK_PAD); // use this hVisible below
 
       const arraysEqual = (a: number[], b: number[]) =>
         a.length === b.length && a.every((v, i) => v === b[i]);
@@ -453,32 +455,28 @@ export default function ScoreOSMD({
         }
       }
 
-      const MASK_BOTTOM_SAFETY_PX = 14; // was 12
-      const DPR = Math.max(1, Math.round(window.devicePixelRatio || 1));
-      const PEEK_GUARD = DPR >= 2 ? 3 : 2; // was 1
+      const MASK_BOTTOM_SAFETY_PX = 12;
+      const PEEK_GUARD = (window.devicePixelRatio || 1) >= 2 ? 3 : 2;
 
       const maskTopWithinMusicPx = (() => {
-        if (nextStartIndex < 0) { return hVisible; }
+        if (nextStartIndex < 0) { return hVisible; } // hVisible already includes bottom pad
 
         const lastIncludedIdx = Math.max(startIndex, nextStartIndex - 1);
         const lastBand = bands[lastIncludedIdx];
         const nextBand = bands[nextStartIndex];
         if (!lastBand || !nextBand) { return hVisible; }
 
-        const relBottom  = lastBand.bottom - startBand.top; // bottom of last included (relative)
-        const nextTopRel = nextBand.top    - startBand.top; // top of next (relative)
+        const relBottom  = lastBand.bottom - startBand.top;
+        const nextTopRel = nextBand.top    - startBand.top;
 
-        // Start mask after last included *and* at least a few px below next system's top.
-        const start = Math.min(
-          hVisible - 2,
+        return Math.min(
+          hVisible - 1,
           Math.max(
             0,
             Math.ceil(relBottom)  + MASK_BOTTOM_SAFETY_PX,
             Math.ceil(nextTopRel) + PEEK_GUARD
           )
         );
-
-        return start;
       })();
 
 
@@ -527,6 +525,25 @@ export default function ScoreOSMD({
         outer.appendChild(mask);
       }
       mask.style.top = `${Math.max(0, topGutterPx) + maskTopWithinMusicPx}px`;
+
+      let bottomCutter = outer.querySelector<HTMLDivElement>("[data-osmd-bottomcutter='1']");
+      if (!bottomCutter) {
+        bottomCutter = document.createElement("div");
+        bottomCutter.dataset.osmdBottomcutter = "1";
+        Object.assign(bottomCutter.style, {
+          position: "absolute",
+          left: "0",
+          right: "0",
+          bottom: "0",
+          height: `${BOTTOM_PEEK_PAD}px`,
+          background: "#fff",
+          pointerEvents: "none",
+          zIndex: "6",
+        } as CSSStyleDeclaration);
+        outer.appendChild(bottomCutter);
+      } else {
+        bottomCutter.style.height = `${BOTTOM_PEEK_PAD}px`;
+      }
 
       let topCutter = outer.querySelector<HTMLDivElement>("[data-osmd-topcutter='1']");
       if (!topCutter) {
@@ -726,6 +743,31 @@ export default function ScoreOSMD({
 
     return () => { tag.remove(); };
   }, []);
+
+  // Re-render OSMD when the zoom prop changes
+  useEffect(() => {
+    if (!readyRef.current) { return; }
+
+    // Use the variant that shows the spinner so busyRef won't block us
+    reflowOnWidthChange(false /* keep nearest page */, true /* showBusy */);
+
+    // Refresh the "handled" dimensions snapshot
+    const outer = wrapRef.current;
+    if (outer) {
+      handledWRef.current = outer.clientWidth;
+      handledHRef.current = outer.clientHeight;
+    }
+  }, [initialZoom, reflowOnWidthChange]);
+
+  // Re-render OSMD whenever the zoom prop changes
+  useEffect(() => {
+    const outer = wrapRef.current;
+    const osmd  = osmdRef.current;
+    if (!outer || !osmd) return;
+
+    // Reuse our existing pipeline; show spinner briefly
+    reflowOnWidthChange(false /* keep current page if possible */, true /* showBusy */);
+  }, [initialZoom, reflowOnWidthChange]);
 
 
   /** Init OSMD */
