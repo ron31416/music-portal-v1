@@ -374,8 +374,10 @@ export default function ScoreOSMD({
         const nextBand = bands[nextStartIndex];
         if (nextBand) {
           const nextTopRel = nextBand.top - startBand.top;
-          const FILL_SLOP_PX = 8; // small cushion to pack another system if it fits
-          if (nextTopRel < hVisible - 1) {
+          const FILL_SLOP_PX = 8; // keep: lets us pack one more system when it truly fits
+          const TOL = (window.devicePixelRatio || 1) >= 2 ? 2 : 1; // tiny slack for hi-DPR
+
+          if (nextTopRel <= hVisible - TOL) {  // <-- was "< hVisible - 1"
             const fresh = computePageStartIndices(bands, hVisible + FILL_SLOP_PX);
             if (fresh.length) {
               let nearest = 0, best = Number.POSITIVE_INFINITY;
@@ -384,13 +386,16 @@ export default function ScoreOSMD({
                 const d = Math.abs(s - startIndex);
                 if (d < best) { best = d; nearest = i; }
               }
-              const noChange = arraysEqual(fresh, starts) && nearest === clampedPage;
+              const noChange =
+                fresh.length === starts.length &&
+                fresh.every((v, i) => v === (starts[i] ?? -1)) &&
+                nearest === clampedPage;
+
               if (!noChange) {
                 pageStartsRef.current = fresh;
                 applyPage(nearest);
                 return;
               }
-              // else: nothing changed—fall through without recursing
             }
           }
         }
@@ -458,13 +463,10 @@ export default function ScoreOSMD({
 
       // ---- masking: hide anything that belongs to the next page ----
       const MASK_BOTTOM_SAFETY_PX = 12;
-      const PEEK_GUARD_BASE = (window.devicePixelRatio || 1) >= 2 ? 4 : 3;
-      const DPR = window.devicePixelRatio || 1;
-      const EPS = DPR >= 2 ? 2 : 1; // small nudge for rounding / sub-pixel
+      const PEEK_GUARD = (window.devicePixelRatio || 1) >= 2 ? 4 : 3;
 
       const maskTopWithinMusicPx = (() => {
-        // last page: nothing to mask except bottom pad
-        if (nextStartIndex < 0) { return hVisible; }
+        if (nextStartIndex < 0) { return hVisible; } // last page
 
         const lastIncludedIdx = Math.max(startIndex, nextStartIndex - 1);
         const lastBand = bands[lastIncludedIdx];
@@ -474,17 +476,38 @@ export default function ScoreOSMD({
         const relBottom  = lastBand.bottom - startBand.top; // bottom of last included
         const nextTopRel = nextBand.top    - startBand.top; // top of first excluded
 
-        // Two candidates:
-        const cFromBottom = Math.ceil(relBottom)  + MASK_BOTTOM_SAFETY_PX;
-        const cFromNext   = Math.floor(nextTopRel) - (PEEK_GUARD_BASE + EPS);
+        // Desired clamp range for the mask start:
+        const low  = Math.ceil(relBottom)  + MASK_BOTTOM_SAFETY_PX; // never cut the included system
+        const high = Math.floor(nextTopRel) - PEEK_GUARD;           // never reveal the next system
 
-        // If the boxes overlap (or are extremely close), prefer hiding the next system.
-        // Otherwise, keep a little margin after the last included system.
-        const overlap = cFromBottom >= cFromNext - EPS;
-        const chosen  = overlap ? cFromNext : cFromBottom;
+        // If there is no safe gap at all, repaginate *now* and re-apply:
+        if (low > high) {
+          const fresh = computePageStartIndices(bands, hVisible);
+          if (fresh.length) {
+            // pick the page whose start index is nearest to our current startIndex
+            let nearest = 0, best = Number.POSITIVE_INFINITY;
+            for (let i = 0; i < fresh.length; i++) {
+              const s = fresh[i] ?? 0;
+              const d = Math.abs(s - startIndex);
+              if (d < best) { best = d; nearest = i; }
+            }
+            // Only jump if something actually changed to avoid loops
+            const same =
+              fresh.length === starts.length &&
+              fresh.every((v, i) => v === (starts[i] ?? -1)) &&
+              nearest === clampedPage;
 
-        // Clamp inside the visible window and never negative.
-        return Math.min(hVisible - 1, Math.max(0, chosen));
+            if (!same) {
+              pageStartsRef.current = fresh;
+              applyPage(nearest);
+              return hVisible; // value unused (we return early via applyPage)
+            }
+          }
+        }
+
+        // Otherwise clamp within the safe interval, then within [0, hVisible-1]
+        const clamped = Math.min(high, Math.max(low, 0));
+        return Math.min(hVisible - 1, Math.max(0, clamped));
       })();
 
 
