@@ -375,7 +375,6 @@ export default function ScoreOSMD({
 
       const nextStartIndex = clampedPage + 1 < starts.length ? (starts[clampedPage + 1] ?? -1) : -1;
 
-      const hVisibleRaw = getViewportH(outer);
       const BOTTOM_PEEK_PAD = bottomPeekPad();
       const hVisible = pageHeight(outer);
 
@@ -603,7 +602,7 @@ export default function ScoreOSMD({
         topCutter.style.height = `${Math.max(0, topGutterPx)}px`;
       }
     },
-    [getViewportH, topGutterPx]
+    [pageHeight, topGutterPx]
   );
 
 
@@ -1089,7 +1088,7 @@ export default function ScoreOSMD({
         osmdRef.current = null;
       }
     };
-  }, [applyZoom, applyPage, recomputePaginationHeightOnly, reflowOnWidthChange, src, getViewportH, debugShowAllMeasureNumbers]);
+  }, [applyZoom, applyPage, recomputePaginationHeightOnly, reflowOnWidthChange, src, getViewportH, pageHeight, debugShowAllMeasureNumbers]);
 
 
   /** Paging helpers */
@@ -1117,7 +1116,7 @@ export default function ScoreOSMD({
       const outer = wrapRef.current;
       if (!outer) { return; }
 
-      const fresh = computePageStartIndices(bandsRef.current, getViewportH(outer));
+      const fresh = computePageStartIndices(bandsRef.current, pageHeight(outer));
       if (!fresh.length) { return; }
 
       pageStartsRef.current = fresh;
