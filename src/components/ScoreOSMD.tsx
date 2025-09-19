@@ -362,8 +362,8 @@ export default function ScoreOSMD({
       const nextStartIndex = clampedPage + 1 < starts.length ? (starts[clampedPage + 1] ?? -1) : -1;
 
       const hVisibleRaw = getViewportH(outer);
-      const BOTTOM_PEEK_PAD = (window.devicePixelRatio || 1) >= 2 ? 4 : 3; // 3–4 px
-      const hVisible = Math.max(1, hVisibleRaw - BOTTOM_PEEK_PAD); // use this hVisible below
+      const BOTTOM_PEEK_PAD = (window.devicePixelRatio || 1) >= 2 ? 6 : 5; // was 4/3
+      const hVisible = Math.max(1, hVisibleRaw - BOTTOM_PEEK_PAD);
 
       const arraysEqual = (a: number[], b: number[]) =>
         a.length === b.length && a.every((v, i) => v === b[i]);
@@ -463,35 +463,31 @@ export default function ScoreOSMD({
 
       // ---- masking: hide anything that belongs to the next page ----
       const MASK_BOTTOM_SAFETY_PX = 12;
-      const PEEK_GUARD = (window.devicePixelRatio || 1) >= 2 ? 4 : 3;
+      const PEEK_GUARD = (window.devicePixelRatio || 1) >= 2 ? 7 : 5; // was 4/3
 
       const maskTopWithinMusicPx = (() => {
-        if (nextStartIndex < 0) { return hVisible; } // last page
+        if (nextStartIndex < 0) { return hVisible; }
 
         const lastIncludedIdx = Math.max(startIndex, nextStartIndex - 1);
         const lastBand = bands[lastIncludedIdx];
         const nextBand = bands[nextStartIndex];
         if (!lastBand || !nextBand) { return hVisible; }
 
-        const relBottom  = lastBand.bottom - startBand.top; // bottom of last included
-        const nextTopRel = nextBand.top    - startBand.top; // top of first excluded
+        const relBottom  = lastBand.bottom - startBand.top;
+        const nextTopRel = nextBand.top    - startBand.top;
 
-        // Desired clamp range for the mask start:
-        const low  = Math.ceil(relBottom)  + MASK_BOTTOM_SAFETY_PX; // never cut the included system
-        const high = Math.floor(nextTopRel) - PEEK_GUARD;           // never reveal the next system
+        const low  = Math.ceil(relBottom)  + MASK_BOTTOM_SAFETY_PX;
+        const high = Math.floor(nextTopRel) - PEEK_GUARD;
 
-        // If there is no safe gap at all, repaginate *now* and re-apply:
         if (low > high) {
           const fresh = computePageStartIndices(bands, hVisible);
           if (fresh.length) {
-            // pick the page whose start index is nearest to our current startIndex
             let nearest = 0, best = Number.POSITIVE_INFINITY;
             for (let i = 0; i < fresh.length; i++) {
               const s = fresh[i] ?? 0;
               const d = Math.abs(s - startIndex);
               if (d < best) { best = d; nearest = i; }
             }
-            // Only jump if something actually changed to avoid loops
             const same =
               fresh.length === starts.length &&
               fresh.every((v, i) => v === (starts[i] ?? -1)) &&
@@ -500,13 +496,13 @@ export default function ScoreOSMD({
             if (!same) {
               pageStartsRef.current = fresh;
               applyPage(nearest);
-              return hVisible; // value unused (we return early via applyPage)
+              return hVisible;
             }
           }
         }
 
-        // Otherwise clamp within the safe interval, then within [0, hVisible-1]
-        const clamped = Math.min(high, Math.max(low, 0));
+        // ensure we always leave at least PEEK_GUARD px clear at the bottom
+        const clamped = Math.max(low, Math.min(high, hVisible - PEEK_GUARD));
         return Math.min(hVisible - 1, Math.max(0, clamped));
       })();
 
