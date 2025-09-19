@@ -244,11 +244,23 @@ function computePageStartIndices(bands: Band[], viewportH: number): number[] {
 
     while (last + 1 < bands.length) {
       const next = bands[last + 1];
-      if (!next) {
-        break;
-      }
+      if (!next) break;
+
       const isFirstPage = starts.length === 0 && i === 0;
-      const slack = isFirstPage && fuseTitle ? Math.max(12, Math.round(viewportH * 0.06)) : 0;
+      const slack = isFirstPage && fuseTitle
+        ? Math.max(12, Math.round(viewportH * 0.06))
+        : 0;
+
+      // Optional tweak: on first page, try to fit title + two full systems
+      if (isFirstPage) {
+        const systemsToTry = 2;        // title + 2 systems
+        const endIdx = i + systemsToTry;
+        const endBand = bands[endIdx];
+        if (endBand && (endBand.bottom - startTop) <= (viewportH + slack)) {
+          last = endIdx;
+          continue; // keep scanning from the new 'last'
+        }
+      }
 
       if (next.bottom - startTop <= viewportH + slack) {
         last++;
@@ -484,21 +496,32 @@ export default function ScoreOSMD({
       const PEEK_GUARD = (window.devicePixelRatio || 1) >= 2 ? 7 : 5; // was 4/3
 
       const maskTopWithinMusicPx = (() => {
-        if (nextStartIndex < 0) { return hVisible; }
+        // Last page → never mask; show full height
+        if (nextStartIndex < 0) return hVisible;
 
         const lastIncludedIdx = Math.max(startIndex, nextStartIndex - 1);
         const lastBand = bands[lastIncludedIdx];
         const nextBand = bands[nextStartIndex];
-        if (!lastBand || !nextBand) { return hVisible; }
+        if (!lastBand || !nextBand) return hVisible;
 
         const relBottom  = lastBand.bottom - startBand.top;
         const nextTopRel = nextBand.top    - startBand.top;
 
-        const low  = Math.ceil(relBottom)  + MASK_BOTTOM_SAFETY_PX;
+        // If nothing from the next page peeks into the viewport, don't mask at all.
+        // Let the music run right down to the edge (except the bottom pad).
+        if (nextTopRel >= hVisible - PEEK_GUARD - 1) {
+          return hVisible;
+        }
+
+        // Otherwise, we need to hide the peeking next system.
+        // Nudge up slightly so ornaments (pedals/hairpins) that hang below band.bottom aren't shaved.
+        const nudge = (window.devicePixelRatio || 1) >= 2 ? 3 : 2;
+        const low  = Math.ceil(relBottom) + MASK_BOTTOM_SAFETY_PX - nudge;
         const high = Math.floor(nextTopRel) - PEEK_GUARD;
 
+        // If our current page packing is stale/tight, recompute starts, then retry.
         if (low > high) {
-          const fresh = computePageStartIndices(bands, PAGE_H); // ← PAGE_H
+          const fresh = computePageStartIndices(bands, PAGE_H);
           if (fresh.length) {
             let nearest = 0, best = Number.POSITIVE_INFINITY;
             for (let i = 0; i < fresh.length; i++) {
@@ -510,18 +533,18 @@ export default function ScoreOSMD({
               fresh.length === starts.length &&
               fresh.every((v, i) => v === (starts[i] ?? -1)) &&
               nearest === clampedPage;
-
             if (!same) {
               pageStartsRef.current = fresh;
-              applyPage(nearest, depth + 1);                     // ← depth+1
+              applyPage(nearest, depth + 1);
               return hVisible;
             }
           }
         }
 
-        // ensure we always leave at least PEEK_GUARD px clear at the bottom
-        const clamped = Math.max(low, Math.min(high, hVisible - PEEK_GUARD));
-        return Math.min(hVisible - 1, Math.max(0, clamped));
+        // Mask only the sliver that actually belongs to the next page.
+        // Do NOT force an extra bottom gap when no peek occurs.
+        const m = Math.min(hVisible, Math.max(0, Math.max(low, Math.min(high, hVisible))));
+        return Math.floor(m);
       })();
 
 
