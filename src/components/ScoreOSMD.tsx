@@ -1077,30 +1077,41 @@ export default function ScoreOSMD({
 
 
   /** Paging helpers */
-  const goNext = useCallback((): void => {
-    if (busy) {
-      return;
-    }
+  // --- Stuck-page guard: if applyPage() didn't move us, repaginate once and retry ---
+  const tryAdvance = useCallback((dir: 1 | -1) => {
+    if (busy) { return; }
+
     const pages = pageStartsRef.current.length;
-    if (!pages) {
-      return;
-    }
-    const next = Math.min(pageIdxRef.current + 1, pages - 1);
-    if (next !== pageIdxRef.current) {
-      applyPage(next);
-    }
-  }, [applyPage, busy]);
+    if (!pages) { return; }
 
-  const goPrev = useCallback((): void => {
-    if (busy) {
-      return;
-    }
-    const prev = Math.max(pageIdxRef.current - 1, 0);
-    if (prev !== pageIdxRef.current) {
-      applyPage(prev);
-    }
-  }, [applyPage, busy]);
+    const before = pageIdxRef.current;
+    const target = Math.max(0, Math.min(before + dir, pages - 1));
+    if (target === before) { return; }
 
+    applyPage(target);
+
+    // If we didn't actually move, rebuild page starts for current viewport and retry once.
+    requestAnimationFrame(() => {
+      if (pageIdxRef.current !== before) { return; }
+
+      const outer = wrapRef.current;
+      if (!outer) { return; }
+
+      const fresh = computePageStartIndices(bandsRef.current, getViewportH(outer));
+      if (fresh.length) {
+        pageStartsRef.current = fresh;
+        const retry = Math.max(0, Math.min(before + dir, fresh.length - 1));
+        if (retry !== before) {
+          applyPage(retry);
+        }
+      }
+    });
+  }, [applyPage, busy, getViewportH]);
+
+  const goNext = useCallback(() => tryAdvance(1),  [tryAdvance]);
+  const goPrev = useCallback(() => tryAdvance(-1), [tryAdvance]);
+
+  
   // Wheel & keyboard paging (disabled while busy)
   useEffect(() => {
     const onWheel = (e: WheelEvent) => {
