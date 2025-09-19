@@ -766,7 +766,7 @@ export default function ScoreOSMD({
 
     const kick = () => {
       // full reflow, show spinner so busyRef can't block us
-      reflowOnWidthChange(false, true);
+      reflowOnWidthChange(true, true);
 
       // refresh handled snapshot so RO comparisons stay meaningful
       if (wrapRef.current) {
