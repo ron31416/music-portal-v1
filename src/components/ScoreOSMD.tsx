@@ -456,34 +456,36 @@ export default function ScoreOSMD({
         }
       }
 
+      // ---- masking: hide anything that belongs to the next page ----
       const MASK_BOTTOM_SAFETY_PX = 12;
-      const PEEK_GUARD = (window.devicePixelRatio || 1) >= 2 ? 4 : 3; // slightly bigger
+      const PEEK_GUARD_BASE = (window.devicePixelRatio || 1) >= 2 ? 4 : 3;
+      const DPR = window.devicePixelRatio || 1;
+      const EPS = DPR >= 2 ? 2 : 1; // small nudge for rounding / sub-pixel
 
       const maskTopWithinMusicPx = (() => {
-        if (nextStartIndex < 0) { return hVisible; } // last page: mask nothing (except bottom pad)
+        // last page: nothing to mask except bottom pad
+        if (nextStartIndex < 0) { return hVisible; }
 
         const lastIncludedIdx = Math.max(startIndex, nextStartIndex - 1);
         const lastBand = bands[lastIncludedIdx];
         const nextBand = bands[nextStartIndex];
         if (!lastBand || !nextBand) { return hVisible; }
 
-        const relBottom  = lastBand.bottom - startBand.top; // bottom of the last included system
-        const nextTopRel = nextBand.top    - startBand.top; // top of the first excluded (next) system
+        const relBottom  = lastBand.bottom - startBand.top; // bottom of last included
+        const nextTopRel = nextBand.top    - startBand.top; // top of first excluded
 
-        // Start mask:
-        // - at least after the last included bottom (relBottom + safety)
-        // - but lift it UP to just *before* the next system top (nextTopRel - guard)
-        // - never below the bottom of the viewport
-        return Math.min(
-          hVisible - 1,
-          Math.max(
-            0,
-            Math.ceil(relBottom) + MASK_BOTTOM_SAFETY_PX,
-            Math.floor(nextTopRel) - PEEK_GUARD   // <-- note the minus here (was +)
-          )
-        );
+        // Two candidates:
+        const cFromBottom = Math.ceil(relBottom)  + MASK_BOTTOM_SAFETY_PX;
+        const cFromNext   = Math.floor(nextTopRel) - (PEEK_GUARD_BASE + EPS);
+
+        // If the boxes overlap (or are extremely close), prefer hiding the next system.
+        // Otherwise, keep a little margin after the last included system.
+        const overlap = cFromBottom >= cFromNext - EPS;
+        const chosen  = overlap ? cFromNext : cFromBottom;
+
+        // Clamp inside the visible window and never negative.
+        return Math.min(hVisible - 1, Math.max(0, chosen));
       })();
-
 
 
       // Breadcrumbs + HUD (no console needed)
@@ -612,10 +614,11 @@ export default function ScoreOSMD({
       
       if (resetToFirst) {
         applyPage(0);
+        // re-apply next frame to avoid the occasional 1-frame peek after a height-only change
+        afterPaint().then(() => applyPage(0));
         hud(outer, `recompute • applied page 1 • pages:${starts.length}`);
         return;
       }
-
 
       const oldPage = pageIdxRef.current;
       const oldStartIdx = oldStarts.length
