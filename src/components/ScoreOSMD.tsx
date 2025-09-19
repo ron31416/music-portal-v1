@@ -1128,11 +1128,14 @@ export default function ScoreOSMD({
     });
 
 
-
     const cleanupOuter = wrapRef.current;
+    const cleanupHost  = hostRef.current; 
+
     return () => {
-      if (resizeObs && cleanupOuter) {
-        resizeObs.unobserve(cleanupOuter);
+      if (resizeObs) {
+        if (cleanupOuter) resizeObs.unobserve(cleanupOuter);
+        if (cleanupHost)  resizeObs.unobserve(cleanupHost); 
+        resizeObs.disconnect();                               // optional, but tidy
       }
       if (resizeTimerRef.current) {
         window.clearTimeout(resizeTimerRef.current);
@@ -1463,6 +1466,8 @@ export default function ScoreOSMD({
       <div
         aria-busy={busy}
         role="status"
+        aria-live="polite"   // screen readers announce “Please wait…”
+        aria-atomic="true"   // read the whole message when it changes
         style={blockerStyle}
         onPointerDown={stop}
         onPointerMove={stop}
