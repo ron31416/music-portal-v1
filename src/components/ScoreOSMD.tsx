@@ -363,6 +363,9 @@ export default function ScoreOSMD({
 
       const hVisible = getViewportH(outer);
 
+      const arraysEqual = (a: number[], b: number[]) =>
+        a.length === b.length && a.every((v, i) => v === b[i]);
+
       // If the top of the *next* system is already inside the visible window,
       // our page breaks were computed for a different height. Recompute once.
       if (nextStartIndex >= 0) {
@@ -372,16 +375,19 @@ export default function ScoreOSMD({
           if (nextTopRel < hVisible - 1) {
             const fresh = computePageStartIndices(bands, hVisible);
             if (fresh.length) {
-              pageStartsRef.current = fresh;
-              // keep the page near the same starting system
               let nearest = 0, best = Number.POSITIVE_INFINITY;
               for (let i = 0; i < fresh.length; i++) {
                 const s = fresh[i] ?? 0;
                 const d = Math.abs(s - startIndex);
                 if (d < best) { best = d; nearest = i; }
               }
-              applyPage(nearest);
-              return;
+              const noChange = arraysEqual(fresh, starts) && nearest === clampedPage;
+              if (!noChange) {
+                pageStartsRef.current = fresh;
+                applyPage(nearest);
+                return;
+              }
+              // else: nothing changed—fall through without recursing
             }
           }
         }
@@ -431,19 +437,19 @@ export default function ScoreOSMD({
         // Our breaks were computed for a taller viewport. Fix them now and re-apply.
         const freshStarts = computePageStartIndices(bands, hVisible);
         if (freshStarts.length) {
-          pageStartsRef.current = freshStarts;
-
-          // Pick the page whose start index is nearest to our old startIndex
-          let nearest = 0;
-          let best = Number.POSITIVE_INFINITY;
+          let nearest = 0, best = Number.POSITIVE_INFINITY;
           for (let i = 0; i < freshStarts.length; i++) {
             const s = freshStarts[i] ?? 0;
             const d = Math.abs(s - startIndex);
             if (d < best) { best = d; nearest = i; }
           }
-
-          applyPage(nearest);
-          return; // bail; next run will use corrected starts
+          const noChange = arraysEqual(freshStarts, starts) && nearest === clampedPage;
+          if (!noChange) {
+            pageStartsRef.current = freshStarts;
+            applyPage(nearest);
+            return;
+          }
+          // else: nothing changed—fall through without recursing
         }
       }
 
@@ -929,8 +935,13 @@ export default function ScoreOSMD({
       console.error("[ScoreOSMD init crash]", err);
 
       if (outerNow) {
+        const msg =
+          err instanceof Error ? err.message :
+          typeof err === "string" ? err :
+          JSON.stringify(err);
         outerNow.setAttribute("data-osmd-step", "init-crash");
-        hud(outerNow, "boot • crash");
+        outerNow.dataset.osmdErr = String(msg).slice(0, 180);
+        hud(outerNow, `crash • ${outerNow.dataset.osmdErr}`);
       }
     });
 
