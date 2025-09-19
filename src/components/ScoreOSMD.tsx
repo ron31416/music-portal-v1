@@ -368,32 +368,31 @@ export default function ScoreOSMD({
       const arraysEqual = (a: number[], b: number[]) =>
         a.length === b.length && a.every((v, i) => v === b[i]);
 
-      // If the top of the *next* system is already inside the visible window,
-      // our page breaks were computed for a different height. Recompute once.
+      // If the top of the next system is already inside the window...
       if (nextStartIndex >= 0) {
         const nextBand = bands[nextStartIndex];
         if (nextBand) {
           const nextTopRel = nextBand.top - startBand.top;
-          const FILL_SLOP_PX = 8; // keep: lets us pack one more system when it truly fits
-          const TOL = (window.devicePixelRatio || 1) >= 2 ? 2 : 1; // tiny slack for hi-DPR
+          const FILL_SLOP_PX = 8;
+          const TOL = (window.devicePixelRatio || 1) >= 2 ? 2 : 1;
 
-          if (nextTopRel <= hVisible - TOL) {  // <-- was "< hVisible - 1"
+          if (nextTopRel <= hVisible - TOL) {
             const fresh = computePageStartIndices(bands, hVisible + FILL_SLOP_PX);
             if (fresh.length) {
-              let nearest = 0, best = Number.POSITIVE_INFINITY;
+              let lb = fresh.length - 1;                 // lower bound: first start >= startIndex
               for (let i = 0; i < fresh.length; i++) {
                 const s = fresh[i] ?? 0;
-                const d = Math.abs(s - startIndex);
-                if (d < best) { best = d; nearest = i; }
+                if (s >= startIndex) { lb = i; break; }
               }
+
               const noChange =
                 fresh.length === starts.length &&
                 fresh.every((v, i) => v === (starts[i] ?? -1)) &&
-                nearest === clampedPage;
+                lb === clampedPage;
 
               if (!noChange) {
                 pageStartsRef.current = fresh;
-                applyPage(nearest);
+                applyPage(lb);
                 return;
               }
             }
@@ -1077,41 +1076,54 @@ export default function ScoreOSMD({
 
 
   /** Paging helpers */
-  // --- Stuck-page guard: if applyPage() didn't move us, repaginate once and retry ---
+  // --- Stuck-page guard: ensure forward/back actually lands on the next/prev start ---
   const tryAdvance = useCallback((dir: 1 | -1) => {
     if (busy) { return; }
 
-    const pages = pageStartsRef.current.length;
+    const starts = pageStartsRef.current;
+    const pages  = starts.length;
     if (!pages) { return; }
 
-    const before = pageIdxRef.current;
-    const target = Math.max(0, Math.min(before + dir, pages - 1));
-    if (target === before) { return; }
+    const beforePage = pageIdxRef.current;
+    const targetPage = Math.max(0, Math.min(beforePage + dir, pages - 1));
+    if (targetPage === beforePage) { return; }
 
-    applyPage(target);
+    // The start index we want to land on after any recompute
+    const desiredStart = starts[targetPage] ?? starts[beforePage] ?? 0;
 
-    // If we didn't actually move, rebuild page starts for current viewport and retry once.
+    applyPage(targetPage);
+
+    // If we didn't actually move, rebuild page starts and retry *toward* desiredStart.
     requestAnimationFrame(() => {
-      if (pageIdxRef.current !== before) { return; }
+      if (pageIdxRef.current !== beforePage) { return; } // we moved – all good
 
       const outer = wrapRef.current;
       if (!outer) { return; }
 
       const fresh = computePageStartIndices(bandsRef.current, getViewportH(outer));
-      if (fresh.length) {
-        pageStartsRef.current = fresh;
-        const retry = Math.max(0, Math.min(before + dir, fresh.length - 1));
-        if (retry !== before) {
-          applyPage(retry);
-        }
+      if (!fresh.length) { return; }
+
+      pageStartsRef.current = fresh;
+
+      // pick first start >= desiredStart (forward) or last start <= desiredStart (backward)
+      let idx: number;
+      if (dir === 1) {
+        idx = fresh.findIndex(s => s >= desiredStart);
+        if (idx < 0) { idx = fresh.length - 1; }
+      } else {
+        let firstGreater = fresh.findIndex(s => s > desiredStart);
+        if (firstGreater < 0) { firstGreater = fresh.length; }
+        idx = Math.max(0, firstGreater - 1);
       }
+
+      if (idx !== beforePage) { applyPage(idx); }
     });
   }, [applyPage, busy, getViewportH]);
 
   const goNext = useCallback(() => tryAdvance(1),  [tryAdvance]);
   const goPrev = useCallback(() => tryAdvance(-1), [tryAdvance]);
 
-  
+
   // Wheel & keyboard paging (disabled while busy)
   useEffect(() => {
     const onWheel = (e: WheelEvent) => {
