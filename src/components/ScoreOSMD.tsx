@@ -458,12 +458,12 @@ export default function ScoreOSMD({
       const PEEK_GUARD = DPR >= 2 ? 3 : 2; // was 1
 
       const maskTopWithinMusicPx = (() => {
-        if (nextStartIndex < 0) return hVisible;
+        if (nextStartIndex < 0) { return hVisible; }
 
         const lastIncludedIdx = Math.max(startIndex, nextStartIndex - 1);
         const lastBand = bands[lastIncludedIdx];
         const nextBand = bands[nextStartIndex];
-        if (!lastBand || !nextBand) return hVisible;
+        if (!lastBand || !nextBand) { return hVisible; }
 
         const relBottom  = lastBand.bottom - startBand.top; // bottom of last included (relative)
         const nextTopRel = nextBand.top    - startBand.top; // top of next (relative)
