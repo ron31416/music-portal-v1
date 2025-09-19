@@ -328,7 +328,6 @@ export default function ScoreOSMD({
   const applyPage = useCallback(
     (pageIdx: number, depth: number = 0): void => {
       if (depth > 3) {           // hard stop if anything oscillates
-        // eslint-disable-next-line no-console
         console.warn("[applyPage] bailout at depth>3");
         return;
       }
@@ -729,7 +728,7 @@ export default function ScoreOSMD({
         }
       }
     },
-    [applyZoom, applyPage, getViewportH]
+    [applyZoom, applyPage, getViewportH, recomputePaginationHeightOnly]
   );
 
   // WebGL purge
@@ -1304,7 +1303,7 @@ export default function ScoreOSMD({
         vvTimerRef.current = null;
       }
     };
-  }, [recomputePaginationHeightOnly]);
+  }, [recomputePaginationHeightOnly, reflowOnWidthChange]);
 
 
   /* ---------- Styles ---------- */
