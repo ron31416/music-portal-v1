@@ -456,25 +456,29 @@ export default function ScoreOSMD({
       }
 
       const MASK_BOTTOM_SAFETY_PX = 12;
-      const PEEK_GUARD = (window.devicePixelRatio || 1) >= 2 ? 3 : 2;
+      const PEEK_GUARD = (window.devicePixelRatio || 1) >= 2 ? 4 : 3; // slightly bigger
 
       const maskTopWithinMusicPx = (() => {
-        if (nextStartIndex < 0) { return hVisible; } // hVisible already includes bottom pad
+        if (nextStartIndex < 0) { return hVisible; } // last page: mask nothing (except bottom pad)
 
         const lastIncludedIdx = Math.max(startIndex, nextStartIndex - 1);
         const lastBand = bands[lastIncludedIdx];
         const nextBand = bands[nextStartIndex];
         if (!lastBand || !nextBand) { return hVisible; }
 
-        const relBottom  = lastBand.bottom - startBand.top;
-        const nextTopRel = nextBand.top    - startBand.top;
+        const relBottom  = lastBand.bottom - startBand.top; // bottom of the last included system
+        const nextTopRel = nextBand.top    - startBand.top; // top of the first excluded (next) system
 
+        // Start mask:
+        // - at least after the last included bottom (relBottom + safety)
+        // - but lift it UP to just *before* the next system top (nextTopRel - guard)
+        // - never below the bottom of the viewport
         return Math.min(
           hVisible - 1,
           Math.max(
             0,
-            Math.ceil(relBottom)  + MASK_BOTTOM_SAFETY_PX,
-            Math.ceil(nextTopRel) + PEEK_GUARD
+            Math.ceil(relBottom) + MASK_BOTTOM_SAFETY_PX,
+            Math.floor(nextTopRel) - PEEK_GUARD   // <-- note the minus here (was +)
           )
         );
       })();
@@ -746,29 +750,60 @@ export default function ScoreOSMD({
 
   // Re-render OSMD when the zoom prop changes
   useEffect(() => {
-    if (!readyRef.current) { return; }
+    if (!wrapRef.current || !osmdRef.current) { return; }
 
     // Use the variant that shows the spinner so busyRef won't block us
     reflowOnWidthChange(false /* keep nearest page */, true /* showBusy */);
 
     // Refresh the "handled" dimensions snapshot
-    const outer = wrapRef.current;
-    if (outer) {
-      handledWRef.current = outer.clientWidth;
-      handledHRef.current = outer.clientHeight;
-    }
+    handledWRef.current = wrapRef.current.clientWidth;
+    handledHRef.current = wrapRef.current.clientHeight;
   }, [initialZoom, reflowOnWidthChange]);
 
-  // Re-render OSMD whenever the zoom prop changes
+  // Reflow when the *browser* zoom level changes (DPR/viewport scale)
   useEffect(() => {
-    const outer = wrapRef.current;
-    const osmd  = osmdRef.current;
-    if (!outer || !osmd) { return; }
+    let lastDpr = window.devicePixelRatio || 1;
 
-    // Reuse our existing pipeline; show spinner briefly
-    reflowOnWidthChange(false /* keep current page if possible */, true /* showBusy */);
-  }, [initialZoom, reflowOnWidthChange]);
+    const kick = () => {
+      // full reflow, show spinner so busyRef can't block us
+      reflowOnWidthChange(false, true);
 
+      // refresh handled snapshot so RO comparisons stay meaningful
+      if (wrapRef.current) {
+        handledWRef.current = wrapRef.current.clientWidth;
+        handledHRef.current = wrapRef.current.clientHeight;
+      }
+    };
+
+    const onWindowResize = () => {
+      const now = window.devicePixelRatio || 1;
+      if (Math.abs(now - lastDpr) > 0.001) {
+        lastDpr = now;
+        kick();
+      }
+    };
+
+    // Some browsers expose zoom via visualViewport.scale
+    const vv = typeof window !== 'undefined' ? window.visualViewport : undefined;
+    let lastScale = vv?.scale ?? 1;
+    const onVV = () => {
+      if (!vv) { return; }
+      if (Math.abs(vv.scale - lastScale) > 0.001) {
+        lastScale = vv.scale;
+        kick();
+      }
+    };
+
+    window.addEventListener('resize', onWindowResize);
+    vv?.addEventListener('resize', onVV);
+    vv?.addEventListener('scroll', onVV); // toolbar-driven scale quirks
+
+    return () => {
+      window.removeEventListener('resize', onWindowResize);
+      vv?.removeEventListener('resize', onVV);
+      vv?.removeEventListener('scroll', onVV);
+    };
+  }, [reflowOnWidthChange]);
 
   /** Init OSMD */
   useEffect(() => {
@@ -970,6 +1005,9 @@ export default function ScoreOSMD({
       });
       
       resizeObs.observe(outer);
+      const hostE1 = hostRef.current;
+      if (hostE1) { resizeObs.observe(hostE1); }
+
      })().catch((err: unknown) => {
       setBusy(false);
       setBusyMsg(DEFAULT_BUSY);
