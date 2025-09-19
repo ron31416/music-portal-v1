@@ -87,15 +87,18 @@ function hud(outer: HTMLDivElement, text: string) {
 }
 
 
-/** Wait for web fonts to be ready to avoid late reflow on mobile */
+/** Wait for web fonts to be ready (bounded; prevents rare long hangs) */
 async function waitForFonts(): Promise<void> {
   try {
     const fonts = (document as Document & { fonts?: FontFaceSet }).fonts;
     if (fonts?.ready) {
-      await fonts.ready;
+      await Promise.race([
+        fonts.ready,
+        new Promise<void>(resolve => setTimeout(resolve, 1500)),
+      ]);
     }
   } catch {
-    // no-op
+    /* no-op */
   }
 }
 
@@ -320,6 +323,29 @@ export default function ScoreOSMD({
   const reflowAgainRef = useRef<"none" | "width" | "height">("none");
   const repagRunningRef = useRef(false);    // guards height-only repagination
 
+  // --- busy helpers (prevents stuck overlay) ---
+  const busyTimerRef = useRef<number | null>(null);
+
+  const showBusy = useCallback((msg?: string) => {
+    if (msg) setBusyMsg(msg);
+    setBusy(true);
+    // failsafe: auto-clear after ~3s in case something never resolves
+    if (busyTimerRef.current) window.clearTimeout(busyTimerRef.current);
+    busyTimerRef.current = window.setTimeout(() => {
+      setBusy(false);
+      setBusyMsg(DEFAULT_BUSY);
+    }, 3000);
+  }, [DEFAULT_BUSY]);
+
+  const hideBusy = useCallback(() => {
+    if (busyTimerRef.current) {
+      window.clearTimeout(busyTimerRef.current);
+      busyTimerRef.current = null;
+    }
+    setBusy(false);
+    setBusyMsg(DEFAULT_BUSY);
+  }, [DEFAULT_BUSY]);
+
   // ---- callback ref proxies (used by queued setTimeouts) ----
   const reflowFnRef = useRef<
     (resetToFirst?: boolean, showBusy?: boolean) => void | Promise<void>
@@ -327,7 +353,7 @@ export default function ScoreOSMD({
   const repagFnRef = useRef<
     (resetToFirst?: boolean, showBusy?: boolean) => void
   >(() => {});
-  
+
   const vpHRef = useVisibleViewportHeight();
 
   const getViewportH = useCallback((outer: HTMLDivElement): number => {
@@ -643,9 +669,9 @@ export default function ScoreOSMD({
     [pageHeight, topGutterPx, bottomPeekPad, getPAGE_H]
   );
 
-
+  // --- HEIGHT-ONLY REPAGINATION (no OSMD re-init) ---
   const recomputePaginationHeightOnly = useCallback(
-    (resetToFirst: boolean = false, showBusy: boolean = false): void => {
+    (resetToFirst: boolean = false, withSpinner: boolean = false): void => {
       const outer = wrapRef.current;
       if (!outer) { return; }
 
@@ -657,7 +683,7 @@ export default function ScoreOSMD({
       if (bands.length === 0) { repagRunningRef.current = false; return; }
 
       try {
-        if (showBusy) {
+        if (withSpinner) {
           setBusyMsg(DEFAULT_BUSY);
           setBusy(true);
         }
@@ -691,16 +717,16 @@ export default function ScoreOSMD({
         }
         applyPage(nearest);
       } finally {
-        if (showBusy) {
-          setBusy(false);
-          setBusyMsg(DEFAULT_BUSY);
+        if (withSpinner) {
+          hideBusy(); // clear overlay + any pending fail-safe
         }
-        // if a width change arrived while we were repaginating, honor it once
+        // If a width change arrived while we were repaginating, honor it once,
+        // but do it *without* a spinner to avoid perceived "stuck" overlay loops.
         if (reflowAgainRef.current === "width") {
           reflowAgainRef.current = "none";
-          setTimeout(() => { reflowFnRef.current(true, true); }, 0);
+          setTimeout(() => { reflowFnRef.current(true, false); }, 0);
         }
-        repagRunningRef.current = false;     // <- release the guard
+        repagRunningRef.current = false; // release the guard
       }
     },
     [applyPage, getPAGE_H]
@@ -711,8 +737,9 @@ export default function ScoreOSMD({
     repagFnRef.current = recomputePaginationHeightOnly;
   }, [recomputePaginationHeightOnly]);
 
+  // --- WIDTH REFLOW (OSMD render at new width) ---
   const reflowOnWidthChange = useCallback(
-    async (resetToFirst: boolean = false, showBusy: boolean = false): Promise<void> => {
+    async (resetToFirst: boolean = false, withSpinner: boolean = false): Promise<void> => {
       const outer = wrapRef.current;
       const osmd  = osmdRef.current;
       if (!outer || !osmd) { return; }
@@ -722,10 +749,10 @@ export default function ScoreOSMD({
       reflowRunningRef.current = true;
 
       // If caller didn’t request spinner and we’re already busy somewhere else, skip.
-      if (busyRef.current && !showBusy) { reflowRunningRef.current = false; return; }
+      if (busyRef.current && !withSpinner) { reflowRunningRef.current = false; return; }
 
       try {
-        if (showBusy) {
+        if (withSpinner) {
           setBusyMsg(DEFAULT_BUSY);
           setBusy(true);
           await afterPaint();
@@ -774,19 +801,18 @@ export default function ScoreOSMD({
         }
         applyPage(nearest);
       } finally {
-        if (showBusy) {
-          setBusy(false);
-          setBusyMsg(DEFAULT_BUSY);
+        if (withSpinner) {
+          hideBusy(); // clear overlay + any pending fail-safe
         }
 
         // release running flag first
         reflowRunningRef.current = false;
 
-        // drain a single queued pass, if any
+        // drain a single queued pass, if any — run it *without* spinner
         const queued = reflowAgainRef.current;
         reflowAgainRef.current = "none";
         if (queued === "width") {
-          setTimeout(() => { reflowFnRef.current(true, true); }, 0);
+          setTimeout(() => { reflowFnRef.current(true, false); }, 0);
         } else if (queued === "height") {
           setTimeout(() => { repagFnRef.current(true, false); }, 0);
         }
@@ -857,8 +883,14 @@ export default function ScoreOSMD({
     let lastDpr = window.devicePixelRatio || 1;
 
     const kick = () => {
+      // If something is already running, queue exactly one width pass and bail.
+      if (reflowRunningRef.current || repagRunningRef.current) {
+        reflowAgainRef.current = "width";
+        return;
+      }
+
       // full reflow, show spinner so busyRef can't block us
-      reflowOnWidthChange(true, true);
+      reflowFnRef.current(true /* resetToFirst */, true /* withSpinner */);
 
       // refresh handled snapshot so RO comparisons stay meaningful
       if (wrapRef.current) {
@@ -895,7 +927,7 @@ export default function ScoreOSMD({
       vv?.removeEventListener('resize', onVV);
       vv?.removeEventListener('scroll', onVV);
     };
-  }, [reflowOnWidthChange]);
+  }, []); // no function deps needed when using the .current refs
 
   /** Init OSMD */
   useEffect(() => {
@@ -933,8 +965,7 @@ export default function ScoreOSMD({
       }) as OpenSheetMusicDisplay;
       osmdRef.current = osmd;
 
-      setBusyMsg(DEFAULT_BUSY);
-      setBusy(true);
+      showBusy(DEFAULT_BUSY);
       await afterPaint();
 
       // Load score:
@@ -1059,8 +1090,7 @@ export default function ScoreOSMD({
 
       readyRef.current = true;
 
-      setBusy(false);
-      setBusyMsg(DEFAULT_BUSY);
+      hideBusy();
 
       resizeObs = new ResizeObserver(() => {
         if (!readyRef.current) { return; }
@@ -1106,12 +1136,12 @@ export default function ScoreOSMD({
           (async () => {
             if (widthChangedSinceHandled) {
               // HORIZONTAL change → full OSMD reflow (with spinner) + reset to page 1
-              await reflowOnWidthChange(true /* resetToFirst */, true /* showBusy */);
+              await reflowFnRef.current(true /* resetToFirst */, true /* withSpinner */);
               handledWRef.current = currW;
               handledHRef.current = currH;
             } else if (heightChangedSinceHandled) {
               // VERTICAL-only change → cheap repagination (no spinner) + reset to page 1
-              recomputePaginationHeightOnly(true /* resetToFirst */, false /* no spinner */);
+              repagFnRef.current(true /* resetToFirst */, false /* no spinner */);
               handledHRef.current = currH;
             } else {
               // no material size change
@@ -1126,11 +1156,9 @@ export default function ScoreOSMD({
       if (hostE1) { resizeObs.observe(hostE1); }
 
      })().catch((err: unknown) => {
-      setBusy(false);
-      setBusyMsg(DEFAULT_BUSY);
+      hideBusy();
 
       const outerNow = wrapRef.current;
-
       console.error("[ScoreOSMD init crash]", err);
 
       if (outerNow) {
@@ -1162,6 +1190,10 @@ export default function ScoreOSMD({
         osmdRef.current?.clear();
         (osmdRef.current as { dispose?: () => void } | null)?.dispose?.();
         osmdRef.current = null;
+      }
+      if (busyTimerRef.current) {
+        window.clearTimeout(busyTimerRef.current);
+        busyTimerRef.current = null;
       }
     };
     // Intentionally only re-init when the score source or measure-number mode changes.
@@ -1392,12 +1424,12 @@ export default function ScoreOSMD({
 
         if (widthChanged) {
           // HORIZONTAL change → full OSMD reflow (with spinner) + reset to page 1
-          await reflowOnWidthChange(true /* resetToFirst */, true /* showBusy */);
+          await reflowFnRef.current(true /* resetToFirst */, true /* withSpinner */);
           handledWRef.current = currW;
           handledHRef.current = currH;
         } else if (heightChanged) {
           // VERTICAL-only change → cheap repagination (no spinner) + reset to page 1
-          recomputePaginationHeightOnly(true /* resetToFirst */, false /* no spinner */);
+          repagFnRef.current(true /* resetToFirst */, false /* no spinner */);
           handledHRef.current = currH;
         }
       }, 200);
