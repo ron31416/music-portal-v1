@@ -753,7 +753,7 @@ export default function ScoreOSMD({
     if (!wrapRef.current || !osmdRef.current) { return; }
 
     // Use the variant that shows the spinner so busyRef won't block us
-    reflowOnWidthChange(false /* keep nearest page */, true /* showBusy */);
+    reflowOnWidthChange(true /* resetToFirst */, true /* showBusy */);
 
     // Refresh the "handled" dimensions snapshot
     handledWRef.current = wrapRef.current.clientWidth;
@@ -975,7 +975,6 @@ export default function ScoreOSMD({
         }
         resizeTimerRef.current = window.setTimeout(() => {
           resizeTimerRef.current = null;
-          if (busyRef.current) { return; }
 
           const outerNow = wrapRef.current;
           if (!outerNow) { return; }
@@ -1198,14 +1197,29 @@ export default function ScoreOSMD({
       if (vvTimerRef.current) {
         window.clearTimeout(vvTimerRef.current);
       }
-      vvTimerRef.current = window.setTimeout(() => {
+      vvTimerRef.current = window.setTimeout(async () => {
         vvTimerRef.current = null;
-        if (busyRef.current) { return; } // don’t run while rendering
-        recomputePaginationHeightOnly(true, true); // reset to page 1 + show spinner
+
         const outerNow = wrapRef.current;
-        if (outerNow) {
-          handledWRef.current = outerNow.clientWidth;
-          handledHRef.current = outerNow.clientHeight;
+        if (!outerNow) { return; }
+
+        const currW = outerNow.clientWidth;
+        const currH = outerNow.clientHeight;
+
+        const widthChanged  =
+          handledWRef.current === -1 || Math.abs(currW - handledWRef.current) >= 1;
+        const heightChanged =
+          handledHRef.current === -1 || Math.abs(currH - handledHRef.current) >= 1;
+
+        if (widthChanged) {
+          // Browser zoom or any width change → full reflow + go to page 1
+          await reflowOnWidthChange(true /* resetToFirst */, true /* showBusy */);
+          handledWRef.current = currW;
+          handledHRef.current = currH;
+        } else if (heightChanged) {
+          // Pure height change → cheap repagination + page 1 (your current behavior)
+          recomputePaginationHeightOnly(true /* resetToFirst */, true /* showBusy */);
+          handledHRef.current = currH;
         }
       }, 200);
     };
