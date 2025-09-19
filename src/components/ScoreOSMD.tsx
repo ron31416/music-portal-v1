@@ -327,10 +327,10 @@ export default function ScoreOSMD({
   const busyTimerRef = useRef<number | null>(null);
 
   const showBusy = useCallback((msg?: string) => {
-    if (msg) setBusyMsg(msg);
+    if (msg) { setBusyMsg(msg); }
     setBusy(true);
     // failsafe: auto-clear after ~3s in case something never resolves
-    if (busyTimerRef.current) window.clearTimeout(busyTimerRef.current);
+    if (busyTimerRef.current) { window.clearTimeout(busyTimerRef.current); }
     busyTimerRef.current = window.setTimeout(() => {
       setBusy(false);
       setBusyMsg(DEFAULT_BUSY);
@@ -729,7 +729,7 @@ export default function ScoreOSMD({
         repagRunningRef.current = false; // release the guard
       }
     },
-    [applyPage, getPAGE_H]
+    [applyPage, getPAGE_H, hideBusy]
   );
 
   // keep ref pointing to latest repagination callback
@@ -818,7 +818,7 @@ export default function ScoreOSMD({
         }
       }
     },
-    [applyZoom, applyPage, getPAGE_H]
+    [applyZoom, applyPage, getPAGE_H, hideBusy]
   );
 
   // keep ref pointing to latest width-reflow callback
