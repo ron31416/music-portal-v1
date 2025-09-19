@@ -104,6 +104,7 @@ function useVisibleViewportHeight() {
   const vpRef = useRef<number>(0);
   const [, force] = React.useReducer((x: number) => x + 1, 0);
 
+
   useEffect(() => {
     const update = () => {
       // prefer visualViewport when available, otherwise fall back to doc height
@@ -479,7 +480,7 @@ export default function ScoreOSMD({
       outer.dataset.osmdPage = String(pageIdxRef.current);
       outer.dataset.osmdMaskTop = String(maskTopWithinMusicPx);
       outer.dataset.osmdPages  = String(pages);
-      outer.dataset.osmdStarts = JSON.stringify(starts);
+      outer.dataset.osmdStarts = starts.slice(0, 12).join(',');
       outer.dataset.osmdTy     = String(-ySnap + Math.max(0, topGutterPx));
       outer.dataset.osmdH      = String(hVisible);
       hud(outer, `apply • page:${outer.dataset.osmdPage} • bands:${bands.length} • pages:${pageStartsRef.current.length} • maskTop:${maskTopWithinMusicPx}`);
@@ -578,15 +579,12 @@ export default function ScoreOSMD({
       pageStartsRef.current = starts;
 
       outer.dataset.osmdPages = String(starts.length);
-      hud(outer, `recompute • bands:${bands.length} • pages:${starts.length}`);
-
+      
       if (resetToFirst) {
         applyPage(0);
+        hud(outer, `recompute • applied page 1 • pages:${starts.length}`);
         return;
       }
-
-      
-      hud(outer, 'boot • applied page 1');
 
 
       const oldPage = pageIdxRef.current;
@@ -687,6 +685,41 @@ export default function ScoreOSMD({
     }
   }
 
+
+  // Super-early mount probe (before OSMD init)
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+
+    // breadcrumbs
+    el.dataset.osmdProbeMounted = "true";
+
+    // small HUD ping on the wrapper itself
+    hud(el, "mounted");
+
+    // your existing fixed yellow banner (keep this)
+    const tag = document.createElement("div");
+    tag.dataset.osmdProbeBanner = "1";
+    tag.textContent = "ScoreOSMD v9 mounted";
+    Object.assign(tag.style, {
+      position: "fixed",
+      top: "6px",
+      left: "6px",
+      zIndex: "100000",
+      background: "#ff0",
+      color: "#000",
+      padding: "2px 6px",
+      font: "bold 12px/1 sans-serif",
+      border: "1px solid #000",
+      borderRadius: "4px",
+      pointerEvents: "none",
+    } as CSSStyleDeclaration);
+    document.body.appendChild(tag);
+
+    return () => { tag.remove(); };
+  }, []);
+
+
   /** Init OSMD */
   useEffect(() => {
     let resizeObs: ResizeObserver | null = null;
@@ -697,6 +730,10 @@ export default function ScoreOSMD({
       if (!host || !outer) {
         return;
       }
+
+      outer.dataset.osmdStep = "mount";
+      hud(outer, "boot • mount");
+
 
       const { OpenSheetMusicDisplay } =
         (await import("opensheetmusicdisplay")) as typeof import("opensheetmusicdisplay");
@@ -883,10 +920,22 @@ export default function ScoreOSMD({
       });
       
       resizeObs.observe(outer);
-    })().catch(() => {
+     })().catch((err: unknown) => {
       setBusy(false);
       setBusyMsg(DEFAULT_BUSY);
+
+      const outerNow = wrapRef.current;
+
+      // eslint-disable-next-line no-console
+      console.error("[ScoreOSMD init crash]", err);
+
+      if (outerNow) {
+        outerNow.setAttribute("data-osmd-step", "init-crash");
+        hud(outerNow, "boot • crash");
+      }
     });
+
+
 
     const cleanupOuter = wrapRef.current;
     return () => {
@@ -904,6 +953,7 @@ export default function ScoreOSMD({
       }
     };
   }, [applyZoom, applyPage, recomputePaginationHeightOnly, reflowOnWidthChange, src, getViewportH, debugShowAllMeasureNumbers]);
+
 
   /** Paging helpers */
   const goNext = useCallback((): void => {
@@ -1088,8 +1138,8 @@ export default function ScoreOSMD({
   const outerStyle: React.CSSProperties = isFill
     ? {
         width: "100%",
-        height: vpHRef.current > 0 ? vpHRef.current : "100%",
-        minHeight: 0,
+        height: vpHRef.current > 0 ? vpHRef.current : "100vh", // ← was "100%"
+        minHeight: 320,                                        // ← was 0
         position: "relative",
         overflow: "hidden",
         background: "#fff",
@@ -1137,8 +1187,9 @@ export default function ScoreOSMD({
       <div
         ref={wrapRef}
         data-osmd-wrapper="1"
+        data-osmd-probe="v9"
+        style={{ outline: "4px solid fuchsia", ...outerStyle, ...style }}
         className={className}
-        style={{ ...outerStyle, ...style }}
       >
       <div
         ref={hostRef}
