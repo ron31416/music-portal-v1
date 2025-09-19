@@ -453,26 +453,28 @@ export default function ScoreOSMD({
         }
       }
 
-      const MASK_BOTTOM_SAFETY_PX = 12;
+      const MASK_BOTTOM_SAFETY_PX = 14; // was 12
+      const DPR = Math.max(1, Math.round(window.devicePixelRatio || 1));
+      const PEEK_GUARD = DPR >= 2 ? 3 : 2; // was 1
 
       const maskTopWithinMusicPx = (() => {
-        if (nextStartIndex < 0) { return hVisible; }
+        if (nextStartIndex < 0) return hVisible;
 
         const lastIncludedIdx = Math.max(startIndex, nextStartIndex - 1);
         const lastBand = bands[lastIncludedIdx];
         const nextBand = bands[nextStartIndex];
-        if (!lastBand || !nextBand) { return hVisible; }
+        if (!lastBand || !nextBand) return hVisible;
 
-        const relBottom  = lastBand.bottom - startBand.top; // last included bottom (relative)
-        const nextTopRel = nextBand.top    - startBand.top; // next system top (relative)
+        const relBottom  = lastBand.bottom - startBand.top; // bottom of last included (relative)
+        const nextTopRel = nextBand.top    - startBand.top; // top of next (relative)
 
-        // Start the mask just after the last included system BUT
-        // never above the next system’s top (prevents slivers).
+        // Start mask after last included *and* at least a few px below next system's top.
         const start = Math.min(
           hVisible - 2,
-          Math.max(0,
-            Math.ceil(relBottom) + MASK_BOTTOM_SAFETY_PX,
-            Math.ceil(nextTopRel) + 1 // hide a possible 1px peek
+          Math.max(
+            0,
+            Math.ceil(relBottom)  + MASK_BOTTOM_SAFETY_PX,
+            Math.ceil(nextTopRel) + PEEK_GUARD
           )
         );
 
