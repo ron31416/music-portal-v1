@@ -292,6 +292,8 @@ export default function ScoreOSMD({
   const hostRef = useRef<HTMLDivElement | null>(null);
   const osmdRef = useRef<OpenSheetMusicDisplay | null>(null);
 
+  const mountZoomRef = useRef<number>(initialZoom ?? 0.9);
+  
   const bandsRef = useRef<Band[]>([]);
   const pageStartsRef = useRef<number[]>([0]);
   const pageIdxRef = useRef<number>(0);
@@ -312,6 +314,11 @@ export default function ScoreOSMD({
 
   const handledWRef = useRef<number>(-1);
   const handledHRef = useRef<number>(-1);
+
+  // add near handledWRef/handledHRef
+  const reflowRunningRef = useRef(false);   // guards width reflow
+  const reflowAgainRef = useRef<"none" | "width" | "height">("none");
+  const repagRunningRef = useRef(false);    // guards height-only repagination
 
   const vpHRef = useVisibleViewportHeight();
 
@@ -348,10 +355,10 @@ export default function ScoreOSMD({
   const applyZoom = useCallback((): void => {
     const osmd = osmdRef.current as unknown as OSMDZoomable | null;
     if (osmd) {
-      const z = Math.max(0.5, Math.min(3, initialZoom ?? 0.9));
-      osmd.Zoom = z;
+      const z = mountZoomRef.current ?? 0.9;
+      osmd.Zoom = Math.max(0.5, Math.min(3, z));
     }
-  }, [initialZoom]);
+  }, []);
 
   /** Apply a page index */
   const applyPage = useCallback(
@@ -629,128 +636,49 @@ export default function ScoreOSMD({
   );
 
 
-  const recomputePaginationHeightOnly = useCallback((resetToFirst: boolean = false, showBusy: boolean = false): void => {
-    const outer = wrapRef.current;
-    if (!outer) { return; }
-
-    outer.dataset.osmdRecompute = String(Date.now());
-
-    const bands = bandsRef.current;
-    if (bands.length === 0) { return; }
-
-    try {
-      if (showBusy) {
-        setBusyMsg(DEFAULT_BUSY);
-        setBusy(true);
-      }
-
-      const H = getPAGE_H(outer);
-      const starts = computePageStartIndices(bands, H);
-      const oldStarts = pageStartsRef.current;
-
-
-      hud(
-        outer,
-        `recompute • h:${H} • bands:${bands.length} • old:${oldStarts.join(',')} • new:${starts.join(',')} • page:${pageIdxRef.current}`
-      );
-
-
-      // eslint-disable-next-line no-console
-      console.log("[ScoreOSMD/recomputePaginationHeightOnly]", {
-        hVisible: getViewportH(outer),
-        bands: bands.length,
-        oldStarts,
-        newStarts: starts,
-        resetToFirst,
-        oldPage: pageIdxRef.current,
-      });
-
-      pageStartsRef.current = starts;
-
-      outer.dataset.osmdPages = String(starts.length);
-      
-      if (resetToFirst) {
-        applyPage(0);
-        // re-apply next frame to avoid the occasional 1-frame peek after a height-only change
-        afterPaint().then(() => applyPage(0));
-        hud(outer, `recompute • applied page 1 • pages:${starts.length}`);
-        return;
-      }
-
-      const oldPage = pageIdxRef.current;
-      const oldStartIdx = oldStarts.length
-        ? oldStarts[Math.max(0, Math.min(oldPage, oldStarts.length - 1))] ?? 0
-        : 0;
-
-      let nearest = 0;
-      let best = Number.POSITIVE_INFINITY;
-      for (let i = 0; i < starts.length; i++) {
-        const s = starts[i];
-        if (s === undefined) { continue; }
-        const d = Math.abs(s - oldStartIdx);
-        if (d < best) { best = d; nearest = i; }
-      }
-      applyPage(nearest);
-    } finally {
-      if (showBusy) {
-        setBusy(false);
-        setBusyMsg(DEFAULT_BUSY);
-      }
-    }
-  }, [applyPage, getPAGE_H]); // it now calls getPAGE_H which depends on pageHeight
-
-  const reflowOnWidthChange = useCallback(
-    async (resetToFirst: boolean = false, showBusy: boolean = false): Promise<void> => {
+  const recomputePaginationHeightOnly = useCallback(
+    (resetToFirst: boolean = false, showBusy: boolean = false): void => {
       const outer = wrapRef.current;
-      const osmd = osmdRef.current;
-      if (!outer || !osmd) { return; }
-      // If the caller asked this function to show the spinner itself (showBusy === true),
-      // we must NOT early-return on busy, because the caller likely set busy elsewhere.
-      if (busyRef.current && !showBusy) { return; }
-      
-      if (showBusy) {
-        setBusyMsg(DEFAULT_BUSY);
-        setBusy(true);
-        await afterPaint();
-        await new Promise(r => setTimeout(r, 0));
-      }
+      if (!outer) return;
+
+      if (repagRunningRef.current) return;   // prevent overlap
+      repagRunningRef.current = true;
+
+      outer.dataset.osmdRecompute = String(Date.now());
+      const bands = bandsRef.current;
+      if (bands.length === 0) { repagRunningRef.current = false; return; }
+
       try {
-        await afterPaint();
-        applyZoom();
-        osmd.render();
-        await afterPaint();
+        if (showBusy) {
+          setBusyMsg(DEFAULT_BUSY);
+          setBusy(true);
+        }
 
-        const newBands = withUntransformedSvg(outer, (svg) => measureSystemsPx(outer, svg)) ?? [];
-        if (newBands.length === 0) { return; }
-        bandsRef.current = newBands;
+        const H = getPAGE_H(outer);
+        const starts = computePageStartIndices(bands, H);
+        const oldStarts = pageStartsRef.current;
 
-        const prevStarts = pageStartsRef.current.slice();
-        const prevPage = pageIdxRef.current;
-        const oldTopSystem =
-          prevStarts.length
-            ? prevStarts[Math.max(0, Math.min(prevPage, prevStarts.length - 1))] ?? 0
-            : 0;
+        hud(outer, `recompute • h:${H} • bands:${bands.length} • old:${oldStarts.join(',')} • new:${starts.join(',')} • page:${pageIdxRef.current}`);
 
-        const newStarts = computePageStartIndices(newBands, getPAGE_H(outer));
-        pageStartsRef.current = newStarts;
+        pageStartsRef.current = starts;
+        outer.dataset.osmdPages = String(starts.length);
 
         if (resetToFirst) {
           applyPage(0);
-
-          // Stabilize once more on the next tick: if the viewport/layout changed
-          // slightly after the OSMD render, this will fill the page fully.
-          setTimeout(() => {
-            recomputePaginationHeightOnly(true /* resetToFirst */, false /* no spinner */);
-          }, 0);
-          
+          afterPaint().then(() => applyPage(0));
+          hud(outer, `recompute • applied page 1 • pages:${starts.length}`);
           return;
         }
 
+        const oldPage = pageIdxRef.current;
+        const oldStartIdx = oldStarts.length
+          ? (oldStarts[Math.max(0, Math.min(oldPage, oldStarts.length - 1))] ?? 0)
+          : 0;
+
         let nearest = 0, best = Number.POSITIVE_INFINITY;
-        for (let i = 0; i < newStarts.length; i++) {
-          const s = newStarts[i];
-          if (s === undefined) { continue; }
-          const d = Math.abs(s - oldTopSystem);
+        for (let i = 0; i < starts.length; i++) {
+          const s = starts[i]; if (s === undefined) continue;
+          const d = Math.abs(s - oldStartIdx);
           if (d < best) { best = d; nearest = i; }
         }
         applyPage(nearest);
@@ -759,9 +687,100 @@ export default function ScoreOSMD({
           setBusy(false);
           setBusyMsg(DEFAULT_BUSY);
         }
+        // if a width change arrived while we were repaginating, honor it once
+        if (reflowAgainRef.current === "width") {
+          const queued = reflowAgainRef.current;
+          reflowAgainRef.current = "none";
+          setTimeout(() => { reflowOnWidthChange(true, true); }, 0);
+        }
+        repagRunningRef.current = false;     // <- release the guard
       }
     },
-    [applyZoom, applyPage, getViewportH, recomputePaginationHeightOnly]
+    [applyPage, getPAGE_H]
+  );
+
+  const reflowOnWidthChange = useCallback(
+    async (resetToFirst: boolean = false, showBusy: boolean = false): Promise<void> => {
+      const outer = wrapRef.current;
+      const osmd  = osmdRef.current;
+      if (!outer || !osmd) return;
+
+      // don’t start another while one is running
+      if (reflowRunningRef.current) return;
+      reflowRunningRef.current = true;
+
+      // If caller didn’t request spinner and we’re already busy somewhere else, skip.
+      if (busyRef.current && !showBusy) { reflowRunningRef.current = false; return; }
+
+      try {
+        if (showBusy) {
+          setBusyMsg(DEFAULT_BUSY);
+          setBusy(true);
+          await afterPaint();
+        }
+
+        // Re-render OSMD at the new width (no re-init)
+        applyZoom();
+        osmd.render();
+        await afterPaint();
+
+        // Re-measure bands without any SVG transform applied
+        const newBands = withUntransformedSvg(outer, (svg) => measureSystemsPx(outer, svg)) ?? [];
+        if (newBands.length === 0) return;
+
+        // Save current reading position BEFORE replacing starts
+        const prevStarts = pageStartsRef.current.slice();
+        const prevPage   = pageIdxRef.current;
+        const oldTopIdx  = prevStarts.length
+          ? (prevStarts[Math.max(0, Math.min(prevPage, prevStarts.length - 1))] ?? 0)
+          : 0;
+
+        bandsRef.current = newBands;
+
+        // Compute page starts using the unified pagination height
+        const newStarts = computePageStartIndices(newBands, getPAGE_H(outer));
+        pageStartsRef.current = newStarts;
+
+        if (newStarts.length === 0) {
+          applyPage(0);
+          return;
+        }
+
+        if (resetToFirst) {
+          applyPage(0);
+          requestAnimationFrame(() => applyPage(0)); // stabilize 1 more frame
+          return;
+        }
+
+        // Keep user near the same music
+        let nearest = 0, best = Number.POSITIVE_INFINITY;
+        for (let i = 0; i < newStarts.length; i++) {
+          const s = newStarts[i];
+          if (s === undefined) continue;
+          const d = Math.abs(s - oldTopIdx);
+          if (d < best) { best = d; nearest = i; }
+        }
+        applyPage(nearest);
+      } finally {
+        if (showBusy) {
+          setBusy(false);
+          setBusyMsg(DEFAULT_BUSY);
+        }
+
+        // release running flag first
+        reflowRunningRef.current = false;
+
+        // drain a single queued pass, if any
+        const queued = reflowAgainRef.current;
+        reflowAgainRef.current = "none";
+        if (queued === "width") {
+          setTimeout(() => { reflowOnWidthChange(true, true); }, 0);
+        } else if (queued === "height") {
+          setTimeout(() => { recomputePaginationHeightOnly(true, false); }, 0);
+        }
+      }
+    },
+    [applyZoom, applyPage, getPAGE_H]
   );
 
   // WebGL purge
@@ -815,18 +834,6 @@ export default function ScoreOSMD({
 
     return () => { tag.remove(); };
   }, []);
-
-  // Re-render OSMD when the zoom prop changes
-  useEffect(() => {
-    if (!wrapRef.current || !osmdRef.current) { return; }
-
-    // Use the variant that shows the spinner so busyRef won't block us
-    reflowOnWidthChange(true /* resetToFirst */, true /* showBusy */);
-
-    // Refresh the "handled" dimensions snapshot
-    handledWRef.current = wrapRef.current.clientWidth;
-    handledHRef.current = wrapRef.current.clientHeight;
-  }, [initialZoom, reflowOnWidthChange]);
 
   // Reflow when the *browser* zoom level changes (DPR/viewport scale)
   useEffect(() => {
@@ -1000,6 +1007,10 @@ export default function ScoreOSMD({
         await awaitLoad(osmd, src);
       }
 
+      // Set the mount-time zoom once (no later reactivity)
+      const z0 = (typeof initialZoom === "number" && Number.isFinite(initialZoom)) ? initialZoom : 0.9;
+      mountZoomRef.current = Math.max(0.5, Math.min(3, z0));
+
       applyZoom();
 
       await waitForFonts();
@@ -1055,19 +1066,41 @@ export default function ScoreOSMD({
           const heightChangedSinceHandled =
             handledHRef.current === -1 || Math.abs(currH - handledHRef.current) >= 1;
 
+          // If a width reflow is already running, queue exactly one follow-up and bail.
+          if (reflowRunningRef.current) {
+            if (widthChangedSinceHandled) {
+              reflowAgainRef.current = "width";   // width wins over height
+            } else if (heightChangedSinceHandled) {
+              reflowAgainRef.current = "height";
+            }
+            return;
+          }
+
+          // If a repagination is already running, queue appropriately and bail.
+          if (repagRunningRef.current) {
+            if (widthChangedSinceHandled) {
+              reflowAgainRef.current = "width";   // escalate to width
+            } else if (heightChangedSinceHandled) {
+              reflowAgainRef.current = "height";
+            }
+            return;
+          }
+
           (async () => {
             if (widthChangedSinceHandled) {
+              // HORIZONTAL change → full OSMD reflow (with spinner) + reset to page 1
               await reflowOnWidthChange(true /* resetToFirst */, true /* showBusy */);
               handledWRef.current = currW;
               handledHRef.current = currH;
             } else if (heightChangedSinceHandled) {
-              recomputePaginationHeightOnly(true /* resetToFirst */, true /* showBusy */);
-              handledWRef.current = currW;
+              // VERTICAL-only change → cheap repagination (no spinner) + reset to page 1
+              recomputePaginationHeightOnly(true /* resetToFirst */, false /* no spinner */);
               handledHRef.current = currH;
             } else {
+              // no material size change
               return;
             }
-         })();
+          })();
         }, 200);
       });
       
@@ -1312,19 +1345,39 @@ export default function ScoreOSMD({
         const currW = outerNow.clientWidth;
         const currH = outerNow.clientHeight;
 
-        const widthChanged  =
+        const widthChanged =
           handledWRef.current === -1 || Math.abs(currW - handledWRef.current) >= 1;
         const heightChanged =
           handledHRef.current === -1 || Math.abs(currH - handledHRef.current) >= 1;
 
+        // If a width reflow is already running, queue one follow-up and bail.
+        if (reflowRunningRef.current) {
+          if (widthChanged) {
+            reflowAgainRef.current = "width";
+          } else if (heightChanged) {
+            reflowAgainRef.current = "height";
+          }
+          return;
+        }
+
+        // If a repagination is already running, queue appropriately and bail.
+        if (repagRunningRef.current) {
+          if (widthChanged) {
+            reflowAgainRef.current = "width";  // escalate if width changed
+          } else if (heightChanged) {
+            reflowAgainRef.current = "height";
+          }
+          return;
+        }
+
         if (widthChanged) {
-          // Browser zoom or any width change → full reflow + go to page 1
+          // HORIZONTAL change → full OSMD reflow (with spinner) + reset to page 1
           await reflowOnWidthChange(true /* resetToFirst */, true /* showBusy */);
           handledWRef.current = currW;
           handledHRef.current = currH;
         } else if (heightChanged) {
-          // Pure height change → cheap repagination + page 1 (your current behavior)
-          recomputePaginationHeightOnly(true /* resetToFirst */, true /* showBusy */);
+          // VERTICAL-only change → cheap repagination (no spinner) + reset to page 1
+          recomputePaginationHeightOnly(true /* resetToFirst */, false /* no spinner */);
           handledHRef.current = currH;
         }
       }, 200);
