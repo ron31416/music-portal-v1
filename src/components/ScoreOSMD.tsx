@@ -315,6 +315,16 @@ export default function ScoreOSMD({
     return Math.max(1, Math.floor(base) - Math.max(0, topGutterPx));
   }, [vpHRef, topGutterPx]);
 
+  const bottomPeekPad = useCallback(
+    () => ((window.devicePixelRatio || 1) >= 2 ? 6 : 5), // same pad everywhere
+    []
+  );
+
+  const pageHeight = useCallback(
+    (outer: HTMLDivElement) => Math.max(1, getViewportH(outer) - bottomPeekPad()),
+    [getViewportH, bottomPeekPad]
+  );
+
   /** Ensure OSMD zoom is applied before every render */
   const applyZoom = useCallback((): void => {
     const osmd = osmdRef.current as unknown as OSMDZoomable | null;
@@ -366,8 +376,8 @@ export default function ScoreOSMD({
       const nextStartIndex = clampedPage + 1 < starts.length ? (starts[clampedPage + 1] ?? -1) : -1;
 
       const hVisibleRaw = getViewportH(outer);
-      const BOTTOM_PEEK_PAD = (window.devicePixelRatio || 1) >= 2 ? 6 : 5; // was 4/3
-      const hVisible = Math.max(1, hVisibleRaw - BOTTOM_PEEK_PAD);
+      const BOTTOM_PEEK_PAD = bottomPeekPad();
+      const hVisible = pageHeight(outer);
 
       // NEW: unify all repagination to one height
       const FILL_SLOP_PX = 8;                                 // keep your slop
@@ -381,7 +391,7 @@ export default function ScoreOSMD({
           const nextTopRel = nextBand.top - startBand.top;
 
           if (nextTopRel <= hVisible - TOL) {
-            const fresh = computePageStartIndices(bands, PAGE_H); // ← unified height
+            const fresh = computePageStartIndices(bands, PAGE_H);
             if (fresh.length) {
               // lower bound: first start >= startIndex
               let lb = fresh.length - 1;
@@ -612,13 +622,14 @@ export default function ScoreOSMD({
         setBusy(true);
       }
 
-      const starts = computePageStartIndices(bands, getViewportH(outer));
+      const H = pageHeight(outer);
+      const starts = computePageStartIndices(bands, H);
       const oldStarts = pageStartsRef.current;
 
 
       hud(
         outer,
-        `recompute • h:${getViewportH(outer)} • bands:${bands.length} • old:${oldStarts.join(',')} • new:${starts.join(',')} • page:${pageIdxRef.current}`
+        `recompute • h:${H} • bands:${bands.length} • old:${oldStarts.join(',')} • new:${starts.join(',')} • page:${pageIdxRef.current}`
       );
 
 
@@ -698,7 +709,7 @@ export default function ScoreOSMD({
             ? prevStarts[Math.max(0, Math.min(prevPage, prevStarts.length - 1))] ?? 0
             : 0;
 
-        const newStarts = computePageStartIndices(newBands, getViewportH(outer));
+        const newStarts = computePageStartIndices(newBands, pageHeight(outer));
         pageStartsRef.current = newStarts;
 
         if (resetToFirst) {
@@ -981,7 +992,7 @@ export default function ScoreOSMD({
       outer.dataset.osmdSvg = String(!!getSvg(outer));
       outer.dataset.osmdBands = String(bands.length);
 
-      pageStartsRef.current = computePageStartIndices(bands, getViewportH(outer));
+      pageStartsRef.current = computePageStartIndices(bands, pageHeight(outer));
       outer.dataset.osmdPages = String(pageStartsRef.current.length);
 
       pageIdxRef.current = 0;
@@ -1362,7 +1373,7 @@ export default function ScoreOSMD({
         ref={wrapRef}
         data-osmd-wrapper="1"
         data-osmd-probe="v9"
-        style={{ outline: "4px solid fuchsia", ...outerStyle, ...style }}
+        style={{ /*outline: "4px solid fuchsia",*/ ...outerStyle, ...style }}
         className={className}
       >
       <div
