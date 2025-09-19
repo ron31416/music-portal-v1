@@ -374,8 +374,9 @@ export default function ScoreOSMD({
         const nextBand = bands[nextStartIndex];
         if (nextBand) {
           const nextTopRel = nextBand.top - startBand.top;
+          const FILL_SLOP_PX = 8; // small cushion to pack another system if it fits
           if (nextTopRel < hVisible - 1) {
-            const fresh = computePageStartIndices(bands, hVisible);
+            const fresh = computePageStartIndices(bands, hVisible + FILL_SLOP_PX);
             if (fresh.length) {
               let nearest = 0, best = Number.POSITIVE_INFINITY;
               for (let i = 0; i < fresh.length; i++) {
@@ -675,6 +676,13 @@ export default function ScoreOSMD({
 
         if (resetToFirst) {
           applyPage(0);
+
+          // Stabilize once more on the next tick: if the viewport/layout changed
+          // slightly after the OSMD render, this will fill the page fully.
+          setTimeout(() => {
+            recomputePaginationHeightOnly(true /* resetToFirst */, false /* no spinner */);
+          }, 0);
+          
           return;
         }
 
@@ -1119,13 +1127,16 @@ export default function ScoreOSMD({
   // Touch swipe paging (disabled while busy)
   useEffect(() => {
     const outer = wrapRef.current;
-    if (!outer) {
-      return;
-    }
+    if (!outer) { return; }
 
     let startY = 0;
     let startX = 0;
+    let startT = 0; // ← add
     let active = false;
+
+    // Tunables for what counts as a "tap"
+    const TAP_MAX_MS = 250;       // quick touch
+    const TAP_MAX_MOVE_PX = 12;   // little to no movement
 
     const onTouchStart = (e: TouchEvent) => {
       if (!readyRef.current || busy || e.touches.length === 0) {
@@ -1134,6 +1145,7 @@ export default function ScoreOSMD({
       active = true;
       startY = e.touches[0]?.clientY ?? 0;
       startX = e.touches[0]?.clientX ?? 0;
+      startT = performance.now();          // ← add
     };
 
     const onTouchMove = (e: TouchEvent) => {
@@ -1152,16 +1164,21 @@ export default function ScoreOSMD({
         return;
       }
       const t = e.changedTouches[0];
-      if (!t) {
-        return;
-      }
+      if (!t) { return; }
 
       const dy = t.clientY - startY;
       const dx = t.clientX - startX;
+      const dt = performance.now() - startT;  // ← add
 
+      // 1) Tap-to-advance (quick + tiny movement)
+      if (Math.abs(dx) <= TAP_MAX_MOVE_PX && Math.abs(dy) <= TAP_MAX_MOVE_PX && dt <= TAP_MAX_MS) {
+        goNext();
+        return;
+      }
+
+      // 2) Your existing swipe logic
       const THRESH = 40;
       const H_RATIO = 0.6;
-
       if (Math.abs(dy) >= THRESH && Math.abs(dx) <= Math.abs(dy) * H_RATIO) {
         if (dy < 0) {
           goNext();
@@ -1172,8 +1189,8 @@ export default function ScoreOSMD({
     };
 
     outer.addEventListener("touchstart", onTouchStart, { passive: true });
-    outer.addEventListener("touchmove", onTouchMove, { passive: false });
-    outer.addEventListener("touchend", onTouchEnd, { passive: true });
+    outer.addEventListener("touchmove", onTouchMove,  { passive: false });
+    outer.addEventListener("touchend",  onTouchEnd,   { passive: true });
 
     outer.style.overscrollBehavior = "contain";
 
