@@ -17,7 +17,6 @@ interface Props {
 }
 
 interface Band { top: number; bottom: number; height: number }
-interface OSMDZoomable { Zoom: number }
 
 // Await OSMD.load(...) whether it returns void or a Promise.
 // (No "maybe" checks needed.)
@@ -386,8 +385,6 @@ export default function ScoreOSMD({
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const hostRef = useRef<HTMLDivElement | null>(null);
   const osmdRef = useRef<OpenSheetMusicDisplay | null>(null);
-
-  const mountZoomRef = useRef<number | null>(null);
   
   const bandsRef = useRef<Band[]>([]);
   const pageStartsRef = useRef<number[]>([0]);
@@ -509,14 +506,40 @@ export default function ScoreOSMD({
     [pageHeight]
   );
 
-  const applyZoom = useCallback((): void => {
-    const osmd = osmdRef.current as unknown as OSMDZoomable | null;
-    const z = mountZoomRef.current;
-    if (!osmd) { return; }
-    // Do nothing unless a zoom has been explicitly set.
-    if (typeof z !== "number" || !Number.isFinite(z)) { return; }
-    osmd.Zoom = Math.max(0.5, Math.min(3, z));
-  }, []);
+  const renderWithEffectiveWidth = useCallback((
+    outer: HTMLDivElement,
+    osmd: OpenSheetMusicDisplay
+  ): void => {
+    const host = hostRef.current;
+    if (!host) { return; }
+
+    const hostW = outer.clientWidth;
+    const zf = computeZoomFactor();
+    const layoutW = Math.max(1, Math.floor(hostW / zf));
+
+    // breadcrumbs for HUD / debugging
+    outer.dataset.osmdZf = String(zf);
+    outer.dataset.osmdLayoutW = String(layoutW);
+
+    // Temporarily “shrink/grow” the host so OSMD lays out for the zoomed world
+    const prevW = host.style.width;
+    host.style.width = `${layoutW}px`;
+    try {
+      osmd.render();
+    } finally {
+      host.style.width = prevW;
+    }
+
+    // Make the produced SVG fill the actual host again
+    const svg = getSvg(outer);
+    if (svg) {
+      svg.removeAttribute("width");
+      svg.removeAttribute("height");
+      svg.style.width = "100%";
+      svg.style.height = "auto";
+      svg.style.transformOrigin = "top left";
+    }
+  }, [computeZoomFactor]);
 
   /** Apply a page index */
   const applyPage = useCallback(
@@ -916,7 +939,7 @@ export default function ScoreOSMD({
 
         outer.dataset.osmdPhase = 'render';
         mark('render:starting');
-        osmd.render();
+        renderWithEffectiveWidth(outer, osmd);
         mark('render:finished');
 
         outer.dataset.osmdPhase = 'post-render-continue';
@@ -1017,7 +1040,7 @@ export default function ScoreOSMD({
         }
       }
     },
-    [applyZoom, applyPage, getPAGE_H, hideBusy, log, mark]
+    [applyPage, getPAGE_H, hideBusy, log, mark]
   );
 
   // keep ref pointing to latest width-reflow callback
@@ -1110,6 +1133,8 @@ export default function ScoreOSMD({
         return;
       }
       log('zoom: width reflow with spinner');
+      zoomFactorRef.current = computeZoomFactor();
+      tapLog(wrapRef.current!, `zoomFactor:${zoomFactorRef.current.toFixed(3)}`);
       reflowFnRef.current(true /* resetToFirst */, true /* withSpinner */);
 
       if (wrapRef.current) {
@@ -1146,7 +1171,7 @@ export default function ScoreOSMD({
       vv?.removeEventListener('resize', onVV);
       vv?.removeEventListener('scroll', onVV);
     };
-  }, [log]); // depend on log so the effect always sees the latest logger
+  }, [log, computeZoomFactor]); // compute and record zoom factor on DPR/scale changes
 
   /** Init OSMD */
   useEffect(() => {
@@ -1278,7 +1303,7 @@ export default function ScoreOSMD({
 
       outer.dataset.osmdPhase = 'render';
       mark('render:starting');
-      osmd.render();
+      renderWithEffectiveWidth(outer, osmd);
       mark('render:finished');
 
       outer.dataset.osmdPhase = 'post-render-await';
