@@ -800,6 +800,7 @@ export default function ScoreOSMD({
           if (d < best) { best = d; nearest = i; }
         }
         applyPage(nearest);
+        requestAnimationFrame(() => applyPage(nearest));
       } finally {
         if (withSpinner) {
           hideBusy(); // clear overlay + any pending fail-safe
@@ -889,8 +890,8 @@ export default function ScoreOSMD({
         return;
       }
 
-      // full reflow, show spinner so busyRef can't block us
-      reflowFnRef.current(true /* resetToFirst */, true /* withSpinner */);
+      // full reflow, NO spinner for automatic browser zoom
+      reflowFnRef.current(true /* resetToFirst */, false /* withSpinner */);
 
       // refresh handled snapshot so RO comparisons stay meaningful
       if (wrapRef.current) {
@@ -1134,12 +1135,12 @@ export default function ScoreOSMD({
           }
 
           (async () => {
-            if (widthChangedSinceHandled) {
-              // HORIZONTAL change → full OSMD reflow (with spinner) + reset to page 1
-              await reflowFnRef.current(true /* resetToFirst */, true /* withSpinner */);
-              handledWRef.current = currW;
-              handledHRef.current = currH;
-            } else if (heightChangedSinceHandled) {
+              if (widthChangedSinceHandled) {
+                // HORIZONTAL change → full OSMD reflow (no spinner) + reset to page 1
+                await reflowFnRef.current(true /* resetToFirst */, false /* withSpinner */);
+                handledWRef.current = currW;
+                handledHRef.current = currH;
+              } else if (heightChangedSinceHandled) {
               // VERTICAL-only change → cheap repagination (no spinner) + reset to page 1
               repagFnRef.current(true /* resetToFirst */, false /* no spinner */);
               handledHRef.current = currH;
@@ -1424,7 +1425,7 @@ export default function ScoreOSMD({
 
         if (widthChanged) {
           // HORIZONTAL change → full OSMD reflow (with spinner) + reset to page 1
-          await reflowFnRef.current(true /* resetToFirst */, true /* withSpinner */);
+          await reflowFnRef.current(true /* resetToFirst */, false /* withSpinner */);
           handledWRef.current = currW;
           handledHRef.current = currH;
         } else if (heightChanged) {
