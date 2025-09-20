@@ -524,7 +524,6 @@ export default function ScoreOSMD({
     [pageHeight]
   );
 
-  // Replace your whole renderWithEffectiveWidth with this:
   const renderWithEffectiveWidth = useCallback((
     outer: HTMLDivElement,
     osmd: OpenSheetMusicDisplay
@@ -532,43 +531,46 @@ export default function ScoreOSMD({
     const host = hostRef.current;
     if (!host || !outer) { return; }
 
-    // Always recompute & cache the current browser zoom for this render
+    // Recalculate zoom and push it into OSMD so glyph sizes change.
     let zf = computeZoomFactor();
     if (!Number.isFinite(zf) || zf <= 0) { zf = 1; }
     zf = Math.min(3, Math.max(0.5, zf));
     zoomFactorRef.current = zf;
-
-    // Tell OSMD about the zoom (restores the pre-refactor behavior)
-    // (Zoom affects glyph/stroke sizing; width below controls line breaks.)
     applyZoomFromRef();
 
+    // Compute the layout width in *unzoomed* CSS px.
     const hostW = Math.max(1, Math.floor(outer.clientWidth));
     const layoutW = Math.max(1, Math.floor(hostW / zf));
 
-    // Breadcrumbs for HUD / debugging
+    // Breadcrumbs for debugging/HUD
     outer.dataset.osmdZf = String(zf);
     outer.dataset.osmdLayoutW = String(layoutW);
 
-    // Temporarily set the host width so OSMD lays out for "unzoomed" CSS pixels
-    const prevW = host.style.width;
+    // Temporarily let width control layout: release the right edge,
+    // apply a fixed width, force a layout read, render, then restore.
+    const prevLeft  = host.style.left;
+    const prevRight = host.style.right;
+    const prevWidth = host.style.width;
+
+    host.style.left = "0";
+    host.style.right = "auto";
     host.style.width = `${layoutW}px`;
 
-    // Force a layout read so the temporary width is applied before render
+    // Ensure the new width is observed this frame.
     void host.getBoundingClientRect();
 
     try {
       osmd.render();
     } finally {
-      host.style.width = prevW;
+      host.style.left  = prevLeft;
+      host.style.right = prevRight;
+      host.style.width = prevWidth;
     }
 
-    // Make the produced SVG fluid again
+    // Do NOT force responsive width; let OSMD’s intrinsic width/height + Zoom rule.
+    // We only ensure a stable transform origin for paging.
     const svg = getSvg(outer);
     if (svg) {
-      svg.removeAttribute("width");
-      svg.removeAttribute("height");
-      svg.style.width = "100%";
-      svg.style.height = "auto";
       svg.style.transformOrigin = "top left";
     }
   }, [computeZoomFactor, applyZoomFromRef]);
