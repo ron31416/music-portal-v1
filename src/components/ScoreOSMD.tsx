@@ -80,12 +80,30 @@ function hud(outer: HTMLDivElement, text: string) {
       padding: '4px 6px',
       borderRadius: '6px',
       pointerEvents: 'none',
-    } as CSSStyleDeclaration);
+        } as CSSStyleDeclaration);
     outer.appendChild(el);
   }
   el.textContent = text;
 }
 
+/** Append a line into a fixed on-page console (no DevTools required) */
+function tapLog(outer: HTMLDivElement, line: string) {
+  let box = document.querySelector<HTMLPreElement>('pre[data-osmd-log="1"]');
+  if (!box) {
+    box = document.createElement('pre');
+    box.dataset.osmdLog = '1';
+    Object.assign(box.style, {
+      position: 'fixed', left: '8px', bottom: '8px', zIndex: '100001',
+      maxWidth: '80vw', maxHeight: '42vh', overflow: 'auto',
+      background: 'rgba(0,0,0,0.75)', color: '#0f0', padding: '6px 8px',
+      borderRadius: '8px', font: '11px/1.35 monospace', whiteSpace: 'pre-wrap'
+    } as CSSStyleDeclaration);
+    document.body.appendChild(box);
+  }
+  const ts = new Date().toISOString().split('T')[1]?.split('.')[0] ?? '';
+  box.textContent += `[${ts}] ${line}\n`;
+  box.scrollTop = box.scrollHeight;
+}
 
 /** Wait for web fonts to be ready (bounded; prevents rare long hangs) */
 async function waitForFonts(): Promise<void> {
@@ -326,14 +344,24 @@ export default function ScoreOSMD({
   // --- busy helpers (prevents stuck overlay) ---
   const busyTimerRef = useRef<number | null>(null);
 
+  // --- spinner ownership to prevent "stuck overlay" across overlapping calls ---
+  const spinnerOwnerRef = useRef<symbol | null>(null);
+
+  // convenience logger that writes into the page (not DevTools)
+  const log = useCallback((msg: string) => {
+    const outer = wrapRef.current;
+    if (outer) tapLog(outer, msg);
+  }, []);
+
   const showBusy = useCallback((msg?: string) => {
     if (msg) { setBusyMsg(msg); }
     setBusy(true);
-    // failsafe: auto-clear after ~3s in case something never resolves
+    tapLog(wrapRef.current!, `busy:on ${msg ?? DEFAULT_BUSY}`);
     if (busyTimerRef.current) { window.clearTimeout(busyTimerRef.current); }
     busyTimerRef.current = window.setTimeout(() => {
       setBusy(false);
       setBusyMsg(DEFAULT_BUSY);
+      tapLog(wrapRef.current!, "busy:auto-clear (3s)");
     }, 3000);
   }, [DEFAULT_BUSY]);
 
@@ -344,6 +372,7 @@ export default function ScoreOSMD({
     }
     setBusy(false);
     setBusyMsg(DEFAULT_BUSY);
+    tapLog(wrapRef.current!, "busy:off");
   }, [DEFAULT_BUSY]);
 
   // ---- callback ref proxies (used by queued setTimeouts) ----
@@ -595,6 +624,10 @@ export default function ScoreOSMD({
       outer.dataset.osmdH      = String(hVisible);
       hud(outer, `apply • page:${outer.dataset.osmdPage} • bands:${bands.length} • pages:${pageStartsRef.current.length} • maskTop:${maskTopWithinMusicPx}`);
 
+      tapLog(
+        outer,
+        `apply page:${clampedPage+1}/${pages} start:${startIndex} nextStart:${nextStartIndex} h:${hVisible} maskTop:${maskTopWithinMusicPx}`
+      );
       
       // eslint-disable-next-line no-console
       console.log("[ScoreOSMD/applyPage]", {
@@ -744,15 +777,29 @@ export default function ScoreOSMD({
       const osmd  = osmdRef.current;
       if (!outer || !osmd) { return; }
 
-      // don’t start another while one is running
-      if (reflowRunningRef.current) { return; }
+      // If a width reflow is in progress, queue exactly one follow-up and bail.
+      if (reflowRunningRef.current) {
+        reflowAgainRef.current = "width";
+        log(`reflow: queued while running (reset=${resetToFirst}, spin=${withSpinner})`);
+        return;
+      }
       reflowRunningRef.current = true;
 
-      // If caller didn’t request spinner and we’re already busy somewhere else, skip.
-      if (busyRef.current && !withSpinner) { reflowRunningRef.current = false; return; }
+      // If caller didn’t request spinner but something else has us busy, queue and bail.
+      if (busyRef.current && !withSpinner) {
+        reflowRunningRef.current = false;
+        reflowAgainRef.current = "width";
+        setTimeout(() => reflowFnRef.current(true, false), 0);
+        log(`reflow: deferred because busy (no spinner)`);
+        return;
+      }
 
+      const token = Symbol('spin');
       try {
+        log(`reflow:start reset=${resetToFirst} spin=${withSpinner} dpr=${window.devicePixelRatio} w=${outer.clientWidth} h=${outer.clientHeight}`);
+
         if (withSpinner) {
+          spinnerOwnerRef.current = token;
           setBusyMsg(DEFAULT_BUSY);
           setBusy(true);
           await afterPaint();
@@ -765,7 +812,10 @@ export default function ScoreOSMD({
 
         // Re-measure bands without any SVG transform applied
         const newBands = withUntransformedSvg(outer, (svg) => measureSystemsPx(outer, svg)) ?? [];
-        if (newBands.length === 0) { return; }
+        if (newBands.length === 0) {
+          log(`reflow: measured 0 bands — abort`);
+          return;
+        }
 
         // Save current reading position BEFORE replacing starts
         const prevStarts = pageStartsRef.current.slice();
@@ -782,12 +832,17 @@ export default function ScoreOSMD({
 
         if (newStarts.length === 0) {
           applyPage(0);
+          await afterPaint();
+          applyPage(0);
+          log(`reflow: newStarts=0 → forced page 1`);
           return;
         }
 
         if (resetToFirst) {
           applyPage(0);
-          requestAnimationFrame(() => applyPage(0)); // stabilize 1 more frame
+          await afterPaint();
+          applyPage(0);
+          log(`reflow: resetToFirst → page 1 (bands=${newBands.length} pages=${newStarts.length})`);
           return;
         }
 
@@ -795,31 +850,38 @@ export default function ScoreOSMD({
         let nearest = 0, best = Number.POSITIVE_INFINITY;
         for (let i = 0; i < newStarts.length; i++) {
           const s = newStarts[i];
-          if (s === undefined) { continue; }
+          if (s === undefined) continue;
           const d = Math.abs(s - oldTopIdx);
           if (d < best) { best = d; nearest = i; }
         }
+
         applyPage(nearest);
-        requestAnimationFrame(() => applyPage(nearest));
+        await afterPaint();
+        applyPage(nearest);
+
+        log(`reflow:done page=${nearest+1}/${newStarts.length} bands=${newBands.length}`);
       } finally {
-        if (withSpinner) {
-          hideBusy(); // clear overlay + any pending fail-safe
+        // only the call that showed the spinner is allowed to hide it
+        if (withSpinner && spinnerOwnerRef.current === token) {
+          spinnerOwnerRef.current = null;
+          hideBusy();
         }
 
-        // release running flag first
         reflowRunningRef.current = false;
 
         // drain a single queued pass, if any — run it *without* spinner
         const queued = reflowAgainRef.current;
         reflowAgainRef.current = "none";
         if (queued === "width") {
+          log(`reflow:drain queued width pass`);
           setTimeout(() => { reflowFnRef.current(true, false); }, 0);
         } else if (queued === "height") {
+          log(`reflow:drain queued height pass`);
           setTimeout(() => { repagFnRef.current(true, false); }, 0);
         }
       }
     },
-    [applyZoom, applyPage, getPAGE_H, hideBusy]
+    [applyZoom, applyPage, getPAGE_H, hideBusy, log]
   );
 
   // keep ref pointing to latest width-reflow callback
@@ -884,16 +946,14 @@ export default function ScoreOSMD({
     let lastDpr = window.devicePixelRatio || 1;
 
     const kick = () => {
-      // If something is already running, queue exactly one width pass and bail.
       if (reflowRunningRef.current || repagRunningRef.current) {
         reflowAgainRef.current = "width";
+        log('zoom: queued width reflow (already running)');
         return;
       }
+      log('zoom: width reflow with spinner');
+      reflowFnRef.current(true /* resetToFirst */, true /* withSpinner */);
 
-      // full reflow, NO spinner for automatic browser zoom
-      reflowFnRef.current(true /* resetToFirst */, false /* withSpinner */);
-
-      // refresh handled snapshot so RO comparisons stay meaningful
       if (wrapRef.current) {
         handledWRef.current = wrapRef.current.clientWidth;
         handledHRef.current = wrapRef.current.clientHeight;
@@ -928,7 +988,7 @@ export default function ScoreOSMD({
       vv?.removeEventListener('resize', onVV);
       vv?.removeEventListener('scroll', onVV);
     };
-  }, []); // no function deps needed when using the .current refs
+  }, [log]); // depend on log so the effect always sees the latest logger
 
   /** Init OSMD */
   useEffect(() => {
@@ -1136,8 +1196,8 @@ export default function ScoreOSMD({
 
           (async () => {
               if (widthChangedSinceHandled) {
-                // HORIZONTAL change → full OSMD reflow (no spinner) + reset to page 1
-                await reflowFnRef.current(true /* resetToFirst */, false /* withSpinner */);
+                // HORIZONTAL change → full OSMD reflow + reset to page 1
+                await reflowFnRef.current(true /* resetToFirst */, true /* withSpinner */);
                 handledWRef.current = currW;
                 handledHRef.current = currH;
               } else if (heightChangedSinceHandled) {
@@ -1425,7 +1485,7 @@ export default function ScoreOSMD({
 
         if (widthChanged) {
           // HORIZONTAL change → full OSMD reflow (with spinner) + reset to page 1
-          await reflowFnRef.current(true /* resetToFirst */, false /* withSpinner */);
+          await reflowFnRef.current(true /* resetToFirst */, true /* withSpinner */);
           handledWRef.current = currW;
           handledHRef.current = currH;
         } else if (heightChanged) {
@@ -1447,7 +1507,16 @@ export default function ScoreOSMD({
         vvTimerRef.current = null;
       }
     };
-  }, [recomputePaginationHeightOnly, reflowOnWidthChange]);
+  }, [recomputePaginationHeightOnly, reflowOnWidthChange, log]);
+
+  // right below the other useEffects, anywhere inside the component:
+  useEffect(() => {
+    const outer = wrapRef.current;
+    if (outer) {
+      outer.dataset.osmdBusy = busy ? "1" : "0";
+      tapLog(outer, busy ? "busy:true" : "busy:false");
+    }
+  }, [busy]);
 
 
   /* ---------- Styles ---------- */
