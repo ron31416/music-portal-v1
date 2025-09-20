@@ -75,7 +75,7 @@ function afterPaint(label?: string, timeoutMs = 300): Promise<void> {
             box.scrollTop = box.scrollHeight;
           }
         }
-      } catch (e) {
+      } catch {
         /* no-op */
       }
       resolve();
@@ -94,7 +94,7 @@ function afterPaint(label?: string, timeoutMs = 300): Promise<void> {
           finish("raf");
         });
       });
-    } catch (e) {
+    } catch {
       /* no-op */
     }
 
@@ -109,7 +109,7 @@ function afterPaint(label?: string, timeoutMs = 300): Promise<void> {
         finish("message");
       };
       ch.port2.postMessage(1);
-    } catch (e) {
+    } catch {
       /* no-op */
     }
 
