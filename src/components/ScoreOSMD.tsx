@@ -43,42 +43,78 @@ const afterPaint = () =>
   });
 */
 
-// ---------- Fail-safe afterPaint ----------
-// Resolves via rAF in the healthy case; otherwise via a short timeout.
-// Also tags the outer wrapper with how it completed for easy HUD reads.
+/// ---------- Fail-safe afterPaint (hardened) ----------
+// Tries rAF→rAF; if throttled, falls back to timers and MessageChannel,
+// and finally an absolute ceiling so it always resolves.
 function afterPaint(label?: string, timeoutMs = 300): Promise<void> {
   return new Promise((resolve) => {
     let done = false;
+    const t0 =
+      typeof performance !== "undefined" && typeof performance.now === "function"
+        ? performance.now()
+        : Date.now();
 
-    function finish(why: "raf" | "timeout" | "hidden") {
+    function finish(
+      why: "raf" | "timeout" | "hidden" | "message" | "ceiling"
+    ): void {
       if (done) { return; }
       done = true;
       try {
         const outer = document.querySelector<HTMLDivElement>('[data-osmd-wrapper="1"]');
         if (outer) {
           outer.dataset.osmdPhase = `afterPaint:${label ?? ""}:${why}`;
+          const now =
+            typeof performance !== "undefined" && typeof performance.now === "function"
+              ? performance.now()
+              : Date.now();
+          const ms = Math.round(now - t0);
+          outer.dataset.osmdAfterpaintMs = String(ms);
+          const box = document.querySelector<HTMLPreElement>('pre[data-osmd-log="1"]');
+          if (box) {
+            box.textContent += `[ap] ${label ?? ""} -> ${why} (${ms}ms)\n`;
+            box.scrollTop = box.scrollHeight;
+          }
         }
-      } catch {
-        // no-op
+      } catch (e) {
+        /* no-op */
       }
       resolve();
     }
 
     // If the tab isn't visible, rAF may be suppressed — don't hang.
     if (document.visibilityState !== "visible") {
-      setTimeout(() => finish("hidden"), 0);
+      setTimeout(function () { finish("hidden"); }, 0);
       return;
     }
 
-    // Normal case: wait two rAFs to get past style+layout into paint.
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        finish("raf");
+    // 1) Preferred: two rAFs to get past style+layout into paint.
+    try {
+      requestAnimationFrame(function () {
+        requestAnimationFrame(function () {
+          finish("raf");
+        });
       });
-    });
+    } catch (e) {
+      /* no-op */
+    }
 
-    // Failsafe: if rAF is throttled or stalled, continue anyway.
-    setTimeout(() => finish("timeout"), timeoutMs);
+    // 2) Timer fallback (covers many rAF-throttle cases).
+    setTimeout(function () { finish("timeout"); }, timeoutMs);
+
+    // 3) MessageChannel fallback (fires even when some timers are delayed).
+    try {
+      const ch = new MessageChannel();
+      ch.port1.onmessage = function () {
+        ch.port1.onmessage = null;
+        finish("message");
+      };
+      ch.port2.postMessage(1);
+    } catch (e) {
+      /* no-op */
+    }
+
+    // 4) Absolute ceiling so we can never be stuck here.
+    setTimeout(function () { finish("ceiling"); }, Math.max(timeoutMs * 4, 1200));
   });
 }
 
