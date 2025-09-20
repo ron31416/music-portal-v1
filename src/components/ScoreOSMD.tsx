@@ -893,14 +893,14 @@ export default function ScoreOSMD({
         log(`reflow:start reset=${resetToFirst} spin=${withSpinner} dpr=${window.devicePixelRatio} w=${outer.clientWidth} h=${outer.clientHeight}`);
         outer.dataset.osmdPhase = 'pre-spinner';
 
-        if (withSpinner) {
-          spinnerOwnerRef.current = token;
-          setBusyMsg(DEFAULT_BUSY);
-          setBusy(true);
-          outer.dataset.osmdPhase = 'spinner-on';
-          mark('spinner-on');                 // one mark
-          await afterPaint('reflow');
-        }
+      if (withSpinner) {
+        spinnerOwnerRef.current = token;
+        setBusyMsg(DEFAULT_BUSY);
+        setBusy(true);
+        outer.dataset.osmdPhase = 'spinner-on';
+        mark('spinner-on');                 // one mark
+        afterPaint('reflow'); // fire-and-forget — do not await
+      }
 
         outer.dataset.osmdPhase = 'apply-zoom';
         mark('apply-zoom');
