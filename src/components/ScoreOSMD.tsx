@@ -1668,6 +1668,32 @@ export default function ScoreOSMD({
     }
   }, [busy]);
 
+  // When the parent changes the initialZoom prop, update OSMD and reflow.
+  useEffect(() => {
+    // Accept only finite numbers and clamp to a reasonable range.
+    if (typeof initialZoom === "number" && Number.isFinite(initialZoom)) {
+      const clamped = Math.max(0.5, Math.min(3, initialZoom));
+
+      // Skip if the value hasn't actually changed.
+      if (Math.abs((mountZoomRef.current ?? 0) - clamped) > 0.0001) {
+        mountZoomRef.current = clamped;
+
+        // Breadcrumb for your HUD/log.
+        const outer = wrapRef.current;
+        if (outer) {
+          tapLog(outer, `zoom:prop ${clamped}`);
+        }
+
+        // Trigger a full width reflow so applyZoom() runs and pages are rebuilt.
+        if (reflowRunningRef.current || repagRunningRef.current) {
+          reflowAgainRef.current = "width";
+          window.setTimeout(() => { reflowFnRef.current(true, true); }, 0);
+        } else {
+          reflowFnRef.current(true, true);
+        }
+      }
+    }
+  }, [initialZoom]);
 
   /* ---------- Styles ---------- */
 
