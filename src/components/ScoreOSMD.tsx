@@ -353,6 +353,13 @@ export default function ScoreOSMD({
     if (outer) { tapLog(outer, msg); }
   }, []);
 
+  const mark = useCallback((msg: string) => {
+    const outer = wrapRef.current;
+    if (!outer) return;
+    tapLog(outer, msg);  // bottom-left on-page console
+    hud(outer, msg);     // tiny HUD top-right
+  }, []);
+
   const showBusy = useCallback((msg?: string) => {
     if (msg) { setBusyMsg(msg); }
     setBusy(true);
@@ -795,25 +802,51 @@ export default function ScoreOSMD({
       }
 
       const token = Symbol('spin');
+
+      outer.dataset.osmdPhase = 'start';
+      const run = (Number(outer.dataset.osmdRun || '0') + 1);
+      outer.dataset.osmdRun = String(run);
+      mark(`reflow:start#${run} reset=${resetToFirst} spin=${withSpinner}`);
+
+      // Watchdog: log current phase every 2s while this run is active
+      const wd = window.setInterval(() => {
+        if (outer) tapLog(outer, `watchdog: phase=${outer.dataset.osmdPhase ?? 'unset'}`);
+      }, 2000);
+      // ================================================
       try {
         log(`reflow:start reset=${resetToFirst} spin=${withSpinner} dpr=${window.devicePixelRatio} w=${outer.clientWidth} h=${outer.clientHeight}`);
+        outer.dataset.osmdPhase = 'pre-spinner';
 
         if (withSpinner) {
           spinnerOwnerRef.current = token;
           setBusyMsg(DEFAULT_BUSY);
           setBusy(true);
+          outer.dataset.osmdPhase = 'spinner-on';
+          mark('spinner-on');                 // one mark
           await afterPaint();
         }
 
-        // Re-render OSMD at the new width (no re-init)
+        outer.dataset.osmdPhase = 'apply-zoom';
+        mark('apply-zoom');
         applyZoom();
+
+        outer.dataset.osmdPhase = 'render';
+        mark('render');
         osmd.render();
+
+        outer.dataset.osmdPhase = 'post-render-await';
         await afterPaint();
+        mark('render:painted');
+
+        outer.dataset.osmdPhase = 'measure';
 
         // Re-measure bands without any SVG transform applied
         const newBands = withUntransformedSvg(outer, (svg) => measureSystemsPx(outer, svg)) ?? [];
+        outer.dataset.osmdPhase = `measure:${newBands.length}`;
+        mark(`measured:${newBands.length}`);
         if (newBands.length === 0) {
-          log(`reflow: measured 0 bands — abort`);
+          outer.dataset.osmdPhase = 'measure:0:abort';
+          log('reflow: measured 0 bands — abort');
           return;
         }
 
@@ -829,20 +862,27 @@ export default function ScoreOSMD({
         // Compute page starts using the unified pagination height
         const newStarts = computePageStartIndices(newBands, getPAGE_H(outer));
         pageStartsRef.current = newStarts;
+        outer.dataset.osmdPhase = `starts:${newStarts.length}`;
+        mark(`starts:${newStarts.length}`);
 
         if (newStarts.length === 0) {
+          outer.dataset.osmdPhase = 'reset:first:empty-starts';
           applyPage(0);
           await afterPaint();
           applyPage(0);
-          log(`reflow: newStarts=0 → forced page 1`);
+          outer.dataset.osmdPhase = 'reset:first:done';
+          mark('reset:first:done');
           return;
         }
 
         if (resetToFirst) {
+          outer.dataset.osmdPhase = 'reset:first';
+          mark('reset:first');
           applyPage(0);
           await afterPaint();
           applyPage(0);
-          log(`reflow: resetToFirst → page 1 (bands=${newBands.length} pages=${newStarts.length})`);
+          outer.dataset.osmdPhase = 'reset:first:done';
+          mark('reset:first:done');
           return;
         }
 
@@ -854,13 +894,23 @@ export default function ScoreOSMD({
           const d = Math.abs(s - oldTopIdx);
           if (d < best) { best = d; nearest = i; }
         }
+        
+        // --- phase + marker BEFORE first apply ---
+        outer.dataset.osmdPhase = `apply-page:${nearest}`;
+        mark(`apply-page:${nearest}`);
 
         applyPage(nearest);
         await afterPaint();
         applyPage(nearest);
+        
+        outer.dataset.osmdPhase = `applied:${nearest}`;
+        mark(`applied:${nearest}`);
 
         log(`reflow:done page=${nearest+1}/${newStarts.length} bands=${newBands.length}`);
       } finally {
+        outer.dataset.osmdPhase = 'finally';
+        mark('finally');                // ← add
+        window.clearInterval(wd);       // ← add
         // only the call that showed the spinner is allowed to hide it
         if (withSpinner && spinnerOwnerRef.current === token) {
           spinnerOwnerRef.current = null;
