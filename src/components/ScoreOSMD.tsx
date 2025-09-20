@@ -12,7 +12,6 @@ interface Props {
   height?: number;
   className?: string;
   style?: React.CSSProperties;
-  initialZoom?: number; // default: 0.9 (90%)
   topGutterPx?: number; // default: 3 (small white space at very top)
   debugShowAllMeasureNumbers?: boolean; // default: false (dev aid)
 }
@@ -381,7 +380,6 @@ export default function ScoreOSMD({
   height = 600,
   className = "",
   style,
-  initialZoom = 0.9, // default to 90%
   topGutterPx = 3, // small white strip at the very top
   debugShowAllMeasureNumbers = false,
 }: Props) {
@@ -389,7 +387,7 @@ export default function ScoreOSMD({
   const hostRef = useRef<HTMLDivElement | null>(null);
   const osmdRef = useRef<OpenSheetMusicDisplay | null>(null);
 
-  const mountZoomRef = useRef<number>(initialZoom ?? 0.9);
+  const mountZoomRef = useRef<number | null>(null);
   
   const bandsRef = useRef<Band[]>([]);
   const pageStartsRef = useRef<number[]>([0]);
@@ -422,6 +420,20 @@ export default function ScoreOSMD({
 
   // --- spinner ownership to prevent "stuck overlay" across overlapping calls ---
   const spinnerOwnerRef = useRef<symbol | null>(null);
+
+    // Track browser zoom relative to mount
+  const baseScaleRef = useRef<number>(1);
+  const zoomFactorRef = useRef<number>(1);
+
+  const computeZoomFactor = useCallback((): number => {
+    const vv = typeof window !== "undefined" ? window.visualViewport : undefined;
+    const scaleNow = (vv && typeof vv.scale === "number") ? vv.scale : (window.devicePixelRatio || 1);
+    const base = baseScaleRef.current || 1;
+    const raw = scaleNow / base;
+    if (!Number.isFinite(raw) || raw <= 0) { return 1; }
+    // Clamp to a sane range so weird browser values don’t explode layout
+    return Math.max(0.5, Math.min(3, raw));
+  }, []);
 
   // convenience logger that writes into the page (not DevTools)
   const log = useCallback((msg: string) => {
@@ -497,13 +509,13 @@ export default function ScoreOSMD({
     [pageHeight]
   );
 
-  /** Ensure OSMD zoom is applied before every render */
   const applyZoom = useCallback((): void => {
     const osmd = osmdRef.current as unknown as OSMDZoomable | null;
-    if (osmd) {
-      const z = mountZoomRef.current ?? 0.9;
-      osmd.Zoom = Math.max(0.5, Math.min(3, z));
-    }
+    const z = mountZoomRef.current;
+    if (!osmd) { return; }
+    // Do nothing unless a zoom has been explicitly set.
+    if (typeof z !== "number" || !Number.isFinite(z)) { return; }
+    osmd.Zoom = Math.max(0.5, Math.min(3, z));
   }, []);
 
   /** Apply a page index */
@@ -893,18 +905,14 @@ export default function ScoreOSMD({
         log(`reflow:start reset=${resetToFirst} spin=${withSpinner} dpr=${window.devicePixelRatio} w=${outer.clientWidth} h=${outer.clientHeight}`);
         outer.dataset.osmdPhase = 'pre-spinner';
 
-      if (withSpinner) {
-        spinnerOwnerRef.current = token;
-        setBusyMsg(DEFAULT_BUSY);
-        setBusy(true);
-        outer.dataset.osmdPhase = 'spinner-on';
-        mark('spinner-on');                 // one mark
-        afterPaint('reflow'); // fire-and-forget — do not await
-      }
-
-        outer.dataset.osmdPhase = 'apply-zoom';
-        mark('apply-zoom');
-        applyZoom();
+        if (withSpinner) {
+          spinnerOwnerRef.current = token;
+          setBusyMsg(DEFAULT_BUSY);
+          setBusy(true);
+          outer.dataset.osmdPhase = 'spinner-on';
+          mark('spinner-on');                 // one mark
+          afterPaint('reflow'); // fire-and-forget — do not await
+        }
 
         outer.dataset.osmdPhase = 'render';
         mark('render:starting');
@@ -1067,6 +1075,14 @@ export default function ScoreOSMD({
     document.body.appendChild(tag);
 
     return () => { tag.remove(); };
+  }, []);
+
+  // Record baseline zoom/scale at mount (used to compute relative zoom later)
+  useEffect(() => {
+    const vv = typeof window !== "undefined" ? window.visualViewport : undefined;
+    const initial = (vv && typeof vv.scale === "number") ? vv.scale : (window.devicePixelRatio || 1);
+    baseScaleRef.current = initial || 1;
+    zoomFactorRef.current = 1;
   }, []);
 
   // Record page visibility so HUD/logs can explain any afterPaint:*:hidden cases
@@ -1257,12 +1273,6 @@ export default function ScoreOSMD({
       } else {
         await awaitLoad(osmd, src);
       }
-
-      // Set the mount-time zoom once (no later reactivity)
-      const z0 = (typeof initialZoom === "number" && Number.isFinite(initialZoom)) ? initialZoom : 0.9;
-      mountZoomRef.current = Math.max(0.5, Math.min(3, z0));
-
-      applyZoom();
 
       await waitForFonts();
 
@@ -1667,33 +1677,6 @@ export default function ScoreOSMD({
       tapLog(outer, busy ? "busy:true" : "busy:false");
     }
   }, [busy]);
-
-  // When the parent changes the initialZoom prop, update OSMD and reflow.
-  useEffect(() => {
-    // Accept only finite numbers and clamp to a reasonable range.
-    if (typeof initialZoom === "number" && Number.isFinite(initialZoom)) {
-      const clamped = Math.max(0.5, Math.min(3, initialZoom));
-
-      // Skip if the value hasn't actually changed.
-      if (Math.abs((mountZoomRef.current ?? 0) - clamped) > 0.0001) {
-        mountZoomRef.current = clamped;
-
-        // Breadcrumb for your HUD/log.
-        const outer = wrapRef.current;
-        if (outer) {
-          tapLog(outer, `zoom:prop ${clamped}`);
-        }
-
-        // Trigger a full width reflow so applyZoom() runs and pages are rebuilt.
-        if (reflowRunningRef.current || repagRunningRef.current) {
-          reflowAgainRef.current = "width";
-          window.setTimeout(() => { reflowFnRef.current(true, true); }, 0);
-        } else {
-          reflowFnRef.current(true, true);
-        }
-      }
-    }
-  }, [initialZoom]);
 
   /* ---------- Styles ---------- */
 
