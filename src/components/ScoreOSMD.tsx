@@ -1196,7 +1196,7 @@ export default function ScoreOSMD({
     const vv = typeof window !== 'undefined' ? window.visualViewport : undefined;
     let lastScale = vv?.scale ?? 1;
     const onVV = () => {
-      if (!vv) return;
+      if (!vv) { return; }
       if (Math.abs(vv.scale - lastScale) > 0.001) {
         lastScale = vv.scale;
         kick();
