@@ -355,7 +355,7 @@ export default function ScoreOSMD({
 
   const mark = useCallback((msg: string) => {
     const outer = wrapRef.current;
-    if (!outer) return;
+    if (!outer) { return; }
     tapLog(outer, msg);  // bottom-left on-page console
     hud(outer, msg);     // tiny HUD top-right
   }, []);
@@ -810,7 +810,7 @@ export default function ScoreOSMD({
 
       // Watchdog: log current phase every 2s while this run is active
       const wd = window.setInterval(() => {
-        if (outer) tapLog(outer, `watchdog: phase=${outer.dataset.osmdPhase ?? 'unset'}`);
+        if (outer) { tapLog(outer, `watchdog: phase=${outer.dataset.osmdPhase ?? 'unset'}`); }
       }, 2000);
       // ================================================
       try {
@@ -902,7 +902,7 @@ export default function ScoreOSMD({
         applyPage(nearest);
         await afterPaint();
         applyPage(nearest);
-        
+
         outer.dataset.osmdPhase = `applied:${nearest}`;
         mark(`applied:${nearest}`);
 
@@ -931,7 +931,7 @@ export default function ScoreOSMD({
         }
       }
     },
-    [applyZoom, applyPage, getPAGE_H, hideBusy, log]
+    [applyZoom, applyPage, getPAGE_H, hideBusy, log, mark]
   );
 
   // keep ref pointing to latest width-reflow callback
