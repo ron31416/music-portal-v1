@@ -831,11 +831,12 @@ export default function ScoreOSMD({
         applyZoom();
 
         outer.dataset.osmdPhase = 'render';
-        mark('render');
+        mark('render:starting');
         osmd.render();
-        mark('render finished');
+        mark('render:finished');
 
         outer.dataset.osmdPhase = 'post-render-await';
+        mark('afterPaint:starting');
         await afterPaint();
         mark('render:painted');
 
