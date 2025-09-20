@@ -32,7 +32,7 @@ async function awaitLoad(
   const o = osmd as unknown as OSMDHasLoad;
   await Promise.resolve(o.load(input));
 }
-
+/*
 const afterPaint = () =>
   new Promise<void>((resolve) => {
     requestAnimationFrame(() => {
@@ -41,6 +41,35 @@ const afterPaint = () =>
       });
     });
   });
+*/
+
+// drop-in replacement
+function afterPaint(label?: string, timeoutMs = 300): Promise<void> {
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (why: 'raf' | 'timeout' | 'hidden') => {
+      if (done) return;
+      done = true;
+      try {
+        const outer = document.querySelector<HTMLDivElement>('[data-osmd-wrapper="1"]');
+        if (outer) outer.dataset.osmdPhase = `afterPaint:${label ?? ''}:${why}`;
+      } catch { /* no-op */ }
+      resolve();
+    };
+
+    // If the tab is hidden, rAF can be throttled/suspended.
+    if (document.visibilityState !== 'visible') {
+      setTimeout(() => finish('hidden'), 0);
+      return;
+    }
+
+    // Normal path: 2 rAF ticks
+    requestAnimationFrame(() => requestAnimationFrame(() => finish('raf')));
+
+    // Fail-safe if rAF never comes
+    const t = window.setTimeout(() => finish('timeout'), timeoutMs);
+  });
+}
 
 function getSvg(outer: HTMLDivElement): SVGSVGElement | null {
   return outer.querySelector("svg");
@@ -837,7 +866,7 @@ export default function ScoreOSMD({
 
         outer.dataset.osmdPhase = 'post-render-await';
         mark('afterPaint:starting');
-        await afterPaint();
+        await afterPaint('post-render');
         mark('render:painted');
 
         outer.dataset.osmdPhase = 'measure';
@@ -1079,7 +1108,7 @@ export default function ScoreOSMD({
       osmdRef.current = osmd;
 
       showBusy(DEFAULT_BUSY);
-      await afterPaint();
+      await afterPaint('boot');
 
       // Load score:
       // - If src starts with /api/, fetch bytes and hand OSMD a File/Uint8Array.
