@@ -911,10 +911,10 @@ export default function ScoreOSMD({
         osmd.render();
         mark('render:finished');
 
-        outer.dataset.osmdPhase = 'post-render-await';
-        mark('afterPaint:starting');
-        await afterPaint('post-render');
-        mark('render:painted');
+        outer.dataset.osmdPhase = 'post-render-continue';
+        mark('afterPaint:nonblocking');
+        afterPaint('post-render'); // fire-and-forget — don’t await here
+        // (we won't mark "render:painted" synchronously to avoid implying paint happened)
 
         outer.dataset.osmdPhase = 'measure';
 
