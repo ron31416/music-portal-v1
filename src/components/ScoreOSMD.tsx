@@ -350,7 +350,7 @@ export default function ScoreOSMD({
   // convenience logger that writes into the page (not DevTools)
   const log = useCallback((msg: string) => {
     const outer = wrapRef.current;
-    if (outer) tapLog(outer, msg);
+    if (outer) { tapLog(outer, msg); }
   }, []);
 
   const showBusy = useCallback((msg?: string) => {
@@ -850,7 +850,7 @@ export default function ScoreOSMD({
         let nearest = 0, best = Number.POSITIVE_INFINITY;
         for (let i = 0; i < newStarts.length; i++) {
           const s = newStarts[i];
-          if (s === undefined) continue;
+          if (s === undefined) { continue; }
           const d = Math.abs(s - oldTopIdx);
           if (d < best) { best = d; nearest = i; }
         }
