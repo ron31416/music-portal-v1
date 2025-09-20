@@ -48,11 +48,11 @@ function afterPaint(label?: string, timeoutMs = 300): Promise<void> {
   return new Promise((resolve) => {
     let done = false;
     const finish = (why: 'raf' | 'timeout' | 'hidden') => {
-      if (done) return;
+      if (done) { return; }
       done = true;
       try {
         const outer = document.querySelector<HTMLDivElement>('[data-osmd-wrapper="1"]');
-        if (outer) outer.dataset.osmdPhase = `afterPaint:${label ?? ''}:${why}`;
+        if (outer) { outer.dataset.osmdPhase = `afterPaint:${label ?? ''}:${why}`; }
       } catch { /* no-op */ }
       resolve();
     };
