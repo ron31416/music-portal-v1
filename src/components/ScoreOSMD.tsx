@@ -1040,7 +1040,7 @@ export default function ScoreOSMD({
         }
       }
     },
-    [applyPage, getPAGE_H, hideBusy, log, mark]
+    [applyPage, getPAGE_H, hideBusy, log, mark, renderWithEffectiveWidth]
   );
 
   // keep ref pointing to latest width-reflow callback
