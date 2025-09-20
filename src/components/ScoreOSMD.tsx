@@ -833,6 +833,7 @@ export default function ScoreOSMD({
         outer.dataset.osmdPhase = 'render';
         mark('render');
         osmd.render();
+        mark('render finished');
 
         outer.dataset.osmdPhase = 'post-render-await';
         await afterPaint();
