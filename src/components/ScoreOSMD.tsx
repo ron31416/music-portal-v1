@@ -43,31 +43,42 @@ const afterPaint = () =>
   });
 */
 
-// drop-in replacement
+// ---------- Fail-safe afterPaint ----------
+// Resolves via rAF in the healthy case; otherwise via a short timeout.
+// Also tags the outer wrapper with how it completed for easy HUD reads.
 function afterPaint(label?: string, timeoutMs = 300): Promise<void> {
   return new Promise((resolve) => {
     let done = false;
-    const finish = (why: 'raf' | 'timeout' | 'hidden') => {
-      if (done) { return; }
+
+    function finish(why: "raf" | "timeout" | "hidden") {
+      if (done) return;
       done = true;
       try {
         const outer = document.querySelector<HTMLDivElement>('[data-osmd-wrapper="1"]');
-        if (outer) { outer.dataset.osmdPhase = `afterPaint:${label ?? ''}:${why}`; }
-      } catch { /* no-op */ }
+        if (outer) {
+          outer.dataset.osmdPhase = `afterPaint:${label ?? ""}:${why}`;
+        }
+      } catch {
+        // no-op
+      }
       resolve();
-    };
+    }
 
-    // If the tab is hidden, rAF can be throttled/suspended.
-    if (document.visibilityState !== 'visible') {
-      setTimeout(() => finish('hidden'), 0);
+    // If the tab isn't visible, rAF may be suppressed — don't hang.
+    if (document.visibilityState !== "visible") {
+      setTimeout(() => finish("hidden"), 0);
       return;
     }
 
-    // Normal path: 2 rAF ticks
-    requestAnimationFrame(() => requestAnimationFrame(() => finish('raf')));
+    // Normal case: wait two rAFs to get past style+layout into paint.
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        finish("raf");
+      });
+    });
 
-    // Fail-safe if rAF never comes
-    const t = window.setTimeout(() => finish('timeout'), timeoutMs);
+    // Failsafe: if rAF is throttled or stalled, continue anyway.
+    setTimeout(() => finish("timeout"), timeoutMs);
   });
 }
 
@@ -852,7 +863,7 @@ export default function ScoreOSMD({
           setBusy(true);
           outer.dataset.osmdPhase = 'spinner-on';
           mark('spinner-on');                 // one mark
-          await afterPaint();
+          await afterPaint('reflow');
         }
 
         outer.dataset.osmdPhase = 'apply-zoom';
@@ -899,7 +910,7 @@ export default function ScoreOSMD({
         if (newStarts.length === 0) {
           outer.dataset.osmdPhase = 'reset:first:empty-starts';
           applyPage(0);
-          await afterPaint();
+          await afterPaint('apply:first-empty');
           applyPage(0);
           outer.dataset.osmdPhase = 'reset:first:done';
           mark('reset:first:done');
@@ -910,7 +921,7 @@ export default function ScoreOSMD({
           outer.dataset.osmdPhase = 'reset:first';
           mark('reset:first');
           applyPage(0);
-          await afterPaint();
+          await afterPaint('apply:first');
           applyPage(0);
           outer.dataset.osmdPhase = 'reset:first:done';
           mark('reset:first:done');
@@ -931,7 +942,7 @@ export default function ScoreOSMD({
         mark(`apply-page:${nearest}`);
 
         applyPage(nearest);
-        await afterPaint();
+        await afterPaint('apply:nearest');
         applyPage(nearest);
 
         outer.dataset.osmdPhase = `applied:${nearest}`;
@@ -1020,6 +1031,20 @@ export default function ScoreOSMD({
     document.body.appendChild(tag);
 
     return () => { tag.remove(); };
+  }, []);
+
+  // Record page visibility so HUD/logs can explain any afterPaint:*:hidden cases
+  useEffect(() => {
+    const onVis = () => {
+      const outer = wrapRef.current;
+      if (outer) {
+        outer.dataset.osmdVisibility = document.visibilityState;
+        tapLog(outer, `visibility:${document.visibilityState}`);
+      }
+    };
+    document.addEventListener("visibilitychange", onVis);
+    onVis(); // set initial state
+    return () => document.removeEventListener("visibilitychange", onVis);
   }, []);
 
   // Reflow when the *browser* zoom level changes (DPR/viewport scale)
@@ -1204,8 +1229,16 @@ export default function ScoreOSMD({
       applyZoom();
 
       await waitForFonts();
+
+      outer.dataset.osmdPhase = 'render';
+      mark('render:starting');
       osmd.render();
-      await afterPaint();
+      mark('render:finished');
+
+      outer.dataset.osmdPhase = 'post-render-await';
+      mark('afterPaint:starting');
+      await afterPaint('post-render');
+      mark('render:painted');
 
       purgeWebGL(outer);
 
