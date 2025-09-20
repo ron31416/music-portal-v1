@@ -432,6 +432,24 @@ export default function ScoreOSMD({
     return Math.max(0.5, Math.min(3, raw));
   }, []);
 
+  // Apply current browser-derived zoom to OSMD (used right before render)
+  const applyZoomFromRef = useCallback((): void => {
+    const osmd = osmdRef.current;
+    if (!osmd) return;
+
+    const z = zoomFactorRef.current;
+    if (typeof z !== "number" || !Number.isFinite(z)) return;
+
+    const clamped = Math.max(0.5, Math.min(3, z));
+
+    // Thanks to the module augmentation, this is fully typed.
+    const current = osmd.Zoom;
+    if (current === undefined || Math.abs(current - clamped) > 0.001) {
+      osmd.Zoom = clamped;
+    }
+  }, []);
+
+
   // convenience logger that writes into the page (not DevTools)
   const log = useCallback((msg: string) => {
     const outer = wrapRef.current;
@@ -506,31 +524,47 @@ export default function ScoreOSMD({
     [pageHeight]
   );
 
+  // Replace your whole renderWithEffectiveWidth with this:
   const renderWithEffectiveWidth = useCallback((
     outer: HTMLDivElement,
     osmd: OpenSheetMusicDisplay
   ): void => {
     const host = hostRef.current;
-    if (!host) { return; }
+    if (!host || !outer) { return; }
 
-    const hostW = outer.clientWidth;
-    const zf = computeZoomFactor();
+    // Always recompute & cache the current browser zoom for this render
+    let zf = computeZoomFactor();
+    if (!Number.isFinite(zf) || zf <= 0) zf = 1;
+    zf = Math.min(3, Math.max(0.5, zf));
+    zoomFactorRef.current = zf;
+
+    // Tell OSMD about the zoom (restores the pre-refactor behavior)
+    // (Zoom affects glyph/stroke sizing; width below controls line breaks.)
+    applyZoomFromRef();
+
+    const hostW = Math.max(1, Math.floor(outer.clientWidth));
     const layoutW = Math.max(1, Math.floor(hostW / zf));
 
-    // breadcrumbs for HUD / debugging
+    // Breadcrumbs for HUD / debugging
     outer.dataset.osmdZf = String(zf);
     outer.dataset.osmdLayoutW = String(layoutW);
 
-    // Temporarily “shrink/grow” the host so OSMD lays out for the zoomed world
+    // Temporarily set the host width so OSMD lays out for "unzoomed" CSS pixels
     const prevW = host.style.width;
     host.style.width = `${layoutW}px`;
+
+    // *** IMPORTANT: force a layout read so the new width is observable now
+    // (prevents some browsers from measuring the old width)
+    // eslint-disable-next-line @typescript-eslint/no-unused-expressions
+    host.getBoundingClientRect();
+
     try {
       osmd.render();
     } finally {
       host.style.width = prevW;
     }
 
-    // Make the produced SVG fill the actual host again
+    // Make the produced SVG fluid again
     const svg = getSvg(outer);
     if (svg) {
       svg.removeAttribute("width");
@@ -539,7 +573,7 @@ export default function ScoreOSMD({
       svg.style.height = "auto";
       svg.style.transformOrigin = "top left";
     }
-  }, [computeZoomFactor]);
+  }, [computeZoomFactor, applyZoomFromRef]);
 
   /** Apply a page index */
   const applyPage = useCallback(
@@ -939,6 +973,8 @@ export default function ScoreOSMD({
 
         outer.dataset.osmdPhase = 'render';
         mark('render:starting');
+        zoomFactorRef.current = computeZoomFactor();
+        applyZoomFromRef();
         renderWithEffectiveWidth(outer, osmd);
         mark('render:finished');
 
@@ -1125,6 +1161,8 @@ export default function ScoreOSMD({
   // Reflow when the *browser* zoom level changes (DPR/viewport scale)
   useEffect(() => {
     let lastDpr = window.devicePixelRatio || 1;
+    let lastIW  = window.innerWidth;
+    let lastIH  = window.innerHeight;
 
     const kick = () => {
       if (reflowRunningRef.current || repagRunningRef.current) {
@@ -1144,18 +1182,23 @@ export default function ScoreOSMD({
     };
 
     const onWindowResize = () => {
-      const now = window.devicePixelRatio || 1;
-      if (Math.abs(now - lastDpr) > 0.001) {
-        lastDpr = now;
+      const nowDpr = window.devicePixelRatio || 1;
+      const iw = window.innerWidth;
+      const ih = window.innerHeight;
+
+      const dprChanged = Math.abs(nowDpr - lastDpr) > 0.001;
+      const sizeChanged = iw !== lastIW || ih !== lastIH;
+
+      if (dprChanged || sizeChanged) {
+        lastDpr = nowDpr; lastIW = iw; lastIH = ih;
         kick();
       }
     };
 
-    // Some browsers expose zoom via visualViewport.scale
     const vv = typeof window !== 'undefined' ? window.visualViewport : undefined;
     let lastScale = vv?.scale ?? 1;
     const onVV = () => {
-      if (!vv) { return; }
+      if (!vv) return;
       if (Math.abs(vv.scale - lastScale) > 0.001) {
         lastScale = vv.scale;
         kick();
@@ -1164,14 +1207,14 @@ export default function ScoreOSMD({
 
     window.addEventListener('resize', onWindowResize);
     vv?.addEventListener('resize', onVV);
-    vv?.addEventListener('scroll', onVV); // toolbar-driven scale quirks
+    vv?.addEventListener('scroll', onVV);
 
     return () => {
       window.removeEventListener('resize', onWindowResize);
       vv?.removeEventListener('resize', onVV);
       vv?.removeEventListener('scroll', onVV);
     };
-  }, [log, computeZoomFactor]); // compute and record zoom factor on DPR/scale changes
+  }, [log, computeZoomFactor]);
 
   /** Init OSMD */
   useEffect(() => {
@@ -1303,6 +1346,8 @@ export default function ScoreOSMD({
 
       outer.dataset.osmdPhase = 'render';
       mark('render:starting');
+      zoomFactorRef.current = computeZoomFactor();
+      applyZoomFromRef();
       renderWithEffectiveWidth(outer, osmd);
       mark('render:finished');
 
