@@ -435,10 +435,10 @@ export default function ScoreOSMD({
   // Apply current browser-derived zoom to OSMD (used right before render)
   const applyZoomFromRef = useCallback((): void => {
     const osmd = osmdRef.current;
-    if (!osmd) return;
+    if (!osmd) { return; }
 
     const z = zoomFactorRef.current;
-    if (typeof z !== "number" || !Number.isFinite(z)) return;
+    if (typeof z !== "number" || !Number.isFinite(z)) { return; }
 
     const clamped = Math.max(0.5, Math.min(3, z));
 
@@ -534,7 +534,7 @@ export default function ScoreOSMD({
 
     // Always recompute & cache the current browser zoom for this render
     let zf = computeZoomFactor();
-    if (!Number.isFinite(zf) || zf <= 0) zf = 1;
+    if (!Number.isFinite(zf) || zf <= 0) { zf = 1; }
     zf = Math.min(3, Math.max(0.5, zf));
     zoomFactorRef.current = zf;
 
@@ -553,10 +553,8 @@ export default function ScoreOSMD({
     const prevW = host.style.width;
     host.style.width = `${layoutW}px`;
 
-    // *** IMPORTANT: force a layout read so the new width is observable now
-    // (prevents some browsers from measuring the old width)
-    // eslint-disable-next-line @typescript-eslint/no-unused-expressions
-    host.getBoundingClientRect();
+    // Force a layout read so the temporary width is applied before render
+    void host.getBoundingClientRect();
 
     try {
       osmd.render();
@@ -1076,7 +1074,7 @@ export default function ScoreOSMD({
         }
       }
     },
-    [applyPage, getPAGE_H, hideBusy, log, mark, renderWithEffectiveWidth]
+    [applyPage, getPAGE_H, hideBusy, log, mark, renderWithEffectiveWidth, computeZoomFactor, applyZoomFromRef]
   );
 
   // keep ref pointing to latest width-reflow callback
