@@ -51,7 +51,7 @@ function afterPaint(label?: string, timeoutMs = 300): Promise<void> {
     let done = false;
 
     function finish(why: "raf" | "timeout" | "hidden") {
-      if (done) return;
+      if (done) { return; }
       done = true;
       try {
         const outer = document.querySelector<HTMLDivElement>('[data-osmd-wrapper="1"]');
@@ -779,7 +779,7 @@ export default function ScoreOSMD({
 
         if (resetToFirst) {
           applyPage(0);
-          afterPaint().then(() => applyPage(0));
+          afterPaint('repag:first').then(() => applyPage(0));
           hud(outer, `recompute • applied page 1 • pages:${starts.length}`);
           return;
         }
