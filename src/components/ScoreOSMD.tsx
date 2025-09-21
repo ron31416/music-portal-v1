@@ -536,7 +536,11 @@ export default function ScoreOSMD({
   const applyPage = useCallback(
     (pageIdx: number, depth: number = 0): void => {
       if (depth > 3) {           // hard stop if anything oscillates
-        console.warn("[applyPage] bailout at depth>3");
+        const outerNow = wrapRef.current;
+        if (outerNow) {
+          outerNow.dataset.osmdPhase = 'applyPage:bailout';
+          tapLog(outerNow, 'applyPage:bailout depth>3');
+        }
         return;
       }
       const outer = wrapRef.current;
@@ -824,7 +828,13 @@ export default function ScoreOSMD({
 
       outer.dataset.osmdRecompute = String(Date.now());
       const bands = bandsRef.current;
-      if (bands.length === 0) { repagRunningRef.current = false; return; }
+      if (bands.length === 0) {
+        outer.dataset.osmdPhase = 'measure:0:repag-abort';
+        stage(outer, 'measure:0:repag-abort');
+        tapLog(outer, 'repag: measured 0 bands — abort');
+        repagRunningRef.current = false;
+        return;
+      }
 
       try {
         if (withSpinner) {
@@ -997,8 +1007,9 @@ export default function ScoreOSMD({
         outer.dataset.osmdPhase = `measure:${newBands.length}`;
         mark(`measured:${newBands.length}`);
         if (newBands.length === 0) {
-          outer.dataset.osmdPhase = 'measure:0:abort';
-          log('reflow: measured 0 bands — abort');
+          outer.dataset.osmdPhase = 'measure:0:reflow-abort';
+          stage(outer, 'measure:0:reflow-abort');
+          tapLog(outer, 'reflow: measured 0 bands — abort');
           return;
         }
 
@@ -1314,7 +1325,6 @@ export default function ScoreOSMD({
     };
   }, []);
 
-
   /** Init OSMD */
   useEffect(() => {
     let resizeObs: ResizeObserver | null = null;
@@ -1366,32 +1376,62 @@ export default function ScoreOSMD({
       if (src.startsWith("/api/")) {
         const res = await fetch(src, { cache: "no-store" });
         if (!res.ok) { throw new Error(`HTTP ${res.status}`); }
+
         const ab = await res.arrayBuffer();
         tapLog(outer, `fetch: ${ab.byteLength} bytes`);
+        stage(outer, "fetch:done");
 
-        // Unzip .mxl and resolve the primary score via META-INF/container.xml
+        stage(outer, "zip:lib:import");
         const { default: JSZip } = await import("jszip");
-        const zip = await JSZip.loadAsync(ab);
+        stage(outer, "zip:lib:ready");
 
-        // 1) Try META-INF/container.xml for the main score
-        let entryName: string | undefined;
+        // Open the zip with a watchdog
+        const tZip0 = tnow();
+        stage(outer, "zip:open");
+        const zip = await Promise.race([
+          JSZip.loadAsync(ab),
+          new Promise<never>((_, reject) => {
+            window.setTimeout(() => reject(new Error("zip:open:timeout")), 8000);
+          }),
+        ]);
+        tapLog(outer, `zip:open: ${Math.round(tnow() - tZip0)}ms`);
+        stage(outer, "zip:opened");
+
+        // 1) Try META-INF/container.xml
+        let entryName: string | undefined = undefined;
+        stage(outer, "zip:container:probe");
         const containerEntry = zip.file("META-INF/container.xml");
+
         if (containerEntry) {
+          stage(outer, "zip:container:read");
           const containerXml = await containerEntry.async("string");
+
+          stage(outer, "zip:container:parse");
           const cdoc = new DOMParser().parseFromString(containerXml, "application/xml");
+
           const rootfile =
             cdoc.querySelector('rootfile[full-path]') ||
             cdoc.querySelector("rootfile");
+
           const fullPath =
             rootfile?.getAttribute("full-path") ||
             rootfile?.getAttribute("path") ||
             rootfile?.getAttribute("href") ||
             undefined;
-          if (fullPath && zip.file(fullPath)) { entryName = fullPath; }
+
+          if (fullPath && zip.file(fullPath)) {
+            entryName = fullPath;
+            stage(outer, `zip:container:selected:${entryName}`);
+          } else {
+            stage(outer, "zip:container:no-match");
+          }
+        } else {
+          stage(outer, "zip:container:missing");
         }
 
-        // 2) Fallback: pick a likely .musicxml/.xml (ignore META-INF/)
+        // 2) Fallback: scan for a likely MusicXML
         if (!entryName) {
+          stage(outer, "zip:scan:start");
           const candidates: string[] = [];
           zip.forEach((relPath, file) => {
             if (file.dir) { return; }
@@ -1399,8 +1439,11 @@ export default function ScoreOSMD({
             if (p.startsWith("meta-inf/")) { return; }
             if (p.endsWith(".musicxml") || p.endsWith(".xml")) { candidates.push(relPath); }
           });
+          stage(outer, `zip:scan:found:${candidates.length}`);
+
           candidates.sort((a, b) => {
-            const aa = a.toLowerCase(), bb = b.toLowerCase();
+            const aa = a.toLowerCase();
+            const bb = b.toLowerCase();
             const scoreA = /score|partwise|timewise/.test(aa) ? 0 : 1;
             const scoreB = /score|partwise|timewise/.test(bb) ? 0 : 1;
             if (scoreA !== scoreB) { return scoreA - scoreB; }
@@ -1409,22 +1452,34 @@ export default function ScoreOSMD({
             if (extA !== extB) { return extA - extB; }
             return aa.length - bb.length; // shorter first
           });
+
           entryName = candidates[0];
+          stage(outer, `zip:scan:pick:${entryName ?? "(none)"}`);
         }
 
-        if (!entryName) { throw new Error("No MusicXML file found in .mxl archive"); }
+        if (!entryName) {
+          throw new Error("zip:no-musicxml-in-archive");
+        }
 
-        // 3) Parse XML and hand to OSMD
+        // 3) Read + parse XML
+        stage(outer, "zip:file:read");
         const xmlText = await zip.file(entryName)!.async("string");
+        tapLog(outer, `zip:file:chars:${xmlText.length}`);
+        stage(outer, "zip:file:read:ok");
+
+        stage(outer, "xml:parse");
         const doc = new DOMParser().parseFromString(xmlText, "application/xml");
 
         const hasPartwise = doc.getElementsByTagName("score-partwise").length > 0;
         const hasTimewise = doc.getElementsByTagName("score-timewise").length > 0;
+        stage(outer, `xml:tags:pw=${String(hasPartwise)} tw=${String(hasTimewise)}`);
+
         if (!hasPartwise && !hasTimewise) {
           throw new Error("MusicXML parse error: no score-partwise/score-timewise");
         }
 
         const xmlString = new XMLSerializer().serializeToString(doc);
+        stage(outer, "load:ready");
         loadInput = xmlString;
       } else {
         loadInput = src;
@@ -1437,12 +1492,17 @@ export default function ScoreOSMD({
 
       const tLoad0 = tnow();
       stage(outer, "osmd.load:start");
-      await awaitLoad(osmd, loadInput);
-      tapLog(outer, `osmd.load: ${Math.round(tnow() - tLoad0)}ms`);
-      stage(outer, "osmd.load:done");
-      clearInterval(loadWatch);
+      try {
+        await awaitLoad(osmd, loadInput);
+        tapLog(outer, `osmd.load: ${Math.round(tnow() - tLoad0)}ms`);
+        stage(outer, "osmd.load:done");
+      } finally {
+        clearInterval(loadWatch);
+      }
 
+      stage(outer, "fonts:waiting");
       await waitForFonts();
+      stage(outer, "fonts:ready");
 
       outer.dataset.osmdPhase = 'render';
       mark('render:starting');
@@ -1465,6 +1525,13 @@ export default function ScoreOSMD({
       purgeWebGL(outer);
 
       const bands = withUntransformedSvg(outer, (svg) => measureSystemsPx(outer, svg)) ?? [];
+      if (bands.length === 0) {
+        outer.dataset.osmdPhase = "measure:0:init-abort";
+        stage(outer, "measure:0:init-abort");
+        tapLog(outer, "measure:init:0 — aborting first pagination");
+        hideBusy();
+        return;
+      }
       bandsRef.current = bands;
 
       outer.dataset.osmdSvg = String(!!getSvg(outer));
@@ -1472,14 +1539,17 @@ export default function ScoreOSMD({
 
       pageStartsRef.current = computePageStartIndices(bands, getPAGE_H(outer));
       outer.dataset.osmdPages = String(pageStartsRef.current.length);
+      tapLog(outer, `starts:init: ${pageStartsRef.current.join(",")}`);
 
       pageIdxRef.current = 0;
       applyPage(0);
+      stage(outer, "apply:first");
 
       // show a first HUD snapshot
       hud(outer, `init • svg:${outer.dataset.osmdSvg} • bands:${outer.dataset.osmdBands} • pages:${outer.dataset.osmdPages}`);
 
       recomputePaginationHeightOnly(true /* resetToFirst */, false /* no spinner on boot */);
+      tapLog(outer, "repag:init:scheduled");
 
       // record the dimensions this layout corresponds to
       handledWRef.current = outer.clientWidth;
