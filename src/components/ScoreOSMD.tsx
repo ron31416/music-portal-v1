@@ -482,54 +482,6 @@ export default function ScoreOSMD({
     [pageHeight]
   );
 
-  const renderWithEffectiveWidth = useCallback((
-    outer: HTMLDivElement,
-    osmd: OpenSheetMusicDisplay
-  ): void => {
-    const host = hostRef.current;
-    if (!host || !outer) { return; }
-
-    // Use the zoom that was computed by the caller just before render.
-    applyZoomFromRef();
-    const zf = Math.min(3, Math.max(0.5, zoomFactorRef.current || 1));
-
-    // Compute the layout width in *unzoomed* CSS px.
-    const hostW = Math.max(1, Math.floor(outer.clientWidth));
-    const layoutW = Math.max(1, Math.floor(hostW / zf));
-
-    // Breadcrumbs for debugging/HUD
-    outer.dataset.osmdZf = String(zf);
-    outer.dataset.osmdLayoutW = String(layoutW);
-
-    // Temporarily let width control layout: release the right edge,
-    // apply a fixed width, force a layout read, render, then restore.
-    const prevLeft  = host.style.left;
-    const prevRight = host.style.right;
-    const prevWidth = host.style.width;
-
-    host.style.left = "0";
-    host.style.right = "auto";
-    host.style.width = `${layoutW}px`;
-
-    // Ensure the new width is observed this frame.
-    void host.getBoundingClientRect();
-
-    try {
-      osmd.render();
-    } finally {
-      host.style.left  = prevLeft;
-      host.style.right = prevRight;
-      host.style.width = prevWidth;
-    }
-
-    // Do NOT force responsive width; let OSMD’s intrinsic width/height + Zoom rule.
-    // We only ensure a stable transform origin for paging.
-    const svg = getSvg(outer);
-    if (svg) {
-      svg.style.transformOrigin = "top left";
-    }
-  }, [applyZoomFromRef]);
-
   /** Apply a page index */
   const applyPage = useCallback(
     (pageIdx: number, depth: number = 0): void => {
@@ -905,8 +857,6 @@ export default function ScoreOSMD({
         return;
       }
 
-      const token = Symbol('spin');
-
       outer.dataset.osmdPhase = 'start';
       const run = (Number(outer.dataset.osmdRun || '0') + 1);
       outer.dataset.osmdRun = String(run);
@@ -922,6 +872,7 @@ export default function ScoreOSMD({
         outer.dataset.osmdPhase = 'pre-spinner';
 
         if (withSpinner) {
+          const token = Symbol('spin');
           // mark who owns the spinner
           spinnerOwnerRef.current = token;
 
@@ -977,8 +928,8 @@ export default function ScoreOSMD({
 
         const t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
 
-        zoomFactorRef.current = computeZoomFactor();      // ← keep this
-        renderWithEffectiveWidth(outer, osmd);
+        applyZoomFromRef();
+        osmd.render();
 
         const t1 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
         const renderMs = Math.round(t1 - t0);
@@ -1090,7 +1041,7 @@ export default function ScoreOSMD({
         }
       }
     },
-    [applyPage, getPAGE_H, hideBusy, log, mark, renderWithEffectiveWidth, computeZoomFactor]
+    [applyPage, getPAGE_H, hideBusy, log, mark, applyZoomFromRef]
   );
 
   useEffect(() => {
@@ -1181,7 +1132,7 @@ export default function ScoreOSMD({
     return () => document.removeEventListener("visibilitychange", onVis);
   }, []);
 
-  // Reflow when the *browser* zoom level changes (debounced, spinner on)
+  // Reflow when the *browser* zoom level changes (debounced, spinner off)
   useEffect(() => {
     let lastDpr = window.devicePixelRatio || 1;
     let lastIW  = window.innerWidth;
@@ -1211,7 +1162,7 @@ export default function ScoreOSMD({
         }
 
         // Always use spinner for zoom-driven width reflow so we yield to paint
-        reflowFnRef.current(true /* resetToFirst */, true /* withSpinner */);
+        reflowFnRef.current(true /* resetToFirst */, false /* withSpinner */);
 
         // Record the dimensions this layout corresponds to
         if (wrapRef.current) {
@@ -1397,8 +1348,8 @@ export default function ScoreOSMD({
 
       const t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
 
-      zoomFactorRef.current = computeZoomFactor();      // ← keep this
-      renderWithEffectiveWidth(outer, osmd);
+      applyZoomFromRef();
+      osmd.render();
 
       const t1 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
       const renderMs = Math.round(t1 - t0);
