@@ -444,9 +444,11 @@ export default function ScoreOSMD({
     applyZoomFromRef();
     const zf = Math.min(3, Math.max(0.5, zoomFactorRef.current || 1));
 
-    // lay out at un-zoomed width
     const hostW = Math.max(1, Math.floor(outer.clientWidth));
-    const layoutW = Math.max(1, Math.floor(hostW / zf));
+    const rawLayoutW = Math.max(1, Math.floor(hostW / zf));
+    const MAX_LAYOUT_W = 1600;   // clamp to avoid extreme widths on zoom-out
+    const MIN_LAYOUT_W = 320;
+    const layoutW = Math.max(MIN_LAYOUT_W, Math.min(rawLayoutW, MAX_LAYOUT_W));
 
     outer.dataset.osmdZf = String(zf);
     outer.dataset.osmdLayoutW = String(layoutW);
@@ -462,7 +464,11 @@ export default function ScoreOSMD({
     void host.getBoundingClientRect(); // ensure style takes effect this frame
 
     try {
+      tapLog(outer, `render: hostW=${hostW} zf=${zf.toFixed(3)} rawW=${rawLayoutW} clampedW=${layoutW} osmd.Zoom=${(osmd as any).Zoom}`);
       osmd.render();
+    } catch (e) {
+      tapLog(outer, `render:error ${(e as Error).message || e}`);
+      throw e;
     } finally {
       host.style.left  = prevLeft;
       host.style.right = prevRight;
@@ -896,7 +902,14 @@ export default function ScoreOSMD({
     async (resetToFirst: boolean = false, withSpinner: boolean = false): Promise<void> => {
       const outer = wrapRef.current;
       const osmd  = osmdRef.current;
-      if (!outer || !osmd) { return; }
+      if (!outer || !osmd) {
+        const o = outer ? "1" : "0";
+        const m = osmd ? "1" : "0";
+        // If outer exists, surface the bail
+        if (outer) tapLog(outer, `reflow:early-bail outer=${o} osmd=${m}`);
+        return;
+      }
+      tapLog(outer, `reflow:enter reset=${resetToFirst} spin=${withSpinner} running=${reflowRunningRef.current} repag=${repagRunningRef.current} busy=${busyRef.current}`);
 
       const ap = makeAfterPaint(outer);
 
@@ -1461,38 +1474,64 @@ export default function ScoreOSMD({
           throw new Error("zip:no-musicxml-in-archive");
         }
 
-        // 3) Read + parse XML
+        // 3) Read + parse XML  (PATCHED)
         stage(outer, "zip:file:read");
         const file = zip.file(entryName);
         if (!file) {
           throw new Error(`zip:file:missing:${entryName}`);
         }
 
-        // Read as bytes (avoids the JSZip string-decoder path)
-        const xmlBytes = await Promise.race([
-          file.async("uint8array"),
-          new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error("zip:file:read:timeout")), 5000)
-          ),
-        ]);
-
-        tapLog(outer, `zip:file:bytes:${xmlBytes.byteLength}`);
-
-        // Decode ourselves (robust, no streaming edge-cases)
         let xmlText = "";
+
+        // Emit a tick every second so we can see if this step is alive
+        const readTicker = window.setInterval(() => {
+          tapLog(outer, "zip:file:read… ticking");
+        }, 1000);
+
         try {
-          xmlText = new TextDecoder("utf-8", { fatal: false }).decode(xmlBytes);
+          // Primary path: read as bytes (fast + robust), with a hard timeout
+          const xmlBytes = await Promise.race([
+            file.async("uint8array"),
+            new Promise<never>((_, reject) =>
+              setTimeout(() => reject(new Error("zip:file:read:timeout")), 9000)
+            ),
+          ]);
+          window.clearInterval(readTicker);
+
+          stage(outer, "zip:file:read:ok");
+          tapLog(outer, `zip:file:bytes:${xmlBytes.byteLength}`);
+
+          // Decode ourselves; fallback if UTF-8 decoder complains
+          try {
+            xmlText = new TextDecoder("utf-8", { fatal: false }).decode(xmlBytes);
+          } catch {
+            xmlText = Array.from(xmlBytes).map(b => String.fromCharCode(b)).join("");
+          }
+          tapLog(outer, `zip:file:chars:${xmlText.length}`);
         } catch (e) {
-          // Fallback decode if UTF-8 decoder complains
-          xmlText = Array.from(xmlBytes).map(b => String.fromCharCode(b)).join("");
+          // Fallback path: different JSZip code path (string), also timed
+          window.clearInterval(readTicker);
+          const msg = (e as Error)?.message || String(e);
+          tapLog(outer, `zip:file:read:error:${msg}`);
+          stage(outer, "zip:file:read:fallback:string");
+
+          xmlText = await Promise.race([
+            file.async("string"),
+            new Promise<never>((_, reject) =>
+              setTimeout(() => reject(new Error("zip:file:string:timeout")), 9000)
+            ),
+          ]);
+
+          stage(outer, "zip:file:read:ok");
+          tapLog(outer, `zip:file:chars:${xmlText.length} (fallback:string)`);
+        } finally {
+          window.clearInterval(readTicker);
         }
 
-        stage(outer, "zip:file:read:ok");
-        tapLog(outer, `zip:file:chars:${xmlText.length}`);
-
-        stage(outer, "xml:parse");
+        stage(outer, "xml:parse:start");
         const doc = new DOMParser().parseFromString(xmlText, "application/xml");
-
+        stage(outer, "xml:parse:done");
+        
         const hasPartwise = doc.getElementsByTagName("score-partwise").length > 0;
         const hasTimewise = doc.getElementsByTagName("score-timewise").length > 0;
         stage(outer, `xml:tags:pw=${String(hasPartwise)} tw=${String(hasTimewise)}`);
@@ -1763,10 +1802,15 @@ export default function ScoreOSMD({
   const doZoomAdjust = useCallback(() => {
     const outer = wrapRef.current;
     if (!outer) { return; }
+
+    tapLog(outer, `ui:ZoomAdjust:click zf(before)=${(zoomFactorRef.current || 1).toFixed(3)}`);
+
     // recompute relative zoom from the browser
     zoomFactorRef.current = computeZoomFactor();
     tapLog(outer, `zoomAdjust: zf=${zoomFactorRef.current.toFixed(3)}`);
     hud(outer, `zoomAdjust • zf:${zoomFactorRef.current.toFixed(2)}`);
+
+    tapLog(outer, "ui:ZoomAdjust:calling reflowFnRef(true,true)");
     // force a width reflow and show spinner so the overlay can paint first
     reflowFnRef.current(true /* resetToFirst */, true /* withSpinner */);
   }, [computeZoomFactor]);
