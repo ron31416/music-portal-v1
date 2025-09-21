@@ -930,25 +930,23 @@ export default function ScoreOSMD({
           outer.dataset.osmdPhase = "spinner-requested";
           mark("spinner-requested");
 
-          await Promise.race([
-            // two rAFs → one full frame where the overlay can actually paint
-            new Promise<void>(r => requestAnimationFrame(() => requestAnimationFrame(() => r()))),
-            // microtask bounce (fast path on some browsers)
-            new Promise<void>(r => {
-              try {
-                const ch = new MessageChannel();
-                ch.port1.onmessage = () => r();
-                ch.port2.postMessage(1);
-              } catch { r(); }
-            }),
-            // absolute fallback so we never stall if rAF is throttled
-            new Promise<void>(r => setTimeout(r, 160)),
-          ]);
+          // 1) Always yield to the next macrotask so React can commit the overlay.
+          //    This cannot be throttled like rAF can.
+          await new Promise<void>(r => setTimeout(r, 0));
+
+          // 2) If visible, try to give the overlay one frame to paint,
+          //    but *never* block if rAF is throttled.
+          if (document.visibilityState === "visible") {
+            await Promise.race([
+              new Promise<void>(r => requestAnimationFrame(() => r())),
+              new Promise<void>(r => setTimeout(r, 120)),
+            ]);
+          }
 
           outer.dataset.osmdPhase = "spinner-on";
           mark("spinner-on");
 
-          // fail-safe in case we never reach finally/hideBusy
+          // fail-safe: clear if we somehow never reach finally/hideBusy
           if (spinnerFailSafeRef.current) {
             window.clearTimeout(spinnerFailSafeRef.current);
           }
