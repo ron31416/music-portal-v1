@@ -422,6 +422,45 @@ export default function ScoreOSMD({
     }
   }, []);
 
+  const renderWithEffectiveWidth = useCallback((
+    outer: HTMLDivElement,
+    osmd: OpenSheetMusicDisplay
+  ): void => {
+    const host = hostRef.current;
+    if (!host || !outer) { return; }
+
+    // use our zoom source of truth
+    applyZoomFromRef();
+    const zf = Math.min(3, Math.max(0.5, zoomFactorRef.current || 1));
+
+    // lay out at un-zoomed width
+    const hostW = Math.max(1, Math.floor(outer.clientWidth));
+    const layoutW = Math.max(1, Math.floor(hostW / zf));
+
+    outer.dataset.osmdZf = String(zf);
+    outer.dataset.osmdLayoutW = String(layoutW);
+
+    // temporarily let width control layout
+    const prevLeft  = host.style.left;
+    const prevRight = host.style.right;
+    const prevWidth = host.style.width;
+
+    host.style.left = "0";
+    host.style.right = "auto";
+    host.style.width = `${layoutW}px`;
+    void host.getBoundingClientRect(); // ensure style takes effect this frame
+
+    try {
+      osmd.render();
+    } finally {
+      host.style.left  = prevLeft;
+      host.style.right = prevRight;
+      host.style.width = prevWidth;
+    }
+
+    const svg = getSvg(outer);
+    if (svg) { svg.style.transformOrigin = "top left"; }
+  }, [applyZoomFromRef]);
 
   // convenience logger that writes into the page (not DevTools)
   const log = useCallback((msg: string) => {
@@ -925,11 +964,8 @@ export default function ScoreOSMD({
 
         outer.dataset.osmdPhase = 'render';
         mark('render:starting');
-
         const t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
-
-        applyZoomFromRef();
-        osmd.render();
+        renderWithEffectiveWidth(outer, osmd);
 
         const t1 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
         const renderMs = Math.round(t1 - t0);
@@ -1041,7 +1077,7 @@ export default function ScoreOSMD({
         }
       }
     },
-    [applyPage, getPAGE_H, hideBusy, log, mark, applyZoomFromRef]
+    [applyPage, getPAGE_H, hideBusy, log, mark, renderWithEffectiveWidth]
   );
 
   useEffect(() => {
@@ -1162,7 +1198,7 @@ export default function ScoreOSMD({
         }
 
         // Always use spinner for zoom-driven width reflow so we yield to paint
-        reflowFnRef.current(true /* resetToFirst */, false /* withSpinner */);
+        reflowFnRef.current(true /* resetToFirst */, true /* withSpinner */);
 
         // Record the dimensions this layout corresponds to
         if (wrapRef.current) {
@@ -1345,11 +1381,9 @@ export default function ScoreOSMD({
 
       outer.dataset.osmdPhase = 'render';
       mark('render:starting');
-
       const t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
-
-      applyZoomFromRef();
-      osmd.render();
+      renderWithEffectiveWidth(outer, osmd);
+      
 
       const t1 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
       const renderMs = Math.round(t1 - t0);
@@ -1566,6 +1600,23 @@ export default function ScoreOSMD({
     zoomFactorRef.current = computeZoomFactor();
     reflowFnRef.current(true /* resetToFirst */, true /* withSpinner */);
   }, [computeZoomFactor]);
+
+  // Trigger a reflow using the *current browser zoom* (with spinner)
+  const doZoomAdjust = useCallback(() => {
+    const outer = wrapRef.current;
+    if (!outer) { return; }
+    // recompute relative zoom from the browser
+    zoomFactorRef.current = computeZoomFactor();
+    tapLog(outer, `zoomAdjust: zf=${zoomFactorRef.current.toFixed(3)}`);
+    hud(outer, `zoomAdjust • zf:${zoomFactorRef.current.toFixed(2)}`);
+    // force a width reflow and show spinner so the overlay can paint first
+    reflowFnRef.current(true /* resetToFirst */, true /* withSpinner */);
+  }, [computeZoomFactor]);
+
+  // Width-only reflow (no spinner)
+  const doWidthAdjust = useCallback(() => {
+    reflowFnRef.current(true /* resetToFirst */, false /* withSpinner */);
+  }, []);
 
   const debugDumpFlags = useCallback(() => {
     const outer = wrapRef.current;
@@ -1837,6 +1888,18 @@ export default function ScoreOSMD({
     return () => window.removeEventListener("keydown", onKey);
   }, [computeZoomFactor]);
 
+  useEffect(() => {
+    const outer = wrapRef.current;
+    if (!outer) { return; }
+    const onZoomTo = (e: Event) => {
+      const z = (e as CustomEvent<number>).detail;
+      zoomFactorRef.current = Math.max(0.5, Math.min(3, Number(z) || 1));
+      reflowFnRef.current(true, true); // spinner on for big scores
+    };
+    outer.addEventListener('osmd:zoomTo', onZoomTo as EventListener);
+    return () => outer.removeEventListener('osmd:zoomTo', onZoomTo as EventListener);
+  }, []);
+
   /* ---------- Styles ---------- */
 
   const isFill = fillParent;
@@ -1934,6 +1997,44 @@ export default function ScoreOSMD({
         }}
       >
         Dump flags
+      </button>
+
+      <button
+        type="button"
+        onClick={doZoomAdjust}
+        style={{
+          position: "fixed",
+          top: 32,
+          left: 226,
+          zIndex: 100002,
+          padding: "4px 8px",
+          font: "12px/1.2 monospace",
+          background: "#e8ffe8",
+          border: "1px solid #0a5",
+          borderRadius: 6,
+          cursor: "pointer"
+        }}
+      >
+        Zoom Adjust
+      </button>
+
+      <button
+        type="button"
+        onClick={doWidthAdjust}
+        style={{
+          position: "fixed",
+          top: 32,
+          left: 336,
+          zIndex: 100002,
+          padding: "4px 8px",
+          font: "12px/1.2 monospace",
+          background: "#f0f0ff",
+          border: "1px solid #556",
+          borderRadius: 6,
+          cursor: "pointer"
+        }}
+      >
+        Width Adjust
       </button>
 
       <div
