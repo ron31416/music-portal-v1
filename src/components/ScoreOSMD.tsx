@@ -1471,7 +1471,7 @@ export default function ScoreOSMD({
       
       resizeObs.observe(outer);
       const hostE1 = hostRef.current;
-      if (hostE1) resizeObs.observe(hostE1);
+      if (hostE1) { resizeObs.observe(hostE1); }
       
      })().catch((err: unknown) => {
       hideBusy();
