@@ -924,12 +924,26 @@ export default function ScoreOSMD({
           spinnerOwnerRef.current = token;
           setBusyMsg(DEFAULT_BUSY);
           setBusy(true);
-          // Ensure the overlay actually paints before heavy work starts
-          await ap('spinner-paint', 120);
+
+          // Failsafe BEFORE we await, in case the paint wait never resolves
+          const preFs = window.setTimeout(() => {
+            spinnerOwnerRef.current = null;
+            hideBusy();
+            mark('spinner:failsafe-pre');   // shows in HUD/log if it fires
+          }, 2500);
+
+          // Never wait forever for a "paint" — proceed after ~600ms regardless
+          await Promise.race([
+            ap('spinner-paint', 120),
+            new Promise<void>(res => setTimeout(res, 600)),
+          ]);
+
+          // We got past the race — clear pre-failsafe, mark spinner-on,
+          // and install the normal post-spinner failsafe as before.
+          window.clearTimeout(preFs);
           outer.dataset.osmdPhase = 'spinner-on';
           mark('spinner-on');
 
-          // fail-safe: auto-clear if we somehow never reach finally/hideBusy
           if (spinnerFailSafeRef.current) {
             window.clearTimeout(spinnerFailSafeRef.current);
           }
