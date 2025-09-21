@@ -921,7 +921,7 @@ export default function ScoreOSMD({
         outer.dataset.osmdPhase = 'pre-spinner';
 
         if (withSpinner) {
-          // mark who owns the spinner for this run
+          // mark who owns the spinner
           spinnerOwnerRef.current = token;
 
           setBusyMsg(DEFAULT_BUSY);
@@ -930,42 +930,19 @@ export default function ScoreOSMD({
           outer.dataset.osmdPhase = "spinner-requested";
           mark("spinner-requested");
 
-          // --- hard yield to let React commit & the browser paint the overlay ---
-          // (use all three mechanisms with a timeout as a final safety)
-          await Promise.race([
-            // two rAFs → guarantees at least one real paint
-            new Promise<void>((resolve) =>
-              requestAnimationFrame(() =>
-                requestAnimationFrame(() => resolve())
-              )
-            ),
-            // microtask/message tick (with port cleanup)
-            new Promise<void>((resolve) => {
-              try {
-                const ch = new MessageChannel();
-                ch.port1.onmessage = () => {
-                  ch.port1.onmessage = null;
-                  try { ch.port1.close(); ch.port2.close(); } catch {}
-                  resolve();
-                };
-                ch.port2.postMessage(1);
-              } catch {
-                resolve();
-              }
-            }),
-            // absolute fallback (be generous for slow layouts)
-            new Promise<void>((resolve) => setTimeout(resolve, 600)),
-          ]);
+          // ---- HARD YIELD: let React commit and the browser paint ----
+          // one macrotask + one paint frame is enough on stubborn browsers
+          await new Promise<void>(resolve => setTimeout(resolve, 0));
+          await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
 
           outer.dataset.osmdPhase = "spinner-on";
           mark("spinner-on");
 
-          // fail-safe: if we somehow never reach finally/hideBusy, auto-clear
+          // fail-safe in case we never reach finally/hideBusy
           if (spinnerFailSafeRef.current) {
             window.clearTimeout(spinnerFailSafeRef.current);
           }
           spinnerFailSafeRef.current = window.setTimeout(() => {
-            // only clear if this run still owns the spinner
             if (spinnerOwnerRef.current === token) {
               spinnerOwnerRef.current = null;
               hideBusy();
