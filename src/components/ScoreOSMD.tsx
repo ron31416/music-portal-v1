@@ -30,37 +30,22 @@ async function awaitLoad(
   const o = osmd as unknown as OSMDHasLoad;
   await Promise.resolve(o.load(input));
 }
-/*
-const afterPaint = () =>
-  new Promise<void>((resolve) => {
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        resolve();
-      });
-    });
-  });
-*/
 
-/// ---------- Fail-safe afterPaint (hardened) ----------
-// Tries rAF→rAF; if throttled, falls back to timers and MessageChannel,
-// and finally an absolute ceiling so it always resolves.
-function afterPaint(label?: string, timeoutMs = 300): Promise<void> {
-  return new Promise((resolve) => {
-    let done = false;
-    const t0 =
-      typeof performance !== "undefined" && typeof performance.now === "function"
-        ? performance.now()
-        : Date.now();
+// --- Instance-scoped afterPaint factory (safe for multiple components) ---
+function makeAfterPaint(outer: HTMLDivElement) {
+  return function afterPaintLocal(label?: string, timeoutMs = 300): Promise<void> {
+    return new Promise((resolve) => {
+      let done = false;
+      const t0 =
+        typeof performance !== "undefined" && typeof performance.now === "function"
+          ? performance.now()
+          : Date.now();
 
-    function finish(
-      why: "raf" | "timeout" | "hidden" | "message" | "ceiling"
-    ): void {
-      if (done) { return; }
-      done = true;
-      try {
-        const outer = document.querySelector<HTMLDivElement>('[data-osmd-wrapper="1"]');
-        if (outer) {
-          outer.dataset.osmdPhase = `afterPaint:${label ?? ""}:${why}`;
+      function finish(why: "raf" | "timeout" | "hidden" | "message" | "ceiling"): void {
+        if (done) return;
+        done = true;
+        try {
+          outer.dataset.osmdAfterpaint = `${label ?? ""}:${why}`;
           const now =
             typeof performance !== "undefined" && typeof performance.now === "function"
               ? performance.now()
@@ -72,48 +57,35 @@ function afterPaint(label?: string, timeoutMs = 300): Promise<void> {
             box.textContent += `[ap] ${label ?? ""} -> ${why} (${ms}ms)\n`;
             box.scrollTop = box.scrollHeight;
           }
-        }
-      } catch {
-        /* no-op */
+        } catch {}
+        resolve();
       }
-      resolve();
-    }
 
-    // If the tab isn't visible, rAF may be suppressed — don't hang.
-    if (document.visibilityState !== "visible") {
-      setTimeout(function () { finish("hidden"); }, 0);
-      return;
-    }
+      if (document.visibilityState !== "visible") {
+        setTimeout(() => finish("hidden"), 0);
+        return;
+      }
 
-    // 1) Preferred: two rAFs to get past style+layout into paint.
-    try {
-      requestAnimationFrame(function () {
-        requestAnimationFrame(function () {
-          finish("raf");
+      try {
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => finish("raf"));
         });
-      });
-    } catch {
-      /* no-op */
-    }
+      } catch {}
 
-    // 2) Timer fallback (covers many rAF-throttle cases).
-    setTimeout(function () { finish("timeout"); }, timeoutMs);
+      setTimeout(() => finish("timeout"), timeoutMs);
 
-    // 3) MessageChannel fallback (fires even when some timers are delayed).
-    try {
-      const ch = new MessageChannel();
-      ch.port1.onmessage = function () {
-        ch.port1.onmessage = null;
-        finish("message");
-      };
-      ch.port2.postMessage(1);
-    } catch {
-      /* no-op */
-    }
+      try {
+        const ch = new MessageChannel();
+        ch.port1.onmessage = () => {
+          ch.port1.onmessage = null;
+          finish("message");
+        };
+        ch.port2.postMessage(1);
+      } catch {}
 
-    // 4) Absolute ceiling so we can never be stuck here.
-    setTimeout(function () { finish("ceiling"); }, Math.max(timeoutMs * 4, 1200));
-  });
+      setTimeout(() => finish("ceiling"), Math.max(timeoutMs * 4, 1200));
+    });
+  };
 }
 
 function getSvg(outer: HTMLDivElement): SVGSVGElement | null {
@@ -418,6 +390,9 @@ export default function ScoreOSMD({
   // --- spinner ownership to prevent "stuck overlay" across overlapping calls ---
   const spinnerOwnerRef = useRef<symbol | null>(null);
 
+  const spinnerFailSafeRef = useRef<number | null>(null);
+
+
     // Track browser zoom relative to mount
   const baseScaleRef = useRef<number>(1);
   const zoomFactorRef = useRef<number>(1);
@@ -531,12 +506,9 @@ export default function ScoreOSMD({
     const host = hostRef.current;
     if (!host || !outer) { return; }
 
-    // Recalculate zoom and push it into OSMD so glyph sizes change.
-    let zf = computeZoomFactor();
-    if (!Number.isFinite(zf) || zf <= 0) { zf = 1; }
-    zf = Math.min(3, Math.max(0.5, zf));
-    zoomFactorRef.current = zf;
+    // Use the zoom that was computed by the caller just before render.
     applyZoomFromRef();
+    const zf = Math.min(3, Math.max(0.5, zoomFactorRef.current || 1));
 
     // Compute the layout width in *unzoomed* CSS px.
     const hostW = Math.max(1, Math.floor(outer.clientWidth));
@@ -573,7 +545,7 @@ export default function ScoreOSMD({
     if (svg) {
       svg.style.transformOrigin = "top left";
     }
-  }, [computeZoomFactor, applyZoomFromRef]);
+  }, [applyZoomFromRef]);
 
   /** Apply a page index */
   const applyPage = useCallback(
@@ -860,6 +832,8 @@ export default function ScoreOSMD({
       const outer = wrapRef.current;
       if (!outer) { return; }
 
+      const ap = makeAfterPaint(outer);
+
       if (repagRunningRef.current) { return; }   // prevent overlap
       repagRunningRef.current = true;
 
@@ -884,7 +858,7 @@ export default function ScoreOSMD({
 
         if (resetToFirst) {
           applyPage(0);
-          afterPaint('repag:first').then(() => applyPage(0));
+          ap('repag:first').then(() => applyPage(0));
           hud(outer, `recompute • applied page 1 • pages:${starts.length}`);
           return;
         }
@@ -929,6 +903,8 @@ export default function ScoreOSMD({
       const osmd  = osmdRef.current;
       if (!outer || !osmd) { return; }
 
+      const ap = makeAfterPaint(outer);
+
       // If a width reflow is in progress, queue exactly one follow-up and bail.
       if (reflowRunningRef.current) {
         reflowAgainRef.current = "width";
@@ -967,20 +943,30 @@ export default function ScoreOSMD({
           setBusyMsg(DEFAULT_BUSY);
           setBusy(true);
           outer.dataset.osmdPhase = 'spinner-on';
-          mark('spinner-on');                 // one mark
-          afterPaint('reflow'); // fire-and-forget — do not await
+          mark('spinner-on');
+
+          // fail-safe: auto-clear if we somehow never reach finally/hideBusy
+          if (spinnerFailSafeRef.current) {
+            window.clearTimeout(spinnerFailSafeRef.current);
+          }
+          spinnerFailSafeRef.current = window.setTimeout(() => {
+            if (spinnerOwnerRef.current === token) {
+              spinnerOwnerRef.current = null;
+              hideBusy();
+              mark('spinner:failsafe-clear');
+            }
+          }, 3500);
         }
 
         outer.dataset.osmdPhase = 'render';
         mark('render:starting');
         zoomFactorRef.current = computeZoomFactor();
-        applyZoomFromRef();
         renderWithEffectiveWidth(outer, osmd);
         mark('render:finished');
 
         outer.dataset.osmdPhase = 'post-render-continue';
         mark('afterPaint:nonblocking');
-        afterPaint('post-render').then(() => {
+        ap('post-render').then(() => {
           outer.dataset.osmdPhase = 'render:painted';
           mark('render:painted');
         });
@@ -1015,7 +1001,7 @@ export default function ScoreOSMD({
         if (newStarts.length === 0) {
           outer.dataset.osmdPhase = 'reset:first:empty-starts';
           applyPage(0);
-          await afterPaint('apply:first-empty');
+          await ap('apply:first-empty');
           applyPage(0);
           outer.dataset.osmdPhase = 'reset:first:done';
           mark('reset:first:done');
@@ -1026,7 +1012,7 @@ export default function ScoreOSMD({
           outer.dataset.osmdPhase = 'reset:first';
           mark('reset:first');
           applyPage(0);
-          await afterPaint('apply:first');
+          await ap('apply:first');
           applyPage(0);
           outer.dataset.osmdPhase = 'reset:first:done';
           mark('reset:first:done');
@@ -1047,7 +1033,7 @@ export default function ScoreOSMD({
         mark(`apply-page:${nearest}`);
 
         applyPage(nearest);
-        await afterPaint('apply:nearest');
+        await ap('apply:nearest');
         applyPage(nearest);
 
         outer.dataset.osmdPhase = `applied:${nearest}`;
@@ -1056,8 +1042,9 @@ export default function ScoreOSMD({
         log(`reflow:done page=${nearest+1}/${newStarts.length} bands=${newBands.length}`);
       } finally {
         outer.dataset.osmdPhase = 'finally';
-        mark('finally');                // ← add
-        window.clearInterval(wd);       // ← add
+        mark('finally');
+        window.clearInterval(wd);
+
         // only the call that showed the spinner is allowed to hide it
         if (withSpinner && spinnerOwnerRef.current === token) {
           spinnerOwnerRef.current = null;
@@ -1076,10 +1063,24 @@ export default function ScoreOSMD({
           log(`reflow:drain queued height pass`);
           setTimeout(() => { repagFnRef.current(true, false); }, 0);
         }
+
+        if (spinnerFailSafeRef.current) {
+          window.clearTimeout(spinnerFailSafeRef.current);
+          spinnerFailSafeRef.current = null;
+        }
       }
     },
     [applyPage, getPAGE_H, hideBusy, log, mark, renderWithEffectiveWidth, computeZoomFactor, applyZoomFromRef]
   );
+
+  useEffect(() => {
+    return () => {
+      if (spinnerFailSafeRef.current) {
+        window.clearTimeout(spinnerFailSafeRef.current);
+        spinnerFailSafeRef.current = null;
+      }
+    };
+  }, []);
 
   // keep ref pointing to latest width-reflow callback
   useEffect(() => {
@@ -1254,8 +1255,10 @@ export default function ScoreOSMD({
       }) as OpenSheetMusicDisplay;
       osmdRef.current = osmd;
 
-      showBusy(DEFAULT_BUSY);
-      afterPaint('boot'); // fire-and-forget
+      // Pin the boot spinner; we will hide it explicitly at the end.
+      setBusyMsg(DEFAULT_BUSY);
+      setBusy(true);
+      const ap = makeAfterPaint(outer); ap('boot');
 
       // Load score:
       // - If src starts with /api/, fetch bytes and hand OSMD a File/Uint8Array.
@@ -1349,13 +1352,15 @@ export default function ScoreOSMD({
       outer.dataset.osmdPhase = 'render';
       mark('render:starting');
       zoomFactorRef.current = computeZoomFactor();
-      applyZoomFromRef();
       renderWithEffectiveWidth(outer, osmd);
       mark('render:finished');
 
       outer.dataset.osmdPhase = 'post-render-continue';
       mark('afterPaint:nonblocking');
-      afterPaint('post-render').then(() => { mark('render:painted'); });
+      ap('post-render').then(() => {
+        outer.dataset.osmdPhase = 'render:painted';
+        mark('render:painted');
+      });
 
       purgeWebGL(outer);
 
