@@ -384,9 +384,6 @@ export default function ScoreOSMD({
   const reflowAgainRef = useRef<"none" | "width" | "height">("none");
   const repagRunningRef = useRef(false);    // guards height-only repagination
 
-  // --- busy helpers (prevents stuck overlay) ---
-  const busyTimerRef = useRef<number | null>(null);
-
   // --- spinner ownership to prevent "stuck overlay" across overlapping calls ---
   const spinnerOwnerRef = useRef<symbol | null>(null);
 
@@ -439,13 +436,10 @@ export default function ScoreOSMD({
   }, []);
 
   const hideBusy = useCallback(() => {
-    if (busyTimerRef.current) {
-      window.clearTimeout(busyTimerRef.current);
-      busyTimerRef.current = null;
-    }
     setBusy(false);
     setBusyMsg(DEFAULT_BUSY);
-    tapLog(wrapRef.current!, "busy:off");
+    const outer = wrapRef.current;
+    if (outer) { tapLog(outer, "busy:off"); }
   }, [DEFAULT_BUSY]);
 
   // ---- callback ref proxies (used by queued setTimeouts) ----
@@ -930,6 +924,8 @@ export default function ScoreOSMD({
           spinnerOwnerRef.current = token;
           setBusyMsg(DEFAULT_BUSY);
           setBusy(true);
+          // Ensure the overlay actually paints before heavy work starts
+          await ap('spinner-paint', 120);
           outer.dataset.osmdPhase = 'spinner-on';
           mark('spinner-on');
 
@@ -938,11 +934,9 @@ export default function ScoreOSMD({
             window.clearTimeout(spinnerFailSafeRef.current);
           }
           spinnerFailSafeRef.current = window.setTimeout(() => {
-            if (spinnerOwnerRef.current === token) {
-              spinnerOwnerRef.current = null;
-              hideBusy();
-              mark('spinner:failsafe-clear');
-            }
+            spinnerOwnerRef.current = null;
+            hideBusy();
+            mark('spinner:failsafe-clear');
           }, 3500);
         }
 
@@ -1021,7 +1015,11 @@ export default function ScoreOSMD({
         mark(`apply-page:${nearest}`);
 
         applyPage(nearest);
-        await ap('apply:nearest');
+        // Never let AP stall us if rAF is throttled
+        await Promise.race([
+          ap('apply:nearest'),
+          new Promise<void>(res => setTimeout(res, 700)),
+        ]);
         applyPage(nearest);
 
         outer.dataset.osmdPhase = `applied:${nearest}`;
@@ -1476,10 +1474,6 @@ export default function ScoreOSMD({
         (osmdRef.current as { dispose?: () => void } | null)?.dispose?.();
         osmdRef.current = null;
       }
-      if (busyTimerRef.current) {
-        window.clearTimeout(busyTimerRef.current);
-        busyTimerRef.current = null;
-      }
     };
     // Intentionally only re-init when the score source or measure-number mode changes.
     // Width/height changes are handled by ResizeObserver + visualViewport effects.
@@ -1491,7 +1485,7 @@ export default function ScoreOSMD({
   /** Paging helpers */
   // --- Stuck-page guard: ensure forward/back actually lands on the next/prev start ---
   const tryAdvance = useCallback((dir: 1 | -1) => {
-    if (busy) { return; }
+    if (busyRef.current) { return; }
 
     const starts = pageStartsRef.current;
     const pages  = starts.length;
@@ -1531,7 +1525,7 @@ export default function ScoreOSMD({
 
       if (idx !== beforePage) { applyPage(idx); }
     });
-  }, [applyPage, busy, getPAGE_H]
+  }, [applyPage, getPAGE_H]
 );
 
   const goNext = useCallback(() => tryAdvance(1),  [tryAdvance]);
@@ -1541,7 +1535,7 @@ export default function ScoreOSMD({
   // Wheel & keyboard paging (disabled while busy)
   useEffect(() => {
     const onWheel = (e: WheelEvent) => {
-      if (!readyRef.current || busy) {
+      if (!readyRef.current || busyRef.current) {
         return;
       }
       if (Math.abs(e.deltaY) < Math.abs(e.deltaX)) {
@@ -1556,7 +1550,7 @@ export default function ScoreOSMD({
     };
 
     const onKey = (e: KeyboardEvent) => {
-      if (!readyRef.current || busy) {
+      if (!readyRef.current || busyRef.current) {
         return;
       }
       if (["PageDown", "ArrowDown", " "].includes(e.key)) {
@@ -1581,7 +1575,7 @@ export default function ScoreOSMD({
       window.removeEventListener("wheel", onWheel);
       window.removeEventListener("keydown", onKey);
     };
-  }, [applyPage, goNext, goPrev, busy]);
+  }, [applyPage, goNext, goPrev]);
 
   // Touch swipe paging (disabled while busy)
   useEffect(() => {
@@ -1598,7 +1592,7 @@ export default function ScoreOSMD({
     const TAP_MAX_MOVE_PX = 12;   // little to no movement
 
     const onTouchStart = (e: TouchEvent) => {
-      if (!readyRef.current || busy || e.touches.length === 0) {
+      if (!readyRef.current ||  busyRef.current || e.touches.length === 0) {
         return;
       }
       active = true;
@@ -1608,7 +1602,7 @@ export default function ScoreOSMD({
     };
 
     const onTouchMove = (e: TouchEvent) => {
-      if (!active || !readyRef.current || busy) {
+      if (!active || !readyRef.current || busyRef.current) {
         return;
       }
       e.preventDefault();
@@ -1619,7 +1613,7 @@ export default function ScoreOSMD({
         return;
       }
       active = false;
-      if (busy) {
+      if (busyRef.current) {
         return;
       }
       const t = e.changedTouches[0];
@@ -1659,7 +1653,7 @@ export default function ScoreOSMD({
       cleanupOuter.removeEventListener("touchmove", onTouchMove);
       cleanupOuter.removeEventListener("touchend", onTouchEnd);
     };
-  }, [goNext, goPrev, busy]);
+  }, [goNext, goPrev]);
 
   // Recompute pagination when the visual viewport height changes (mobile URL/tool bars)
   useEffect(() => {
