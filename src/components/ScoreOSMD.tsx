@@ -1463,9 +1463,32 @@ export default function ScoreOSMD({
 
         // 3) Read + parse XML
         stage(outer, "zip:file:read");
-        const xmlText = await zip.file(entryName)!.async("string");
-        tapLog(outer, `zip:file:chars:${xmlText.length}`);
+        const file = zip.file(entryName);
+        if (!file) {
+          throw new Error(`zip:file:missing:${entryName}`);
+        }
+
+        // Read as bytes (avoids the JSZip string-decoder path)
+        const xmlBytes = await Promise.race([
+          file.async("uint8array"),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error("zip:file:read:timeout")), 5000)
+          ),
+        ]);
+
+        tapLog(outer, `zip:file:bytes:${xmlBytes.byteLength}`);
+
+        // Decode ourselves (robust, no streaming edge-cases)
+        let xmlText = "";
+        try {
+          xmlText = new TextDecoder("utf-8", { fatal: false }).decode(xmlBytes);
+        } catch (e) {
+          // Fallback decode if UTF-8 decoder complains
+          xmlText = Array.from(xmlBytes).map(b => String.fromCharCode(b)).join("");
+        }
+
         stage(outer, "zip:file:read:ok");
+        tapLog(outer, `zip:file:chars:${xmlText.length}`);
 
         stage(outer, "xml:parse");
         const doc = new DOMParser().parseFromString(xmlText, "application/xml");
