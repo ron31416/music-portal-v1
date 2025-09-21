@@ -1798,6 +1798,41 @@ export default function ScoreOSMD({
     }
   }, [busy]);
 
+  // Diagnostic/fallback: detect browser-zoom deltas and trigger width reflow.
+  useEffect(() => {
+    let last = computeZoomFactor();            // relative (current ÷ baseline)
+    let timer: number | null = null;
+
+    const check = () => {
+      if (document.visibilityState !== "visible") { return; }
+      const now = computeZoomFactor();
+      const delta = Math.abs(now - last);
+
+      // Treat >=1% as a real zoom change.
+      if (delta > 0.01) {
+        last = now;
+
+        const outer = wrapRef.current;
+        if (outer) {
+          tapLog(outer, `zoom:watch Δ=${delta.toFixed(3)} → zf=${now.toFixed(3)}`);
+          hud(outer, `zoom • zf:${now.toFixed(2)}`);
+        }
+
+        // Respect existing guards; if something is already running, just queue once.
+        if (reflowRunningRef.current || repagRunningRef.current || busyRef.current) {
+          reflowAgainRef.current = "width";
+          return;
+        }
+
+        zoomFactorRef.current = now;
+        reflowFnRef.current(true /* resetToFirst */, true /* withSpinner */);
+      }
+    };
+
+    timer = window.setInterval(check, 200);
+    return () => { if (timer) { window.clearInterval(timer); } };
+  }, [computeZoomFactor]);
+
   /* ---------- Styles ---------- */
 
   const isFill = fillParent;
