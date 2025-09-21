@@ -1341,17 +1341,17 @@ export default function ScoreOSMD({
           zip.forEach((relPath, file) => {
             if (file.dir) { return; }
             const p = relPath.toLowerCase();
-            if (p.startsWith("meta-inf/")) return;
+            if (p.startsWith("meta-inf/")) { return; }
             if (p.endsWith(".musicxml") || p.endsWith(".xml")) { candidates.push(relPath); }
           });
           candidates.sort((a, b) => {
             const aa = a.toLowerCase(), bb = b.toLowerCase();
             const scoreA = /score|partwise|timewise/.test(aa) ? 0 : 1;
             const scoreB = /score|partwise|timewise/.test(bb) ? 0 : 1;
-            if (scoreA !== scoreB) return scoreA - scoreB;
+            if (scoreA !== scoreB) { return scoreA - scoreB; }
             const extA = aa.endsWith(".musicxml") ? 0 : 1;
             const extB = bb.endsWith(".musicxml") ? 0 : 1;
-            if (extA !== extB) return extA - extB;
+            if (extA !== extB) { return extA - extB; }
             return aa.length - bb.length; // shorter first
           });
           entryName = candidates[0];
