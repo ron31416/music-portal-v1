@@ -921,37 +921,45 @@ export default function ScoreOSMD({
         outer.dataset.osmdPhase = 'pre-spinner';
 
         if (withSpinner) {
+          // mark who owns the spinner for this run
           spinnerOwnerRef.current = token;
+
           setBusyMsg(DEFAULT_BUSY);
           setBusy(true);
 
-          // Failsafe BEFORE we await, in case the paint wait never resolves
-          const preFs = window.setTimeout(() => {
-            spinnerOwnerRef.current = null;
-            hideBusy();
-            mark('spinner:failsafe-pre');   // shows in HUD/log if it fires
-          }, 2500);
+          outer.dataset.osmdPhase = "spinner-requested";
+          mark("spinner-requested");
 
-          // Never wait forever for a "paint" — proceed after ~600ms regardless
-          await Promise.race([
-            ap('spinner-paint', 120),
-            new Promise<void>(res => setTimeout(res, 600)),
-          ]);
+          // --- hard yield to let React commit & the browser paint the overlay ---
+          // (use all three mechanisms with a timeout as a final safety)
+          await new Promise<void>((resolve) => {
+            let done = false;
+            const finish = () => { if (!done) { done = true; resolve(); } };
 
-          // We got past the race — clear pre-failsafe, mark spinner-on,
-          // and install the normal post-spinner failsafe as before.
-          window.clearTimeout(preFs);
-          outer.dataset.osmdPhase = 'spinner-on';
-          mark('spinner-on');
+            try { requestAnimationFrame(() => requestAnimationFrame(finish)); } catch {}
+            try {
+              const ch = new MessageChannel();
+              ch.port1.onmessage = finish;
+              ch.port2.postMessage(1);
+            } catch {}
+            setTimeout(finish, 150); // last-resort failover so we never stall here
+          });
 
+          outer.dataset.osmdPhase = "spinner-on";
+          mark("spinner-on");
+
+          // fail-safe: if we somehow never reach finally/hideBusy, auto-clear
           if (spinnerFailSafeRef.current) {
             window.clearTimeout(spinnerFailSafeRef.current);
           }
           spinnerFailSafeRef.current = window.setTimeout(() => {
-            spinnerOwnerRef.current = null;
-            hideBusy();
-            mark('spinner:failsafe-clear');
-          }, 3500);
+            // only clear if this run still owns the spinner
+            if (spinnerOwnerRef.current === token) {
+              spinnerOwnerRef.current = null;
+              hideBusy();
+              mark("spinner:failsafe-clear");
+            }
+          }, 5000);
         }
 
         outer.dataset.osmdPhase = 'render';
