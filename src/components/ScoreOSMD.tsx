@@ -1757,7 +1757,6 @@ export default function ScoreOSMD({
     };
   }, [recomputePaginationHeightOnly, reflowOnWidthChange, log]);
 
-  // right below the other useEffects, anywhere inside the component:
   useEffect(() => {
     const outer = wrapRef.current;
     if (outer) {
@@ -1777,6 +1776,17 @@ export default function ScoreOSMD({
     }, 7000);
     return () => window.clearTimeout(t);
   }, [busy, hideBusy]);
+
+  useEffect(() => {
+    if (busy) { return; } // only act when the overlay turned off
+    const queued = reflowAgainRef.current;
+    reflowAgainRef.current = "none";
+    if (queued === "width") {
+      setTimeout(() => { reflowFnRef.current(true, false); }, 0);
+    } else if (queued === "height") {
+      setTimeout(() => { repagFnRef.current(true, false); }, 0);
+    }
+  }, [busy]);
 
   /* ---------- Styles ---------- */
 
