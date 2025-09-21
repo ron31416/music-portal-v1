@@ -1398,7 +1398,7 @@ export default function ScoreOSMD({
 
       if (src.startsWith("/api/")) {
         const res = await fetch(src, { cache: "no-store" });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        if (!res.ok) { throw new Error(`HTTP ${res.status}`); }
 
         const ab = await withTimeout(res.arrayBuffer(), 12000, "fetch:timeout");
         tapLog(outer, `fetch: ${ab.byteLength} bytes`);
@@ -1454,10 +1454,10 @@ export default function ScoreOSMD({
             const aa = a.toLowerCase(), bb = b.toLowerCase();
             const scoreA = /score|partwise|timewise/.test(aa) ? 0 : 1;
             const scoreB = /score|partwise|timewise/.test(bb) ? 0 : 1;
-            if (scoreA !== scoreB) return scoreA - scoreB;
+            if (scoreA !== scoreB) { return scoreA - scoreB; }
             const extA = aa.endsWith(".musicxml") ? 0 : 1;
             const extB = bb.endsWith(".musicxml") ? 0 : 1;
-            if (extA !== extB) return extA - extB;
+            if (extA !== extB) { return extA - extB; }
             return aa.length - bb.length; // shorter first
           });
 
@@ -1465,7 +1465,7 @@ export default function ScoreOSMD({
           stage(outer, `zip:scan:pick:${entryName ?? "(none)"}`);
         }
 
-        if (!entryName) throw new Error("zip:no-musicxml-in-archive");
+        if (!entryName) { throw new Error("zip:no-musicxml-in-archive"); }
 
         // 3) Read + parse XML (off-thread inflate)
         stage(outer, "zip:file:read");
