@@ -18,6 +18,13 @@ interface Props {
 
 interface Band { top: number; bottom: number; height: number }
 
+async function withTimeout<T>(p: Promise<T>, ms: number, tag: string): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<never>((_, rej) => setTimeout(() => rej(new Error(tag)), ms)),
+  ]);
+}
+
 // Await OSMD.load(...) whether it returns void or a Promise.
 // (No "maybe" checks needed.)
 async function awaitLoad(
@@ -464,10 +471,10 @@ export default function ScoreOSMD({
     void host.getBoundingClientRect(); // ensure style takes effect this frame
 
     try {
-      tapLog(
-        outer,
-        `render: hostW=${hostW} zf=${zf.toFixed(3)} rawW=${rawLayoutW} clampedW=${layoutW} osmd.Zoom=${osmd.Zoom ?? "n/a"}`
-      );
+    tapLog(
+      outer,
+      `render: hostW=${hostW} zf=${zf.toFixed(3)} rawW=${rawLayoutW} clampedW=${layoutW} osmd.Zoom=${osmd.Zoom ?? "n/a"}`
+    );
       osmd.render();
     } catch (e) {
       tapLog(outer, `render:error ${(e as Error).message || e}`);
@@ -1387,55 +1394,44 @@ export default function ScoreOSMD({
       // Load score (instrumented + single awaitLoad)
       stage(outer, "load:begin");
 
-      let loadInput: string | Document | ArrayBuffer | Uint8Array;
+      let loadInput: string | Document | ArrayBuffer | Uint8Array = src;
 
       if (src.startsWith("/api/")) {
         const res = await fetch(src, { cache: "no-store" });
-        if (!res.ok) { throw new Error(`HTTP ${res.status}`); }
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
-        const ab = await res.arrayBuffer();
+        const ab = await withTimeout(res.arrayBuffer(), 12000, "fetch:timeout");
         tapLog(outer, `fetch: ${ab.byteLength} bytes`);
         stage(outer, "fetch:done");
 
         stage(outer, "zip:lib:import");
-        const { default: JSZip } = await import("jszip");
+        const { unzip } = await import("unzipit");          // worker-based inflate
         stage(outer, "zip:lib:ready");
 
-        // Open the zip with a watchdog
         const tZip0 = tnow();
         stage(outer, "zip:open");
-        const zip = await Promise.race([
-          JSZip.loadAsync(ab),
-          new Promise<never>((_, reject) => {
-            window.setTimeout(() => reject(new Error("zip:open:timeout")), 8000);
-          }),
-        ]);
+        const { entries } = await withTimeout(unzip(ab), 8000, "zip:open:timeout");
         tapLog(outer, `zip:open: ${Math.round(tnow() - tZip0)}ms`);
         stage(outer, "zip:opened");
 
-        // 1) Try META-INF/container.xml
-        let entryName: string | undefined = undefined;
+        // 1) Prefer META-INF/container.xml
+        let entryName: string | undefined;
         stage(outer, "zip:container:probe");
-        const containerEntry = zip.file("META-INF/container.xml");
-
-        if (containerEntry) {
+        const container = entries["META-INF/container.xml"];
+        if (container) {
           stage(outer, "zip:container:read");
-          const containerXml = await containerEntry.async("string");
+          const containerXml = await withTimeout(container.text(), 6000, "zip:container:timeout");
 
           stage(outer, "zip:container:parse");
           const cdoc = new DOMParser().parseFromString(containerXml, "application/xml");
-
-          const rootfile =
-            cdoc.querySelector('rootfile[full-path]') ||
-            cdoc.querySelector("rootfile");
-
+          const rootfile = cdoc.querySelector('rootfile[full-path]') || cdoc.querySelector("rootfile");
           const fullPath =
             rootfile?.getAttribute("full-path") ||
             rootfile?.getAttribute("path") ||
             rootfile?.getAttribute("href") ||
             undefined;
 
-          if (fullPath && zip.file(fullPath)) {
+          if (fullPath && entries[fullPath]) {
             entryName = fullPath;
             stage(outer, `zip:container:selected:${entryName}`);
           } else {
@@ -1445,27 +1441,23 @@ export default function ScoreOSMD({
           stage(outer, "zip:container:missing");
         }
 
-        // 2) Fallback: scan for a likely MusicXML
+        // 2) Fallback: scan for likely MusicXML
         if (!entryName) {
           stage(outer, "zip:scan:start");
-          const candidates: string[] = [];
-          zip.forEach((relPath, file) => {
-            if (file.dir) { return; }
-            const p = relPath.toLowerCase();
-            if (p.startsWith("meta-inf/")) { return; }
-            if (p.endsWith(".musicxml") || p.endsWith(".xml")) { candidates.push(relPath); }
+          const candidates = Object.keys(entries).filter((p) => {
+            const q = p.toLowerCase();
+            return !q.startsWith("meta-inf/") && (q.endsWith(".musicxml") || q.endsWith(".xml"));
           });
           stage(outer, `zip:scan:found:${candidates.length}`);
 
           candidates.sort((a, b) => {
-            const aa = a.toLowerCase();
-            const bb = b.toLowerCase();
+            const aa = a.toLowerCase(), bb = b.toLowerCase();
             const scoreA = /score|partwise|timewise/.test(aa) ? 0 : 1;
             const scoreB = /score|partwise|timewise/.test(bb) ? 0 : 1;
-            if (scoreA !== scoreB) { return scoreA - scoreB; }
+            if (scoreA !== scoreB) return scoreA - scoreB;
             const extA = aa.endsWith(".musicxml") ? 0 : 1;
             const extB = bb.endsWith(".musicxml") ? 0 : 1;
-            if (extA !== extB) { return extA - extB; }
+            if (extA !== extB) return extA - extB;
             return aa.length - bb.length; // shorter first
           });
 
@@ -1473,80 +1465,43 @@ export default function ScoreOSMD({
           stage(outer, `zip:scan:pick:${entryName ?? "(none)"}`);
         }
 
-        if (!entryName) {
-          throw new Error("zip:no-musicxml-in-archive");
-        }
+        if (!entryName) throw new Error("zip:no-musicxml-in-archive");
 
-        // 3) Read + parse XML  (PATCHED)
+        // 3) Read + parse XML (off-thread inflate)
         stage(outer, "zip:file:read");
-        const file = zip.file(entryName);
-        if (!file) {
+
+        // Guard: the entry must exist
+        const entry = entries[entryName];
+        if (!entry) {
           throw new Error(`zip:file:missing:${entryName}`);
         }
 
-        let xmlText = "";
-
-        // Emit a tick every second so we can see if this step is alive
-        const readTicker = window.setInterval(() => {
-          tapLog(outer, "zip:file:read… ticking");
-        }, 1000);
-
-        try {
-          // Primary path: read as bytes (fast + robust), with a hard timeout
-          const xmlBytes = await Promise.race([
-            file.async("uint8array"),
-            new Promise<never>((_, reject) =>
-              setTimeout(() => reject(new Error("zip:file:read:timeout")), 9000)
-            ),
-          ]);
-          window.clearInterval(readTicker);
-
-          stage(outer, "zip:file:read:ok");
-          tapLog(outer, `zip:file:bytes:${xmlBytes.byteLength}`);
-
-          // Decode ourselves; fallback if UTF-8 decoder complains
-          try {
-            xmlText = new TextDecoder("utf-8", { fatal: false }).decode(xmlBytes);
-          } catch {
-            xmlText = Array.from(xmlBytes).map(b => String.fromCharCode(b)).join("");
-          }
-          tapLog(outer, `zip:file:chars:${xmlText.length}`);
-        } catch (e) {
-          // Fallback path: different JSZip code path (string), also timed
-          window.clearInterval(readTicker);
-          const msg = (e as Error)?.message || String(e);
-          tapLog(outer, `zip:file:read:error:${msg}`);
-          stage(outer, "zip:file:read:fallback:string");
-
-          xmlText = await Promise.race([
-            file.async("string"),
-            new Promise<never>((_, reject) =>
-              setTimeout(() => reject(new Error("zip:file:string:timeout")), 9000)
-            ),
-          ]);
-
-          stage(outer, "zip:file:read:ok");
-          tapLog(outer, `zip:file:chars:${xmlText.length} (fallback:string)`);
-        } finally {
-          window.clearInterval(readTicker);
-        }
+        // Read text with a hard timeout (prevents hangs)
+        const xmlText = await withTimeout(entry.text(), 10000, "zip:file:read:timeout");
+        stage(outer, "zip:file:read:ok");
+        tapLog(outer, `zip:file:chars:${xmlText.length}`);
 
         stage(outer, "xml:parse:start");
-        const doc = new DOMParser().parseFromString(xmlText, "application/xml");
+        const xmlDoc = new DOMParser().parseFromString(xmlText, "application/xml");
         stage(outer, "xml:parse:done");
 
-        const hasPartwise = doc.getElementsByTagName("score-partwise").length > 0;
-        const hasTimewise = doc.getElementsByTagName("score-timewise").length > 0;
-        stage(outer, `xml:tags:pw=${String(hasPartwise)} tw=${String(hasTimewise)}`);
+        // Helpful: detect XML parser errors explicitly
+        if (xmlDoc.getElementsByTagName("parsererror").length > 0) {
+          throw new Error("MusicXML parse error: XML parsererror");
+        }
 
+        const hasPartwise = xmlDoc.getElementsByTagName("score-partwise").length > 0;
+        const hasTimewise = xmlDoc.getElementsByTagName("score-timewise").length > 0;
+        stage(outer, `xml:tags:pw=${String(hasPartwise)} tw=${String(hasTimewise)}`);
         if (!hasPartwise && !hasTimewise) {
           throw new Error("MusicXML parse error: no score-partwise/score-timewise");
         }
 
-        const xmlString = new XMLSerializer().serializeToString(doc);
+        const xmlString = new XMLSerializer().serializeToString(xmlDoc);
         stage(outer, "load:ready");
-        loadInput = xmlString;
-      } else {
+        loadInput = xmlString;   // <-- assigned for osmd.load
+      }
+      else {
         loadInput = src;
       }
 
