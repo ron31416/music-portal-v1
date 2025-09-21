@@ -932,18 +932,30 @@ export default function ScoreOSMD({
 
           // --- hard yield to let React commit & the browser paint the overlay ---
           // (use all three mechanisms with a timeout as a final safety)
-          await new Promise<void>((resolve) => {
-            let done = false;
-            const finish = () => { if (!done) { done = true; resolve(); } };
-
-            try { requestAnimationFrame(() => requestAnimationFrame(finish)); } catch {}
-            try {
-              const ch = new MessageChannel();
-              ch.port1.onmessage = finish;
-              ch.port2.postMessage(1);
-            } catch {}
-            setTimeout(finish, 150); // last-resort failover so we never stall here
-          });
+          await Promise.race([
+            // two rAFs → guarantees at least one real paint
+            new Promise<void>((resolve) =>
+              requestAnimationFrame(() =>
+                requestAnimationFrame(() => resolve())
+              )
+            ),
+            // microtask/message tick (with port cleanup)
+            new Promise<void>((resolve) => {
+              try {
+                const ch = new MessageChannel();
+                ch.port1.onmessage = () => {
+                  ch.port1.onmessage = null;
+                  try { ch.port1.close(); ch.port2.close(); } catch {}
+                  resolve();
+                };
+                ch.port2.postMessage(1);
+              } catch {
+                resolve();
+              }
+            }),
+            // absolute fallback (be generous for slow layouts)
+            new Promise<void>((resolve) => setTimeout(resolve, 600)),
+          ]);
 
           outer.dataset.osmdPhase = "spinner-on";
           mark("spinner-on");
