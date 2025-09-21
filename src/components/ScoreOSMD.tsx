@@ -930,10 +930,20 @@ export default function ScoreOSMD({
           outer.dataset.osmdPhase = "spinner-requested";
           mark("spinner-requested");
 
-          // ---- HARD YIELD: let React commit and the browser paint ----
-          // one macrotask + one paint frame is enough on stubborn browsers
-          await new Promise<void>(resolve => setTimeout(resolve, 0));
-          await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+          await Promise.race([
+            // two rAFs → one full frame where the overlay can actually paint
+            new Promise<void>(r => requestAnimationFrame(() => requestAnimationFrame(() => r()))),
+            // microtask bounce (fast path on some browsers)
+            new Promise<void>(r => {
+              try {
+                const ch = new MessageChannel();
+                ch.port1.onmessage = () => r();
+                ch.port2.postMessage(1);
+              } catch { r(); }
+            }),
+            // absolute fallback so we never stall if rAF is throttled
+            new Promise<void>(r => setTimeout(r, 160)),
+          ]);
 
           outer.dataset.osmdPhase = "spinner-on";
           mark("spinner-on");
@@ -953,9 +963,16 @@ export default function ScoreOSMD({
 
         outer.dataset.osmdPhase = 'render';
         mark('render:starting');
-        zoomFactorRef.current = computeZoomFactor();
+
+        const t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+
+        zoomFactorRef.current = computeZoomFactor();      // ← keep this
         renderWithEffectiveWidth(outer, osmd);
-        mark('render:finished');
+
+        const t1 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+        const renderMs = Math.round(t1 - t0);
+        outer.dataset.osmdRenderMs = String(renderMs);
+        mark(`render:finished (${renderMs}ms)`);
 
         outer.dataset.osmdPhase = 'post-render-continue';
         mark('afterPaint:nonblocking');
@@ -1348,9 +1365,16 @@ export default function ScoreOSMD({
 
       outer.dataset.osmdPhase = 'render';
       mark('render:starting');
-      zoomFactorRef.current = computeZoomFactor();
+
+      const t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+
+      zoomFactorRef.current = computeZoomFactor();      // ← keep this
       renderWithEffectiveWidth(outer, osmd);
-      mark('render:finished');
+
+      const t1 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+      const renderMs = Math.round(t1 - t0);
+      outer.dataset.osmdRenderMs = String(renderMs);
+      mark(`render:finished (${renderMs}ms)`);
 
       outer.dataset.osmdPhase = 'post-render-continue';
       mark('afterPaint:nonblocking');
@@ -1447,7 +1471,6 @@ export default function ScoreOSMD({
       
       resizeObs.observe(outer);
       const hostE1 = hostRef.current;
-      if (hostE1) { resizeObs.observe(hostE1); }
 
      })().catch((err: unknown) => {
       hideBusy();
