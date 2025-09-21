@@ -1833,6 +1833,57 @@ export default function ScoreOSMD({
     return () => { if (timer) { window.clearInterval(timer); } };
   }, [computeZoomFactor]);
 
+  // Detect browser-zoom deltas and trigger the normal width reflow (spinner on).
+  useEffect(() => {
+    let last = computeZoomFactor();            // relative (current ÷ baseline at mount)
+    const tick = () => {
+      if (document.visibilityState !== "visible") { return; }
+      const now = computeZoomFactor();
+      const delta = Math.abs(now - last);
+
+      if (delta > 0.01) {                      // treat ~1% change as real zoom
+        last = now;
+        const outer = wrapRef.current;
+        if (outer) {
+          tapLog(outer, `zoom:watch Δ=${delta.toFixed(3)} → zf=${now.toFixed(3)}`);
+          hud(outer, `zoom • zf:${now.toFixed(2)}`);
+        }
+
+        // If something else is running, queue one width reflow and bail.
+        if (reflowRunningRef.current || repagRunningRef.current || busyRef.current) {
+          reflowAgainRef.current = "width";
+          return;
+        }
+
+        zoomFactorRef.current = now;           // keep the same source of truth
+        reflowFnRef.current(true /* resetToFirst */, true /* withSpinner */);
+      }
+    };
+
+    const id = window.setInterval(tick, 200);  // light polling; visible-only
+    return () => { window.clearInterval(id); };
+  }, [computeZoomFactor]);
+
+  // Ctrl+Shift+Z → force width reflow with spinner (diagnostic)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "z") {
+        e.preventDefault();
+        const outer = wrapRef.current;
+        if (outer) { tapLog(outer, "manual: reflow (Ctrl+Shift+Z)"); }
+        // Respect guards: if something is running, just queue once.
+        if (reflowRunningRef.current || repagRunningRef.current || busyRef.current) {
+          reflowAgainRef.current = "width";
+          return;
+        }
+        zoomFactorRef.current = computeZoomFactor();
+        reflowFnRef.current(true, true);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [computeZoomFactor]);
+
   /* ---------- Styles ---------- */
 
   const isFill = fillParent;
