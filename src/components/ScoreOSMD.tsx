@@ -464,7 +464,10 @@ export default function ScoreOSMD({
     void host.getBoundingClientRect(); // ensure style takes effect this frame
 
     try {
-      tapLog(outer, `render: hostW=${hostW} zf=${zf.toFixed(3)} rawW=${rawLayoutW} clampedW=${layoutW} osmd.Zoom=${(osmd as any).Zoom}`);
+      tapLog(
+        outer,
+        `render: hostW=${hostW} zf=${zf.toFixed(3)} rawW=${rawLayoutW} clampedW=${layoutW} osmd.Zoom=${osmd.Zoom ?? "n/a"}`
+      );
       osmd.render();
     } catch (e) {
       tapLog(outer, `render:error ${(e as Error).message || e}`);
@@ -906,7 +909,7 @@ export default function ScoreOSMD({
         const o = outer ? "1" : "0";
         const m = osmd ? "1" : "0";
         // If outer exists, surface the bail
-        if (outer) tapLog(outer, `reflow:early-bail outer=${o} osmd=${m}`);
+        if (outer) { tapLog(outer, `reflow:early-bail outer=${o} osmd=${m}`); }
         return;
       }
       tapLog(outer, `reflow:enter reset=${resetToFirst} spin=${withSpinner} running=${reflowRunningRef.current} repag=${repagRunningRef.current} busy=${busyRef.current}`);
@@ -1531,7 +1534,7 @@ export default function ScoreOSMD({
         stage(outer, "xml:parse:start");
         const doc = new DOMParser().parseFromString(xmlText, "application/xml");
         stage(outer, "xml:parse:done");
-        
+
         const hasPartwise = doc.getElementsByTagName("score-partwise").length > 0;
         const hasTimewise = doc.getElementsByTagName("score-timewise").length > 0;
         stage(outer, `xml:tags:pw=${String(hasPartwise)} tw=${String(hasTimewise)}`);
