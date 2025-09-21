@@ -1798,6 +1798,41 @@ export default function ScoreOSMD({
     }
   }, [busy]);
 
+  // Expose debug hooks + hotkey to force a reflow with/without spinner
+  useEffect(() => {
+    const outer = wrapRef.current;
+    if (!outer) { return; }
+
+    (window as any).__osmd = {
+      // Force full width reflow
+      reflow: (reset = true, spin = true) => reflowFnRef.current(reset, spin),
+      // Height-only repagination
+      repag: (reset = true) => repagFnRef.current(reset, false),
+      // Jump to a page
+      page: (i: number) => applyPage(i),
+      // Quick state dump
+      dump: () => ({
+        busy: busyRef.current,
+        reflowRunning: reflowRunningRef.current,
+        repagRunning: repagRunningRef.current,
+        page: pageIdxRef.current,
+        pages: pageStartsRef.current.length,
+        bands: bandsRef.current.length,
+        phase: outer.dataset.osmdPhase,
+        lastApply: outer.dataset.osmdLastApply,
+      }),
+    };
+
+    const onKey = (e: KeyboardEvent) => {
+      // Shift+R = force reflow WITH spinner so you can see activity
+      if (e.key.toLowerCase() === "r" && e.shiftKey) {
+        (window as any).__osmd?.reflow(true, true);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [applyPage]);
+
   /* ---------- Styles ---------- */
 
   const isFill = fillParent;
