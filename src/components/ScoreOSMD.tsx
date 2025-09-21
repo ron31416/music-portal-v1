@@ -1571,6 +1571,50 @@ export default function ScoreOSMD({
   const goNext = useCallback(() => tryAdvance(1),  [tryAdvance]);
   const goPrev = useCallback(() => tryAdvance(-1), [tryAdvance]);
 
+  // --- Debug helpers: force a width reflow and dump guard flags (temporary) ---
+  const debugReflowNow = useCallback(() => {
+    const outer = wrapRef.current;
+    if (outer) {
+      tapLog(outer, "debug: click reflow");
+    }
+
+    // Respect guards; if something is already running, queue once and bail.
+    if (reflowRunningRef.current || repagRunningRef.current || busyRef.current) {
+      reflowAgainRef.current = "width";
+      if (outer) {
+        tapLog(outer, "debug: queued width reflow (guard busy)");
+      }
+      return;
+    }
+
+    // Use the same zoom factor source of truth you already use
+    zoomFactorRef.current = computeZoomFactor();
+    reflowFnRef.current(true /* resetToFirst */, true /* withSpinner */);
+  }, [computeZoomFactor]);
+
+  const debugDumpFlags = useCallback(() => {
+    const outer = wrapRef.current;
+    const w = outer?.clientWidth ?? -1;
+    const h = outer?.clientHeight ?? -1;
+    const phase = outer?.dataset.osmdPhase ?? "(none)";
+    const again = reflowAgainRef.current;
+
+    const msg = [
+      "debug: flags",
+      `ready=${String(readyRef.current)}`,
+      `busy=${String(busyRef.current)}`,
+      `reflowRunning=${String(reflowRunningRef.current)}`,
+      `repagRunning=${String(repagRunningRef.current)}`,
+      `reflowAgain=${again}`,
+      `phase=${phase}`,
+      `W×H=${w}×${h}`,
+    ].join(" | ");
+
+    if (outer) {
+      tapLog(outer, msg);
+      hud(outer, msg);
+    }
+  }, []);
 
   // Wheel & keyboard paging (disabled while busy)
   useEffect(() => {
@@ -1943,6 +1987,46 @@ export default function ScoreOSMD({
         style={{ /*outline: "4px solid fuchsia",*/ ...outerStyle, ...style }}
         className={className}
       >
+
+      {/* DEBUG: temporary controls */}
+      <button
+        type="button"
+        onClick={debugReflowNow}
+        style={{
+          position: "fixed",
+          top: 32,
+          left: 6,
+          zIndex: 100002,
+          padding: "4px 8px",
+          font: "12px/1.2 monospace",
+          background: "#dff0ff",
+          border: "1px solid #0077cc",
+          borderRadius: 6,
+          cursor: "pointer"
+        }}
+      >
+        Debug • Reflow
+      </button>
+
+      <button
+        type="button"
+        onClick={debugDumpFlags}
+        style={{
+          position: "fixed",
+          top: 32,
+          left: 116,
+          zIndex: 100002,
+          padding: "4px 8px",
+          font: "12px/1.2 monospace",
+          background: "#fff6cc",
+          border: "1px solid #b38f00",
+          borderRadius: 6,
+          cursor: "pointer"
+        }}
+      >
+        Dump flags
+      </button>
+
       <div
         ref={hostRef}
         style={hostStyle} />
