@@ -929,7 +929,7 @@ export default function ScoreOSMD({
 
           outer.dataset.osmdPhase = "spinner-requested";
           mark("spinner-requested");
-          
+
           // Hard bypass: if we somehow don’t progress to "spinner-on" fast,
           // forcibly advance so the rest of the try-block runs.
           setTimeout(() => {
@@ -1192,7 +1192,7 @@ export default function ScoreOSMD({
         log('zoom: queued width reflow (already running)');
         return;
       }
-      log('zoom: width reflow with spinner');
+      log('zoom: width reflow (no spinner)');
       zoomFactorRef.current = computeZoomFactor();
       tapLog(wrapRef.current!, `zoomFactor:${zoomFactorRef.current.toFixed(3)}`);
       reflowFnRef.current(true /* resetToFirst */, false /* withSpinner */);
@@ -1742,8 +1742,8 @@ export default function ScoreOSMD({
         }
 
         if (widthChanged) {
-          // HORIZONTAL change → full OSMD reflow (with spinner) + reset to page 1
-          await reflowFnRef.current(true /* resetToFirst */, true /* withSpinner */);
+          // HORIZONTAL change → full OSMD reflow (no spinner) + reset to page 1
+          await reflowFnRef.current(true, false);
           handledWRef.current = currW;
           handledHRef.current = currH;
         } else if (heightChanged) {
