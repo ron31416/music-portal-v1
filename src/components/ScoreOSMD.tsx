@@ -1059,22 +1059,17 @@ export default function ScoreOSMD({
         mark('finally');
         window.clearInterval(wd);
 
-        // only the call that showed the spinner is allowed to hide it
-        if (withSpinner && spinnerOwnerRef.current === token) {
+        if (withSpinner) {                 // ← unconditional if we showed it
           spinnerOwnerRef.current = null;
           hideBusy();
         }
 
         reflowRunningRef.current = false;
-
-        // drain a single queued pass, if any — run it *without* spinner
         const queued = reflowAgainRef.current;
         reflowAgainRef.current = "none";
         if (queued === "width") {
-          log(`reflow:drain queued width pass`);
           setTimeout(() => { reflowFnRef.current(true, false); }, 0);
         } else if (queued === "height") {
-          log(`reflow:drain queued height pass`);
           setTimeout(() => { repagFnRef.current(true, false); }, 0);
         }
 
@@ -1770,6 +1765,18 @@ export default function ScoreOSMD({
       tapLog(outer, busy ? "busy:true" : "busy:false");
     }
   }, [busy]);
+
+  useEffect(() => {
+    if (!busy) return;
+    const t = window.setTimeout(() => {
+      // Safety valve: force-clear if something went wrong.
+      spinnerOwnerRef.current = null;
+      hideBusy();
+      const outer = wrapRef.current;
+      if (outer) tapLog(outer, "busy:auto-clear");
+    }, 7000);
+    return () => window.clearTimeout(t);
+  }, [busy, hideBusy]);
 
   /* ---------- Styles ---------- */
 
