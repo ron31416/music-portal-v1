@@ -1260,6 +1260,61 @@ export default function ScoreOSMD({
     };
   }, [computeZoomFactor]);
 
+  // Window resize fallback (debounced): ensure width/height changes trigger reflow
+  useEffect(() => {
+    let timer: number | null = null;
+
+    const onWinResize = () => {
+      if (!readyRef.current) { return; }
+      const outer = wrapRef.current;
+      if (!outer) { return; }
+
+      if (timer !== null) {
+        window.clearTimeout(timer);
+      }
+      timer = window.setTimeout(() => {
+        timer = null;
+        const wrap = wrapRef.current;
+        if (!wrap) { return; }
+
+        const currW = wrap.clientWidth;
+        const currH = wrap.clientHeight;
+
+        const widthChanged  = Math.abs(currW - handledWRef.current) >= 1;
+        const heightChanged = Math.abs(currH - handledHRef.current) >= 1;
+
+        // If something is already running, queue exactly one follow-up and bail
+        if (reflowRunningRef.current || repagRunningRef.current || busyRef.current) {
+          if (widthChanged) {
+            reflowAgainRef.current = "width";
+          } else if (heightChanged) {
+            reflowAgainRef.current = "height";
+          }
+          return;
+        }
+
+        if (widthChanged) {
+          reflowFnRef.current(true /* resetToFirst */, false /* withSpinner */);
+          handledWRef.current = currW;
+          handledHRef.current = currH;
+        } else if (heightChanged) {
+          repagFnRef.current(true /* resetToFirst */, false /* no spinner */);
+          handledHRef.current = currH;
+        }
+      }, 150);
+    };
+
+    window.addEventListener("resize", onWinResize);
+    return () => {
+      window.removeEventListener("resize", onWinResize);
+      if (timer !== null) {
+        window.clearTimeout(timer);
+        timer = null;
+      }
+    };
+  }, []);
+
+
   /** Init OSMD */
   useEffect(() => {
     let resizeObs: ResizeObserver | null = null;
