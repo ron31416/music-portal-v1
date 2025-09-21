@@ -1767,13 +1767,13 @@ export default function ScoreOSMD({
   }, [busy]);
 
   useEffect(() => {
-    if (!busy) return;
+    if (!busy) { return; }
     const t = window.setTimeout(() => {
       // Safety valve: force-clear if something went wrong.
       spinnerOwnerRef.current = null;
       hideBusy();
       const outer = wrapRef.current;
-      if (outer) tapLog(outer, "busy:auto-clear");
+      if (outer) { tapLog(outer, "busy:auto-clear"); }
     }, 7000);
     return () => window.clearTimeout(t);
   }, [busy, hideBusy]);
