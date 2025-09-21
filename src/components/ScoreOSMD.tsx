@@ -929,6 +929,18 @@ export default function ScoreOSMD({
 
           outer.dataset.osmdPhase = "spinner-requested";
           mark("spinner-requested");
+          
+          // Hard bypass: if we somehow don’t progress to "spinner-on" fast,
+          // forcibly advance so the rest of the try-block runs.
+          setTimeout(() => {
+            if (
+              spinnerOwnerRef.current === token &&
+              outer.dataset.osmdPhase === "spinner-requested"
+            ) {
+              outer.dataset.osmdPhase = "spinner-on:force";
+              mark("spinner-on:force");
+            }
+          }, 250);
 
           // 1) Always yield to the next macrotask so React can commit the overlay.
           //    This cannot be throttled like rAF can.
@@ -1183,7 +1195,7 @@ export default function ScoreOSMD({
       log('zoom: width reflow with spinner');
       zoomFactorRef.current = computeZoomFactor();
       tapLog(wrapRef.current!, `zoomFactor:${zoomFactorRef.current.toFixed(3)}`);
-      reflowFnRef.current(true /* resetToFirst */, true /* withSpinner */);
+      reflowFnRef.current(true /* resetToFirst */, false /* withSpinner */);
 
       if (wrapRef.current) {
         handledWRef.current = wrapRef.current.clientWidth;
@@ -1447,7 +1459,7 @@ export default function ScoreOSMD({
           (async () => {
               if (widthChangedSinceHandled) {
                 // HORIZONTAL change → full OSMD reflow + reset to page 1
-                await reflowFnRef.current(true /* resetToFirst */, true /* withSpinner */);
+                await reflowFnRef.current(true /* resetToFirst */, false /* withSpinner */);
                 handledWRef.current = currW;
                 handledHRef.current = currH;
               } else if (heightChangedSinceHandled) {
@@ -1822,7 +1834,7 @@ export default function ScoreOSMD({
 
   /* ---------- Busy overlay ---------- */
   const blockerStyle: React.CSSProperties = {
-    position: "absolute",
+    position: "fixed",
     inset: 0,
     zIndex: 9999,
     display: busy ? "grid" : "none",
