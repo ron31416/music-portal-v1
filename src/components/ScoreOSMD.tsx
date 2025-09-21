@@ -980,8 +980,10 @@ export default function ScoreOSMD({
 
         outer.dataset.osmdPhase = 'post-render-continue';
         mark('afterPaint:nonblocking');
-        afterPaint('post-render'); // fire-and-forget — don’t await here
-        // (we won't mark "render:painted" synchronously to avoid implying paint happened)
+        afterPaint('post-render').then(() => {
+          outer.dataset.osmdPhase = 'render:painted';
+          mark('render:painted');
+        });
 
         outer.dataset.osmdPhase = 'measure';
 
@@ -1253,7 +1255,7 @@ export default function ScoreOSMD({
       osmdRef.current = osmd;
 
       showBusy(DEFAULT_BUSY);
-      await afterPaint('boot');
+      afterPaint('boot'); // fire-and-forget
 
       // Load score:
       // - If src starts with /api/, fetch bytes and hand OSMD a File/Uint8Array.
@@ -1351,10 +1353,9 @@ export default function ScoreOSMD({
       renderWithEffectiveWidth(outer, osmd);
       mark('render:finished');
 
-      outer.dataset.osmdPhase = 'post-render-await';
-      mark('afterPaint:starting');
-      await afterPaint('post-render');
-      mark('render:painted');
+      outer.dataset.osmdPhase = 'post-render-continue';
+      mark('afterPaint:nonblocking');
+      afterPaint('post-render').then(() => { mark('render:painted'); });
 
       purgeWebGL(outer);
 
