@@ -42,7 +42,7 @@ function makeAfterPaint(outer: HTMLDivElement) {
           : Date.now();
 
       function finish(why: "raf" | "timeout" | "hidden" | "message" | "ceiling"): void {
-        if (done) return;
+        if (done) { return; }
         done = true;
         try {
           outer.dataset.osmdAfterpaint = `${label ?? ""}:${why}`;
@@ -437,18 +437,6 @@ export default function ScoreOSMD({
     tapLog(outer, msg);  // bottom-left on-page console
     hud(outer, msg);     // tiny HUD top-right
   }, []);
-
-  const showBusy = useCallback((msg?: string) => {
-    if (msg) { setBusyMsg(msg); }
-    setBusy(true);
-    tapLog(wrapRef.current!, `busy:on ${msg ?? DEFAULT_BUSY}`);
-    if (busyTimerRef.current) { window.clearTimeout(busyTimerRef.current); }
-    busyTimerRef.current = window.setTimeout(() => {
-      setBusy(false);
-      setBusyMsg(DEFAULT_BUSY);
-      tapLog(wrapRef.current!, "busy:auto-clear (3s)");
-    }, 3000);
-  }, [DEFAULT_BUSY]);
 
   const hideBusy = useCallback(() => {
     if (busyTimerRef.current) {
@@ -1070,7 +1058,7 @@ export default function ScoreOSMD({
         }
       }
     },
-    [applyPage, getPAGE_H, hideBusy, log, mark, renderWithEffectiveWidth, computeZoomFactor, applyZoomFromRef]
+    [applyPage, getPAGE_H, hideBusy, log, mark, renderWithEffectiveWidth, computeZoomFactor]
   );
 
   useEffect(() => {
