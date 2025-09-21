@@ -375,6 +375,7 @@ export default function ScoreOSMD({
 
   const resizeTimerRef = useRef<number | null>(null); // ResizeObserver debounce
   const vvTimerRef = useRef<number | null>(null);     // visualViewport debounce
+  const zoomKickTimerRef = useRef<number | null>(null); // debounce for browser zoom
 
   const handledWRef = useRef<number>(-1);
   const handledHRef = useRef<number>(-1);
@@ -1180,27 +1181,44 @@ export default function ScoreOSMD({
     return () => document.removeEventListener("visibilitychange", onVis);
   }, []);
 
-  // Reflow when the *browser* zoom level changes (DPR/viewport scale)
+  // Reflow when the *browser* zoom level changes (debounced, spinner on)
   useEffect(() => {
     let lastDpr = window.devicePixelRatio || 1;
     let lastIW  = window.innerWidth;
     let lastIH  = window.innerHeight;
 
-    const kick = () => {
-      if (reflowRunningRef.current || repagRunningRef.current) {
-        reflowAgainRef.current = "width";
-        log('zoom: queued width reflow (already running)');
-        return;
-      }
-      log('zoom: width reflow (no spinner)');
-      zoomFactorRef.current = computeZoomFactor();
-      tapLog(wrapRef.current!, `zoomFactor:${zoomFactorRef.current.toFixed(3)}`);
-      reflowFnRef.current(true /* resetToFirst */, false /* withSpinner */);
+    const schedule = () => {
+      const outer = wrapRef.current;
+      if (!outer) { return; }
 
-      if (wrapRef.current) {
-        handledWRef.current = wrapRef.current.clientWidth;
-        handledHRef.current = wrapRef.current.clientHeight;
+      // Coalesce multiple zoom events into one reflow after a short quiet period
+      if (zoomKickTimerRef.current !== null) {
+        window.clearTimeout(zoomKickTimerRef.current);
       }
+      zoomKickTimerRef.current = window.setTimeout(() => {
+        zoomKickTimerRef.current = null;
+
+        // Update source-of-truth zoom factor once per burst
+        zoomFactorRef.current = computeZoomFactor();
+        tapLog(outer, `zoom:debounced zf=${zoomFactorRef.current.toFixed(3)}`);
+        hud(outer, `zoom • zf:${zoomFactorRef.current.toFixed(2)}`);
+
+        // Respect guards; if something is running, queue *one* width reflow and bail
+        if (reflowRunningRef.current || repagRunningRef.current || busyRef.current) {
+          reflowAgainRef.current = "width";
+          tapLog(outer, "zoom: queued width reflow (guard busy)");
+          return;
+        }
+
+        // Always use spinner for zoom-driven width reflow so we yield to paint
+        reflowFnRef.current(true /* resetToFirst */, true /* withSpinner */);
+
+        // Record the dimensions this layout corresponds to
+        if (wrapRef.current) {
+          handledWRef.current = wrapRef.current.clientWidth;
+          handledHRef.current = wrapRef.current.clientHeight;
+        }
+      }, 220); // tweak 180–300ms if you like
     };
 
     const onWindowResize = () => {
@@ -1213,30 +1231,36 @@ export default function ScoreOSMD({
 
       if (dprChanged || sizeChanged) {
         lastDpr = nowDpr; lastIW = iw; lastIH = ih;
-        kick();
+        schedule();
       }
     };
 
-    const vv = typeof window !== 'undefined' ? window.visualViewport : undefined;
+    const vv = typeof window !== "undefined" ? window.visualViewport : undefined;
     let lastScale = vv?.scale ?? 1;
+
     const onVV = () => {
       if (!vv) { return; }
-      if (Math.abs(vv.scale - lastScale) > 0.001) {
-        lastScale = vv.scale;
-        kick();
+      const s = vv.scale ?? 1;
+      if (Math.abs(s - lastScale) > 0.001) {
+        lastScale = s;
+        schedule();
       }
     };
 
-    window.addEventListener('resize', onWindowResize);
-    vv?.addEventListener('resize', onVV);
-    vv?.addEventListener('scroll', onVV);
+    window.addEventListener("resize", onWindowResize);
+    vv?.addEventListener("resize", onVV);
+    vv?.addEventListener("scroll", onVV);
 
     return () => {
-      window.removeEventListener('resize', onWindowResize);
-      vv?.removeEventListener('resize', onVV);
-      vv?.removeEventListener('scroll', onVV);
+      window.removeEventListener("resize", onWindowResize);
+      vv?.removeEventListener("resize", onVV);
+      vv?.removeEventListener("scroll", onVV);
+      if (zoomKickTimerRef.current !== null) {
+        window.clearTimeout(zoomKickTimerRef.current);
+        zoomKickTimerRef.current = null;
+      }
     };
-  }, [log, computeZoomFactor]);
+  }, [computeZoomFactor]);
 
   /** Init OSMD */
   useEffect(() => {
