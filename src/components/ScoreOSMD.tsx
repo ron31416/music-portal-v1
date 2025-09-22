@@ -156,66 +156,70 @@ function getOsmdTopLayer(): HTMLDivElement {
 }
 
 function hud(_outer: HTMLDivElement, text: string) {
-  const root = getOsmdTopLayer();
+  // Never let HUD break the app or swallow later logs.
+  try {
+    const root = getOsmdTopLayer();
 
-  let el = root.querySelector<HTMLDivElement>('[data-osmd-hud="1"]');
-  if (!el) {
-    el = document.createElement('div');
-    el.dataset.osmdHud = '1';
-    Object.assign(el.style, {
-      position: 'absolute',          // inside our fixed top-layer
-      right: '6px',
-      top: '0px',
-      zIndex: '1',
-      margin: '0',
-      font: '12px/1.2 monospace',
-      color: '#0f0',
-      background: 'rgba(0,0,0,0.6)',
-      padding: '4px 6px',
-      borderRadius: '6px',
-      pointerEvents: 'none',
-      maxWidth: '80vw',
-      boxSizing: 'border-box',
-      contain: 'layout style',
-      // force to be on-screen even with notches
-      // (env() is safe; browsers that don't support it treat it as 0)
-      paddingTop: 'max(0px, env(safe-area-inset-top, 0px))',
-    } as CSSStyleDeclaration);
-    root.appendChild(el);
+    let el = root.querySelector<HTMLDivElement>('[data-osmd-hud="1"]');
+    if (!el) {
+      el = document.createElement('div');
+      el.dataset.osmdHud = '1';
+      Object.assign(el.style, {
+        position: 'absolute',          // inside our fixed top-layer
+        right: '6px',
+        top: '0px',
+        zIndex: '1',
+        margin: '0',
+        font: '12px/1.2 monospace',
+        color: '#0f0',
+        background: 'rgba(0,0,0,0.6)',
+        padding: '4px 6px',
+        borderRadius: '6px',
+        pointerEvents: 'none',
+        maxWidth: '80vw',
+        boxSizing: 'border-box',
+        contain: 'layout style',
+        // keep clear of phone notches
+        paddingTop: 'max(0px, env(safe-area-inset-top, 0px))',
+      } as CSSStyleDeclaration);
+      root.appendChild(el);
 
-    // Keep pinned to the *visual* top when mobile toolbars/zoom move
-    const syncTop = () => {
+      // Keep pinned to the *visual* top even when mobile toolbars/zoom move
+      const syncTop = () => {
+        try {
+          const vv =
+            (typeof window !== 'undefined' && 'visualViewport' in window)
+              ? window.visualViewport
+              : undefined;
+          const vvTop = vv ? Math.floor(vv.offsetTop) : 0;
+
+          // stay at the visible top + safe-area inset
+          el!.style.top = `calc(${Math.max(0, vvTop)}px + env(safe-area-inset-top, 0px))`;
+        } catch {
+          el!.style.top = '0px';
+        }
+      };
+
       try {
-        const vv = (typeof window !== 'undefined' && 'visualViewport' in window)
-          ? window.visualViewport
-          : undefined;
-        const vvTop = vv ? Math.floor(vv.offsetTop) : 0;
+        window.visualViewport?.addEventListener('resize', syncTop);
+        window.visualViewport?.addEventListener('scroll', syncTop);
+      } catch {}
+      window.addEventListener('resize', syncTop);
+      window.addEventListener('scroll', syncTop, { passive: true });
+      window.addEventListener('orientationchange', syncTop);
 
-        // stay exactly at the visible top, plus safe-area notch if any
-        // we do the addition in CSS to let the browser handle safe-area
-        el!.style.top = `calc(${Math.max(0, vvTop)}px + env(safe-area-inset-top, 0px))`;
-      } catch {
-        el!.style.top = '0px';
-      }
-    };
+      // safety: if events get throttled, correct drift periodically
+      setInterval(syncTop, 1000);
 
-    // Robust set of listeners + a lightweight periodic nudge
-    try {
-      window.visualViewport?.addEventListener('resize', syncTop);
-      window.visualViewport?.addEventListener('scroll', syncTop);
-    } catch {}
-    window.addEventListener('resize', syncTop);
-    window.addEventListener('scroll', syncTop, { passive: true });
-    window.addEventListener('orientationchange', syncTop);
+      // initial position
+      syncTop();
+    }
 
-    // safety: if events get throttled, correct drift every 1s
-    setInterval(syncTop, 1000);
-
-    // initial position
-    syncTop();
+    el.textContent = text;
+  } catch (e) {
+    // If HUD setup ever fails, degrade to tapLog and carry on.
+    try { tapLog(_outer, `hud:error:${(e as Error)?.message ?? e}`); } catch {}
   }
-
-  el.textContent = text;
 }
 
 function tapLog(outer: HTMLDivElement, line: string) {
@@ -237,7 +241,7 @@ function tapLog(outer: HTMLDivElement, line: string) {
     const ts = new Date().toISOString().split('T')[1]?.split('.')[0] ?? '';
     box.textContent += `[${ts}] ${line}\n`;
     box.scrollTop = box.scrollHeight;
-  } catch (e) {
+  } catch {
     // Never let logging break the app
     try { outer.dataset.osmdLogError = '1'; } catch {}
   }
@@ -245,16 +249,20 @@ function tapLog(outer: HTMLDivElement, line: string) {
 
 function enterPhase(outer: HTMLDivElement | null, tag: string) {
   try {
+    const msg = `[ENTER] ${tag}`;
+    // If we don't have the wrapper yet, use the fixed top-layer as a safe fallback.
+    const host = outer ?? getOsmdTopLayer();
+
     if (outer) {
       outer.dataset.osmdEnter = `${tag}:${Date.now()}`;
-      tapLog(outer, `[ENTER] ${tag}`);
-      hud(outer, `ENTER • ${tag}`);
-    } else {
-      // fall back to console if we don't have the wrapper yet
-      // eslint-disable-next-line no-console
-      console.log(`[ENTER] ${tag}`);
     }
-  } catch {}
+
+    // Both of these write to on-page UI (no DevTools needed)
+    tapLog(host, msg);
+    hud(host, `ENTER • ${tag}`);
+  } catch {
+    /* never let logging break flow */
+  }
 }
 
 function stage(outer: HTMLDivElement, s: string) {
@@ -262,6 +270,7 @@ function stage(outer: HTMLDivElement, s: string) {
   tapLog(outer, `stage: ${s}`);
   hud(outer, s);
 }
+
 function tnow() {
   return (typeof performance !== 'undefined' && performance.now)
     ? performance.now()
@@ -883,24 +892,6 @@ export default function ScoreOSMD({
         outer,
         `apply page:${clampedPage+1}/${pages} start:${startIndex} nextStart:${nextStartIndex} h:${hVisible} maskTop:${maskTopWithinMusicPx}`
       );
-      
-      // eslint-disable-next-line no-console
-      console.log("[ScoreOSMD/applyPage]", {
-        pageIdx: pageIdxRef.current,
-        startIndex,
-        nextStartIndex,
-        hVisible,
-        ySnap,
-        maskTopWithinMusicPx,
-        lastIncludedIdx: nextStartIndex >= 0 ? Math.max(startIndex, nextStartIndex - 1) : null,
-        relBottom: (nextStartIndex >= 0 && bands[Math.max(startIndex, nextStartIndex - 1)])
-          ? (bands[Math.max(startIndex, nextStartIndex - 1)]!.bottom - startBand.top)
-          : null,
-        nextTopRel: (nextStartIndex >= 0 && bands[nextStartIndex])
-          ? (bands[nextStartIndex]!.top - startBand.top)
-          : null,
-      });
-
 
       let mask = outer.querySelector<HTMLDivElement>("[data-osmd-mask='1']");
       if (!mask) {
@@ -1923,19 +1914,19 @@ export default function ScoreOSMD({
       const hostE1 = hostRef.current;
       if (hostE1) { resizeObs.observe(hostE1); }
       
-     })().catch((err: unknown) => {
+    } )().catch((err: unknown) => {
       hideBusy();
 
       const outerNow = wrapRef.current;
-      console.error("[ScoreOSMD init crash]", err);
+      const msg =
+        err instanceof Error ? err.message :
+        typeof err === "string" ? err :
+        JSON.stringify(err);
 
       if (outerNow) {
-        const msg =
-          err instanceof Error ? err.message :
-          typeof err === "string" ? err :
-          JSON.stringify(err);
         outerNow.setAttribute("data-osmd-step", "init-crash");
         outerNow.dataset.osmdErr = String(msg).slice(0, 180);
+        tapLog(outerNow, `init:crash:${outerNow.dataset.osmdErr}`);
         hud(outerNow, `crash • ${outerNow.dataset.osmdErr}`);
       }
     });
