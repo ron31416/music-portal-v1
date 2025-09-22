@@ -509,6 +509,22 @@ export default function ScoreOSMD({
     if (outer) { tapLog(outer, "busy:off"); }
   }, [DEFAULT_BUSY]);
 
+    // --- LOG SNAPSHOT (used by zoom/reflow debug logs) ---
+  const fmtFlags = useCallback((): string => {
+    const w = wrapRef.current?.clientWidth ?? -1;
+    const h = wrapRef.current?.clientHeight ?? -1;
+    return [
+      `ready=${String(readyRef.current)}`,
+      `busy=${String(busyRef.current)}`,
+      `reflowRunning=${String(reflowRunningRef.current)}`,
+      `repagRunning=${String(repagRunningRef.current)}`,
+      `queued=${reflowAgainRef.current}`,
+      `osmd=${String(!!osmdRef.current)}`,
+      `zf=${(zoomFactorRef.current ?? 0).toFixed(3)}`,
+      `W×H=${w}×${h}`,
+    ].join(" ");
+  }, []);
+
   // ---- callback ref proxies (used by queued setTimeouts) ----
   const reflowFnRef = useRef<
     (resetToFirst?: boolean, showBusy?: boolean) => void | Promise<void>
@@ -921,12 +937,21 @@ export default function ScoreOSMD({
       }
       tapLog(outer, `reflow:enter reset=${resetToFirst} spin=${withSpinner} running=${reflowRunningRef.current} repag=${repagRunningRef.current} busy=${busyRef.current}`);
 
+      // Correlate with the most recent zoom click attempt
+      const attempt = Number(outer.dataset.osmdZoomAttempt || "0");
+      outer.dataset.osmdZoomEntered = String(attempt);
+      outer.dataset.osmdZoomEnteredAt = String(Date.now());
+      tapLog(outer, `[reflow] ENTER attempt#${attempt} • ${fmtFlags()}`);
+
       const ap = makeAfterPaint(outer);
 
       // If a width reflow is in progress, queue exactly one follow-up and bail.
       if (reflowRunningRef.current) {
         reflowAgainRef.current = "width";
-        log(`reflow: queued while running (reset=${resetToFirst}, spin=${withSpinner})`);
+        outer.dataset.osmdZoomQueued = String(attempt);
+        outer.dataset.osmdZoomQueueWhy = "reflowRunning";
+        outer.dataset.osmdZoomQueuedAt = String(Date.now());
+        tapLog(outer, `[reflow] QUEUED attempt#${attempt} • why=reflowRunning • ${fmtFlags()}`);
         return;
       }
       reflowRunningRef.current = true;
@@ -935,8 +960,11 @@ export default function ScoreOSMD({
       if (busyRef.current && !withSpinner) {
         reflowRunningRef.current = false;
         reflowAgainRef.current = "width";
+        outer.dataset.osmdZoomQueued = String(attempt);
+        outer.dataset.osmdZoomQueueWhy = "busyNoSpinner";
+        outer.dataset.osmdZoomQueuedAt = String(Date.now());
         setTimeout(() => reflowFnRef.current(true, false), 0);
-        log(`reflow: deferred because busy (no spinner)`);
+        tapLog(outer, `[reflow] QUEUED attempt#${attempt} • why=busyNoSpinner • ${fmtFlags()}`);
         return;
       }
 
@@ -1006,6 +1034,10 @@ export default function ScoreOSMD({
           }, 5000);
         }
 
+        const attemptForRender = Number(outer.dataset.osmdZoomEntered || "0");
+        outer.dataset.osmdRenderAttempt = String(attemptForRender);
+        tapLog(outer, `[render] starting attempt#${attemptForRender}`);
+
         outer.dataset.osmdPhase = 'render';
         mark('render:starting');
         const t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
@@ -1015,6 +1047,8 @@ export default function ScoreOSMD({
         const renderMs = Math.round(t1 - t0);
         outer.dataset.osmdRenderMs = String(renderMs);
         mark(`render:finished (${renderMs}ms)`);
+
+        tapLog(outer, `[render] finished attempt#${attemptForRender} (${renderMs}ms)`);
 
         outer.dataset.osmdPhase = 'post-render-continue';
         mark('afterPaint:nonblocking');
@@ -1098,6 +1132,11 @@ export default function ScoreOSMD({
 
         log(`reflow:done page=${nearest+1}/${newStarts.length} bands=${newBands.length}`);
       } finally {
+        // Pair with ENTER so we know this attempt completed the function
+        outer.dataset.osmdZoomExited = outer.dataset.osmdZoomEntered || "0";
+        outer.dataset.osmdZoomExitedAt = String(Date.now());
+        tapLog(outer, `[reflow] EXIT attempt#${outer.dataset.osmdZoomExited} • ${fmtFlags()}`);
+
         outer.dataset.osmdPhase = 'finally';
         mark('finally');
         window.clearInterval(wd);
@@ -1524,16 +1563,20 @@ export default function ScoreOSMD({
       await waitForFonts();
       stage(outer, "fonts:ready");
 
+      const attemptForRender = Number(outer.dataset.osmdZoomEntered || "0");
+      outer.dataset.osmdRenderAttempt = String(attemptForRender);
+      tapLog(outer, `[render] starting attempt#${attemptForRender}`);
+
       outer.dataset.osmdPhase = 'render';
       mark('render:starting');
       const t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
       renderWithEffectiveWidth(outer, osmd);
-      
 
       const t1 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
       const renderMs = Math.round(t1 - t0);
       outer.dataset.osmdRenderMs = String(renderMs);
       mark(`render:finished (${renderMs}ms)`);
+      tapLog(outer, `[render] finished attempt#${attemptForRender} (${renderMs}ms)`);
 
       outer.dataset.osmdPhase = 'post-render-continue';
       mark('afterPaint:nonblocking');
@@ -1757,21 +1800,34 @@ export default function ScoreOSMD({
   }, [computeZoomFactor]);
 
   // Trigger a reflow using the *current browser zoom* (with spinner)
-  const doZoomAdjust = useCallback(() => {
-    const outer = wrapRef.current;
-    if (!outer) { return; }
+const doZoomAdjust = useCallback(() => {
+  const outer = wrapRef.current;
+  if (!outer) { return; }
 
-    tapLog(outer, `ui:ZoomAdjust:click zf(before)=${(zoomFactorRef.current || 1).toFixed(3)}`);
+  // Bump an attempt counter we can correlate across functions
+  const attempt = (Number(outer.dataset.osmdZoomAttempt || "0") + 1);
+  outer.dataset.osmdZoomAttempt = String(attempt);
+  outer.dataset.osmdZoomClicked = String(Date.now());
 
-    // recompute relative zoom from the browser
-    zoomFactorRef.current = computeZoomFactor();
-    tapLog(outer, `zoomAdjust: zf=${zoomFactorRef.current.toFixed(3)}`);
-    hud(outer, `zoomAdjust • zf:${zoomFactorRef.current.toFixed(2)}`);
+  tapLog(outer, `[zoom] click attempt#${attempt} flags: ${fmtFlags()}`);
+  hud(outer, `zoom click • #${attempt}`);
 
-    tapLog(outer, "ui:ZoomAdjust:calling reflowFnRef(true,true)");
-    // force a width reflow and show spinner so the overlay can paint first
-    reflowFnRef.current(true /* resetToFirst */, true /* withSpinner */);
-  }, [computeZoomFactor]);
+  // Recompute relative zoom from the browser
+  zoomFactorRef.current = computeZoomFactor();
+  tapLog(outer, `[zoom] compute zf=${zoomFactorRef.current.toFixed(3)} attempt#${attempt}`);
+
+  // Schedule a watchdog: if reflow() never *enters*, we’ll know
+  window.setTimeout(() => {
+    const entered = outer.dataset.osmdZoomEntered;
+    if (entered !== String(attempt)) {
+      tapLog(outer, `[zoom] WATCHDOG: reflow did NOT start for attempt#${attempt} • ${fmtFlags()}`);
+      hud(outer, `zoom watchdog • #${attempt}`);
+    }
+  }, 1200);
+
+  // Force width reflow with spinner so overlay can paint first
+  reflowFnRef.current(true /* resetToFirst */, true /* withSpinner */);
+}, [computeZoomFactor, fmtFlags]);
 
   // Width-only reflow (no spinner)
   const doWidthAdjust = useCallback(() => {
@@ -1793,7 +1849,13 @@ export default function ScoreOSMD({
       `repagRunning=${String(repagRunningRef.current)}`,
       `reflowAgain=${again}`,
       `phase=${phase}`,
+      `attempt=${outer?.dataset.osmdZoomAttempt ?? "-"}`,
+      `entered=${outer?.dataset.osmdZoomEntered ?? "-"}`,
+      `queued=${outer?.dataset.osmdZoomQueued ?? "-"}`,
+      `queueWhy=${outer?.dataset.osmdZoomQueueWhy ?? "-"}`,
+      `exited=${outer?.dataset.osmdZoomExited ?? "-"}`,
       `W×H=${w}×${h}`,
+      `zf=${(zoomFactorRef.current ?? 0).toFixed(3)}`,
     ].join(" | ");
 
     if (outer) {
