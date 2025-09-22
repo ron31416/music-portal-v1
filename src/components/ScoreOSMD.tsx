@@ -1081,7 +1081,7 @@ export default function ScoreOSMD({
           void logStep("spinner-on");
 
           // Fail-safe: never leave overlay stuck
-          if (spinnerFailSafeRef.current) window.clearTimeout(spinnerFailSafeRef.current);
+          if (spinnerFailSafeRef.current) { window.clearTimeout(spinnerFailSafeRef.current); }
           spinnerFailSafeRef.current = window.setTimeout(() => {
             if (spinnerOwnerRef.current) {
               spinnerOwnerRef.current = null;
@@ -1113,7 +1113,7 @@ export default function ScoreOSMD({
         outer.dataset.osmdPhase = "post-render-continue";
         void logStep("afterPaint:nonblocking");
         ap("post-render").then(() => {
-          if (wrapRef.current !== outer) return;
+          if (wrapRef.current !== outer) { return; }
           outer.dataset.osmdPhase = "render:painted";
           void logStep("render:painted");
         });
@@ -1198,7 +1198,7 @@ export default function ScoreOSMD({
         let nearest = 0, best = Number.POSITIVE_INFINITY;
         for (let i = 0; i < newStarts.length; i++) {
           const s = newStarts[i];
-          if (s === undefined) continue;
+          if (s === undefined) { continue; }
           const d = Math.abs(s - oldTopIdx);
           if (d < best) { best = d; nearest = i; }
         }
@@ -1300,7 +1300,7 @@ export default function ScoreOSMD({
 
   useEffect(() => {
     const el = wrapRef.current;
-    if (!el) return;
+    if (!el) { return; }
 
     el.dataset.osmdProbeMounted = "1";
     void logStep("probe:mounted");
@@ -1864,15 +1864,15 @@ export default function ScoreOSMD({
   // --- Stuck-page guard: ensure forward/back actually lands on the next/prev start ---
   const tryAdvance = useCallback(
     (dir: 1 | -1) => {
-      if (busyRef.current) return;
+      if (busyRef.current) { return; }
 
       const starts = pageStartsRef.current;
       const pages = starts.length;
-      if (!pages) return;
+      if (!pages) { return; }
 
       const beforePage = pageIdxRef.current;
       const targetPage = Math.max(0, Math.min(beforePage + dir, pages - 1));
-      if (targetPage === beforePage) return;
+      if (targetPage === beforePage) { return; }
 
       // The start index we want to land on after any recompute
       const desiredStart = starts[targetPage] ?? starts[beforePage] ?? 0;
@@ -1881,13 +1881,13 @@ export default function ScoreOSMD({
 
       // If we didn't actually move, rebuild page starts and retry *toward* desiredStart.
       requestAnimationFrame(() => {
-        if (pageIdxRef.current !== beforePage) return; // we moved – all good
+        if (pageIdxRef.current !== beforePage) { return; } // we moved – all good
 
         const outer = wrapRef.current;
-        if (!outer) return;
+        if (!outer) { return; }
 
         const fresh = computePageStartIndices(bandsRef.current, getPAGE_H(outer));
-        if (!fresh.length) return;
+        if (!fresh.length) { return; }
 
         pageStartsRef.current = fresh;
 
@@ -1895,14 +1895,14 @@ export default function ScoreOSMD({
         let idx: number;
         if (dir === 1) {
           idx = fresh.findIndex((s) => s >= desiredStart);
-          if (idx < 0) idx = fresh.length - 1;
+          if (idx < 0) { idx = fresh.length - 1; }
         } else {
           let firstGreater = fresh.findIndex((s) => s > desiredStart);
-          if (firstGreater < 0) firstGreater = fresh.length;
+          if (firstGreater < 0) { firstGreater = fresh.length; }
           idx = Math.max(0, firstGreater - 1);
         }
 
-        if (idx !== beforePage) applyPage(idx);
+        if (idx !== beforePage) { applyPage(idx); }
       });
     },
     [applyPage, getPAGE_H]
@@ -2110,7 +2110,7 @@ export default function ScoreOSMD({
   // We only mirror the busy state to data-* and emit a single serialized log line.
   useEffect(() => {
     const el = wrapRef.current;
-    if (!el) return;
+    if (!el) { return; }
     el.dataset.osmdBusy = busy ? "1" : "0";
     void logStep(`busy:${busy ? "true" : "false"}`);
   }, [busy]);
@@ -2118,7 +2118,7 @@ export default function ScoreOSMD({
   // BUSY FAIL-SAFE: if the overlay lingers too long, force-clear and log once.
   // Light breadcrumb only — no need to block on paint here.
   useEffect(() => {
-    if (!busy) return;
+    if (!busy) { return; }
     const t = window.setTimeout(() => {
       spinnerOwnerRef.current = null;
       hideBusy();
@@ -2130,7 +2130,7 @@ export default function ScoreOSMD({
   // POST-BUSY QUEUE DRAIN: if width/height work was queued while busy, run it now.
   // These kick off heavy paths; add a tiny breadcrumb, but don't await paint here.
   useEffect(() => {
-    if (busy) return; // only act when the overlay turned off
+    if (busy) { return; } // only act when the overlay turned off
     const queued = reflowAgainRef.current;
     reflowAgainRef.current = "none";
 
