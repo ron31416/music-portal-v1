@@ -124,13 +124,12 @@ function hud(_outer: HTMLDivElement, text: string) {
     st.setAttribute('data-osmd-hud-reset', '');
     st.textContent = `
       html, body { margin:0 !important; padding:0 !important; border:0 !important; }
-      /* Neutralize transforms/filters on common app roots so fixed stays viewport-relative */
+      /* Neutralize transforms/filters on app roots so fixed stays viewport-relative */
       html, body, #__next, [data-osmd-root] { transform:none !important; filter:none !important; }
     `;
     document.head.appendChild(st);
   }
 
-  // Single global HUD, pinned to the *true* top (no env()/vv offsets)
   let el = document.querySelector<HTMLDivElement>('[data-osmd-hud="1"]');
   if (!el) {
     el = document.createElement('div');
@@ -151,13 +150,21 @@ function hud(_outer: HTMLDivElement, text: string) {
       boxSizing: 'border-box',
       contain: 'layout style',
     } as CSSStyleDeclaration);
-
-    // Force exact top even if a theme overrides fixed children
     el.style.setProperty('top', '0px', 'important');
-
-    // NOTE: deliberately **no** visualViewport offset syncing here.
     document.body.appendChild(el);
+
+    // Keep pinned to the *visual* top when mobile toolbars move
+    try {
+      const vv = (window as any).visualViewport as VisualViewport | undefined;
+      if (vv) {
+        const syncTop = () => { el!.style.top = `${Math.max(0, Math.floor(vv.offsetTop))}px`; };
+        syncTop();
+        vv.addEventListener('resize', syncTop);
+        vv.addEventListener('scroll', syncTop);
+      }
+    } catch {}
   }
+
   el.textContent = text;
 }
 
@@ -1074,6 +1081,10 @@ export default function ScoreOSMD({
         outer.dataset.osmdPhase = 'render';
         stage(outer, "render:start"); 
         await ap("render:start"); 
+        // Make absolutely sure the HUD/console repaint before the heavy sync render
+        await new Promise<void>(r => setTimeout(r, 0));   // macrotask yield
+        await ap("render:yield");                          // rAF/message paint tick
+
         const t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
         await renderWithEffectiveWidth(outer, osmd, ap);
 
@@ -1095,18 +1106,10 @@ export default function ScoreOSMD({
         outer.dataset.osmdPhase = 'measure';
 
         stage(outer, "measure:start");
-        // Don't let AP wedge here after zoom/scale changes.
-        {
-          const AP_GUARD_MS = 900; // 0.9s is plenty to let HUD paint, but never blocks forever
-          const p = ap("measure:start");
-          await Promise.race([p, new Promise<void>(r => setTimeout(r, AP_GUARD_MS))]);
-        }
-        tapLog(outer, "ap:measure:start:await");
-        {
-          const AP_GUARD_MS = 900;
-          const p = ap("measure:start");
-          await Promise.race([p, new Promise<void>(r => setTimeout(r, AP_GUARD_MS))]);
-        }
+        await Promise.race([
+          ap("measure:start"),
+          new Promise<void>(r => setTimeout(r, 900)),  // never wedge here
+        ]);
         tapLog(outer, "ap:measure:start:done");
 
         // Re-measure bands without any SVG transform applied
@@ -1664,6 +1667,10 @@ export default function ScoreOSMD({
       outer.dataset.osmdPhase = 'render';
       stage(outer, "render:start");           // NEW: stage name
       await ap("render:start");               // NEW: flush so it paints
+      // Make absolutely sure the HUD/console repaint before the heavy sync render
+      await new Promise<void>(r => setTimeout(r, 0));   // macrotask yield
+      await ap("render:yield");                          // rAF/message paint tick
+
       const t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
       await renderWithEffectiveWidth(outer, osmd, ap);
 
@@ -1684,18 +1691,10 @@ export default function ScoreOSMD({
       purgeWebGL(outer);
 
       stage(outer, "measure:start");
-      // Don't let AP wedge here after zoom/scale changes.
-      {
-        const AP_GUARD_MS = 900; // 0.9s is plenty to let HUD paint, but never blocks forever
-        const p = ap("measure:start");
-        await Promise.race([p, new Promise<void>(r => setTimeout(r, AP_GUARD_MS))]);
-      }
-      tapLog(outer, "ap:measure:start:await");
-      {
-        const AP_GUARD_MS = 900;
-        const p = ap("measure:start");
-        await Promise.race([p, new Promise<void>(r => setTimeout(r, AP_GUARD_MS))]);
-      }
+      await Promise.race([
+        ap("measure:start"),
+        new Promise<void>(r => setTimeout(r, 900)),  // never wedge here
+      ]);
       tapLog(outer, "ap:measure:start:done");
 
       const bands = withUntransformedSvg(outer, (svg) => measureSystemsPx(outer, svg)) ?? [];
