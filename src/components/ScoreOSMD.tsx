@@ -48,7 +48,7 @@ function makeAfterPaint(outer: HTMLDivElement) {
           ? performance.now()
           : Date.now();
 
-      function finish(why: "raf" | "timeout" | "hidden" | "message" | "ceiling"): void {
+      function finish(why: "raf" | "timeout" | "hidden" | "message" | "safety-tick" | "ceiling"): void {
         if (done) { return; }
         done = true;
         try {
@@ -90,6 +90,9 @@ function makeAfterPaint(outer: HTMLDivElement) {
         };
         ch.port2.postMessage(1);
       } catch {}
+
+      // Never wedge even if rAF/message are throttled: resolve next macrotask.
+      setTimeout(() => finish("safety-tick"), 0);
 
       setTimeout(() => finish("ceiling"), Math.max(timeoutMs * 4, 1200));
     });
@@ -1106,12 +1109,28 @@ export default function ScoreOSMD({
           mark('render:painted');
         });
 
-        outer.dataset.osmdPhase = 'measure';
+        // Clear any stray WebGL canvases between render and measure
+        purgeWebGL(outer);
 
+        outer.dataset.osmdPhase = 'measure';
         stage(outer, "measure:start");
+        hud(outer, "measure:start");
+        tapLog(outer, "diag: entering measure:start await");
+
+        // Beacons to prove the loop is alive while we await AP
+        try {
+          Promise.resolve().then(() => tapLog(outer, "beacon:microtask"));
+          setTimeout(() => tapLog(outer, "beacon:setTimeout:100ms"), 100);
+          setTimeout(() => tapLog(outer, "beacon:setTimeout:1000ms"), 1000);
+          try { requestAnimationFrame(() => tapLog(outer, "beacon:raf")); } catch {}
+        } catch {}
+
+        // Give the HUD/log a macrotask to paint before awaiting AP
+        await new Promise<void>(r => setTimeout(r, 0));
+
         await Promise.race([
           ap("measure:start"),
-          new Promise<void>(r => setTimeout(r, 900)),  // never wedge here
+          new Promise<void>(r => setTimeout(r, 900)),  // guard
         ]);
         tapLog(outer, "ap:measure:start:done");
 
@@ -1683,6 +1702,7 @@ export default function ScoreOSMD({
       mark(`render:finished (${renderMs}ms)`);
       tapLog(outer, `[render] finished attempt#${attemptForRender} (${renderMs}ms)`);
 
+      // BEGIN REPLACEMENT (reflowOnWidthChange - post-render → measure:start)
       outer.dataset.osmdPhase = 'post-render-continue';
       mark('afterPaint:nonblocking');
       ap('post-render').then(() => {
@@ -1691,14 +1711,30 @@ export default function ScoreOSMD({
         mark('render:painted');
       });
 
-      purgeWebGL(outer);
+      purgeWebGL(outer); // <-- keep this
 
+      outer.dataset.osmdPhase = 'measure';
       stage(outer, "measure:start");
+      hud(outer, "measure:start");
+      tapLog(outer, "diag: entering measure:start await");
+
+      // Beacons to prove the event loop/HUD are alive
+      try {
+        Promise.resolve().then(() => tapLog(outer, "beacon:microtask"));
+        setTimeout(() => tapLog(outer, "beacon:setTimeout:100ms"), 100);
+        setTimeout(() => tapLog(outer, "beacon:setTimeout:1000ms"), 1000);
+        try { requestAnimationFrame(() => tapLog(outer, "beacon:raf")); } catch {}
+      } catch {}
+
+      // Yield one macrotask so HUD/log can actually paint before we await
+      await new Promise<void>(r => setTimeout(r, 0));
+
       await Promise.race([
         ap("measure:start"),
-        new Promise<void>(r => setTimeout(r, 900)),  // never wedge here
+        new Promise<void>(r => setTimeout(r, 900)),  // guard
       ]);
       tapLog(outer, "ap:measure:start:done");
+      // END REPLACEMENT
 
       const bands = withUntransformedSvg(outer, (svg) => measureSystemsPx(outer, svg)) ?? [];
       if (bands.length === 0) {
