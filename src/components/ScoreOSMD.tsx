@@ -193,6 +193,20 @@ function tapLog(outer: HTMLDivElement, line: string) {
   box.scrollTop = box.scrollHeight;
 }
 
+function enterPhase(outer: HTMLDivElement | null, tag: string) {
+  try {
+    if (outer) {
+      outer.dataset.osmdEnter = `${tag}:${Date.now()}`;
+      tapLog(outer, `[ENTER] ${tag}`);
+      hud(outer, `ENTER • ${tag}`);
+    } else {
+      // fall back to console if we don't have the wrapper yet
+      // eslint-disable-next-line no-console
+      console.log(`[ENTER] ${tag}`);
+    }
+  } catch {}
+}
+
 function stage(outer: HTMLDivElement, s: string) {
   outer.dataset.osmdStage = s;
   tapLog(outer, `stage: ${s}`);
@@ -971,9 +985,12 @@ export default function ScoreOSMD({
 
   // --- WIDTH REFLOW (OSMD render at new width) ---
   const reflowOnWidthChange = useCallback(
-    async (resetToFirst: boolean = false, withSpinner: boolean = false): Promise<void> => {
+    async function reflowOnWidthChange(resetToFirst = false, withSpinner = false) {
       const outer = wrapRef.current;
       const osmd  = osmdRef.current;
+
+      enterPhase(outer, 'reflowOnWidthChange'); 
+
       if (!outer || !osmd) {
         const o = outer ? "1" : "0";
         const m = osmd ? "1" : "0";
@@ -1109,23 +1126,24 @@ export default function ScoreOSMD({
           mark('render:painted');
         });
 
-        // Clear any stray WebGL canvases between render and measure
-        purgeWebGL(outer);
+        // Defer the purge so it can’t block the reflow path.
+        // Also log clearly so we can prove whether it runs.
+        if (outer.querySelector('canvas')) {
+          tapLog(outer, "purge:queued");
+          setTimeout(() => {
+            try { purgeWebGL(outer); tapLog(outer, "purge:done"); }
+            catch (e) { tapLog(outer, `purge:error:${(e as Error)?.message ?? e}`); }
+          }, 0);
+        } else {
+          tapLog(outer, "purge:skip(no-canvas)");
+        }
 
         outer.dataset.osmdPhase = 'measure';
         stage(outer, "measure:start");
         hud(outer, "measure:start");
         tapLog(outer, "diag: entering measure:start await");
 
-        // Beacons to prove the loop is alive while we await AP
-        try {
-          Promise.resolve().then(() => tapLog(outer, "beacon:microtask"));
-          setTimeout(() => tapLog(outer, "beacon:setTimeout:100ms"), 100);
-          setTimeout(() => tapLog(outer, "beacon:setTimeout:1000ms"), 1000);
-          try { requestAnimationFrame(() => tapLog(outer, "beacon:raf")); } catch {}
-        } catch {}
-
-        // Give the HUD/log a macrotask to paint before awaiting AP
+        // Yield one macrotask so HUD/log can actually paint before we await
         await new Promise<void>(r => setTimeout(r, 0));
 
         await Promise.race([
@@ -1463,7 +1481,7 @@ export default function ScoreOSMD({
   }, []);
 
   /** Init OSMD */
-  useEffect(() => {
+  useEffect(function initOSMDEffect() {
     let resizeObs: ResizeObserver | null = null;
 
     (async () => {
@@ -1472,6 +1490,8 @@ export default function ScoreOSMD({
       if (!host || !outer) {
         return;
       }
+
+      enterPhase(outer, 'initOSMD');
 
       outer.dataset.osmdStep = "mount";
       hud(outer, "boot • mount");
@@ -1711,7 +1731,16 @@ export default function ScoreOSMD({
         mark('render:painted');
       });
 
-      purgeWebGL(outer); // <-- keep this
+      // Defer purge on init as well
+      if (outer.querySelector('canvas')) {
+        tapLog(outer, "purge(init):queued");
+        setTimeout(() => {
+          try { purgeWebGL(outer); tapLog(outer, "purge(init):done"); }
+          catch (e) { tapLog(outer, `purge(init):error:${(e as Error)?.message ?? e}`); }
+        }, 0);
+      } else {
+        tapLog(outer, "purge(init):skip(no-canvas)");
+      }
 
       outer.dataset.osmdPhase = 'measure';
       stage(outer, "measure:start");
