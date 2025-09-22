@@ -1088,6 +1088,9 @@ export default function ScoreOSMD({
 
         outer.dataset.osmdPhase = 'measure';
 
+        stage(outer, "measure:start");
+        await ap("measure:start");
+
         // Re-measure bands without any SVG transform applied
         const newBands = withUntransformedSvg(outer, (svg) => measureSystemsPx(outer, svg)) ?? [];
         outer.dataset.osmdPhase = `measure:${newBands.length}`;
