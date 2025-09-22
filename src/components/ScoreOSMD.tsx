@@ -226,7 +226,7 @@ export async function logStep(
   message: string,
   opts: { paint?: boolean; outer?: HTMLDivElement | null } = {}
 ): Promise<void> {
-  if (!DEBUG_LOG) return;
+  if (!DEBUG_LOG) { return; }
 
   const { paint = false, outer = null } = opts;
 
@@ -528,8 +528,7 @@ export default function ScoreOSMD({
   const renderWithEffectiveWidth = useCallback(
     async (
       outer: HTMLDivElement,
-      osmd: OpenSheetMusicDisplay,
-      ap: (label?: string, timeoutMs?: number) => Promise<void> 
+      osmd: OpenSheetMusicDisplay
     ): Promise<void> => {
       const host = hostRef.current;
       if (!host || !outer) { return; }
@@ -570,14 +569,14 @@ export default function ScoreOSMD({
 
         osmd.render(); // sync & heavy
       } finally {
-        if (lagTimer) window.clearTimeout(lagTimer);
+        if (lagTimer) { window.clearTimeout(lagTimer); }
         delete outer.dataset.osmdRenderLag;
         host.style.left  = prevLeft;
         host.style.right = prevRight;
         host.style.width = prevWidth;
 
         const svg = getSvg(outer);
-        if (svg) svg.style.transformOrigin = "top left";
+        if (svg) { svg.style.transformOrigin = "top left"; }
       }
     },
     [applyZoomFromRef]
@@ -985,7 +984,7 @@ export default function ScoreOSMD({
 
   // --- WIDTH REFLOW (OSMD render at new width) ---
   const reflowOnWidthChange = useCallback(
-    async function reflowOnWidthChange(resetToFirst = false, _withSpinner?: boolean) {
+    async function reflowOnWidthChange(resetToFirst = false, withSpinner?: boolean) {
       const outer = wrapRef.current;
       const osmd  = osmdRef.current;
 
@@ -1102,7 +1101,7 @@ export default function ScoreOSMD({
         await ap("render:yield");                         // rAF/message tick
 
         const t0 = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
-        await renderWithEffectiveWidth(outer, osmd, ap);
+        await renderWithEffectiveWidth(outer, osmd);
         const t1 = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
         const renderMs = Math.round(t1 - t0);
         outer.dataset.osmdRenderMs = String(renderMs);
@@ -1670,7 +1669,7 @@ export default function ScoreOSMD({
       await ap("render:yield");             // rAF/message tick
 
       const t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
-      await renderWithEffectiveWidth(outer, osmd, ap);
+      await renderWithEffectiveWidth(outer, osmd);
       const t1 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
       const renderMs = Math.round(t1 - t0);
       outer.dataset.osmdRenderMs = String(renderMs);
