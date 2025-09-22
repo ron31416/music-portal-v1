@@ -968,7 +968,7 @@ export default function ScoreOSMD({
         }
         if (reflowAgainRef.current === "width") {
           reflowAgainRef.current = "none";
-          setTimeout(() => { reflowFnRef.current(true, false); }, 0);
+          setTimeout(() => { reflowFnRef.current(true); }, 0);
         }
         repagRunningRef.current = false; // release the guard
       }
@@ -984,7 +984,7 @@ export default function ScoreOSMD({
 
   // --- WIDTH REFLOW (OSMD render at new width) ---
   const reflowOnWidthChange = useCallback(
-    async function reflowOnWidthChange(resetToFirst = false, withSpinner?: boolean) {
+    async function reflowOnWidthChange(resetToFirst = false) {
       const outer = wrapRef.current;
       const osmd  = osmdRef.current;
 
@@ -1244,7 +1244,7 @@ export default function ScoreOSMD({
         if (queued === "width") {
           setTimeout(() => {
             void logStep("reflow:finally:drain:width");
-            reflowFnRef.current(true, false);
+            reflowFnRef.current(true);
           }, 0);
         } else if (queued === "height") {
           setTimeout(() => {
@@ -1355,7 +1355,7 @@ export default function ScoreOSMD({
         }
 
         // Always use spinner for zoom-driven width reflow so we yield to paint
-        reflowFnRef.current(true /* resetToFirst */, true /* withSpinner */);
+        reflowFnRef.current(true);
 
         // Record the dimensions this layout corresponds to
         if (wrapRef.current) {
@@ -1449,7 +1449,7 @@ export default function ScoreOSMD({
 
         if (widthChanged) {
           void logStep("resize:fallback:reflow(width)");
-          reflowFnRef.current(true /* resetToFirst */, false /* withSpinner */);
+          reflowFnRef.current(true);
           handledWRef.current = currW;
           handledHRef.current = currH;
         } else if (heightChanged) {
@@ -1800,7 +1800,7 @@ export default function ScoreOSMD({
           (async () => {
             if (widthChangedSinceHandled) {
               // HORIZONTAL change → full OSMD reflow + reset to page 1
-              await reflowFnRef.current(true /* resetToFirst */, false /* withSpinner */);
+              await reflowFnRef.current(true);
               handledWRef.current = currW;
               handledHRef.current = currH;
             } else if (heightChangedSinceHandled) {
@@ -2081,7 +2081,7 @@ export default function ScoreOSMD({
 
         if (widthChanged) {
           // HORIZONTAL change → full OSMD reflow (no spinner) + reset to page 1
-          await reflowFnRef.current(true, false);
+          await reflowFnRef.current(true);
           handledWRef.current = currW;
           handledHRef.current = currH;
         } else if (heightChanged) {
@@ -2136,7 +2136,7 @@ export default function ScoreOSMD({
     if (queued === "width") {
       setTimeout(() => {
         void logStep("queue:drain:width");
-        reflowFnRef.current(true, false);
+        reflowFnRef.current(true);
       }, 0);
     } else if (queued === "height") {
       setTimeout(() => {
