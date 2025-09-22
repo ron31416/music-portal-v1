@@ -1445,12 +1445,34 @@ export default function ScoreOSMD({
         stage(outer, "fetch:done");
 
         stage(outer, "zip:lib:import");
-        const { unzip } = await import("unzipit");          // worker-based inflate
-        stage(outer, "zip:lib:ready");
+        // Try unzipit (worker-based). If the dynamic import hangs or fails, fall back.
+        let doUnzip: (ab: ArrayBuffer) => Promise<{ entries: Record<string, { text(): Promise<string> }> }>;
+        try {
+          const uz = await withTimeout(import("unzipit"), 4000, "zip:lib:import:timeout");
+          doUnzip = (ab: ArrayBuffer) => uz.unzip(ab);
+          stage(outer, "zip:lib:ready");
+        } catch {
+          stage(outer, "zip:lib:fallback:fflate");
+          const fl = await withTimeout(import("fflate"), 3000, "zip:fflate:import:timeout");
+          doUnzip = async (ab: ArrayBuffer) => {
+            const src = new Uint8Array(ab);
+            const files = await new Promise<Record<string, Uint8Array>>((res, rej) =>
+              fl.unzip(src, (err: unknown, data: Record<string, Uint8Array>) => (err ? rej(err) : res(data)))
+            );
+            const entries: Record<string, { text(): Promise<string> }> = {};
+            const td = new TextDecoder("utf-8");
+            for (const [name, bytes] of Object.entries(files)) {
+              const buf = bytes; // Uint8Array
+              entries[name] = { text: async () => td.decode(buf) };
+            }
+            return { entries };
+          };
+          stage(outer, "zip:lib:fallback:ready");
+        }
 
         const tZip0 = tnow();
         stage(outer, "zip:open");
-        const { entries } = await withTimeout(unzip(ab), 8000, "zip:open:timeout");
+        const { entries } = await withTimeout(doUnzip(ab), 8000, "zip:open:timeout");
         tapLog(outer, `zip:open: ${Math.round(tnow() - tZip0)}ms`);
         stage(outer, "zip:opened");
 
