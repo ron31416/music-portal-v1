@@ -61,7 +61,8 @@ function makeAfterPaint(outer: HTMLDivElement) {
           outer.dataset.osmdAfterpaintMs = String(ms);
           const box = document.querySelector<HTMLPreElement>('pre[data-osmd-log="1"]');
           if (box) {
-            box.textContent += `[ap] ${label ?? ""} -> ${why} (${ms}ms)\n`;
+            const ts = new Date().toISOString().split('T')[1]?.split('.')[0] ?? '';
+            box.textContent += `[${ts}] [ap] ${label ?? ""} -> ${why} (${ms}ms)\n`;
             box.scrollTop = box.scrollHeight;
           }
         } catch {}
@@ -116,40 +117,45 @@ function withUntransformedSvg<T>(outer: HTMLDivElement, fn: (svg: SVGSVGElement)
   }
 }
 
-function hud(outer: HTMLDivElement, text: string) {
-  // Ensure the page itself hugs the viewport top
-  try {
-    if (document?.body) {
-      // Only set if not already 0, to avoid stomping site styles repeatedly
-      const cs = getComputedStyle(document.body);
-      if (
-        cs.marginTop !== "0px" || cs.marginRight !== "0px" ||
-        cs.marginBottom !== "0px" || cs.marginLeft !== "0px"
-      ) {
-        document.body.style.margin = "0";
-      }
-    }
-  } catch {}
+function hud(_outer: HTMLDivElement, text: string) {
+  // One-time hard reset to avoid any “mystery gap” from global CSS
+  if (!document.querySelector('style[data-osmd-hud-reset]')) {
+    const st = document.createElement('style');
+    st.setAttribute('data-osmd-hud-reset', '');
+    st.textContent = `
+      html, body { margin:0 !important; padding:0 !important; border:0 !important; }
+      /* Neutralize transforms/filters on common app roots so fixed stays viewport-relative */
+      html, body, #__next, [data-osmd-root] { transform:none !important; filter:none !important; }
+    `;
+    document.head.appendChild(st);
+  }
 
-  // Single global HUD, fixed to the viewport's top edge
+  // Single global HUD, pinned to the *true* top (no env()/vv offsets)
   let el = document.querySelector<HTMLDivElement>('[data-osmd-hud="1"]');
   if (!el) {
-    el = document.createElement("div");
-    el.dataset.osmdHud = "1";
+    el = document.createElement('div');
+    el.dataset.osmdHud = '1';
     Object.assign(el.style, {
-      position: "fixed",
-      top: "0",                 // ← exact top, no env() offsets
-      right: "6px",
-      zIndex: "100003",
-      font: "12px/1.2 monospace",
-      color: "#0f0",
-      background: "rgba(0,0,0,0.6)",
-      padding: "4px 6px",
-      borderRadius: "6px",
-      pointerEvents: "none",
-      maxWidth: "80vw",
-      boxSizing: "border-box",
+      position: 'fixed',
+      top: '0px',
+      right: '6px',
+      zIndex: String(2147483647),
+      margin: '0',
+      font: '12px/1.2 monospace',
+      color: '#0f0',
+      background: 'rgba(0,0,0,0.6)',
+      padding: '4px 6px',
+      borderRadius: '6px',
+      pointerEvents: 'none',
+      maxWidth: '80vw',
+      boxSizing: 'border-box',
+      contain: 'layout style',
     } as CSSStyleDeclaration);
+
+    // Force exact top even if a theme overrides fixed children
+    el.style.setProperty('top', '0px', 'important');
+
+    // NOTE: deliberately **no** visualViewport offset syncing here.
     document.body.appendChild(el);
   }
   el.textContent = text;
@@ -1089,7 +1095,19 @@ export default function ScoreOSMD({
         outer.dataset.osmdPhase = 'measure';
 
         stage(outer, "measure:start");
-        await ap("measure:start");
+        // Don't let AP wedge here after zoom/scale changes.
+        {
+          const AP_GUARD_MS = 900; // 0.9s is plenty to let HUD paint, but never blocks forever
+          const p = ap("measure:start");
+          await Promise.race([p, new Promise<void>(r => setTimeout(r, AP_GUARD_MS))]);
+        }
+        tapLog(outer, "ap:measure:start:await");
+        {
+          const AP_GUARD_MS = 900;
+          const p = ap("measure:start");
+          await Promise.race([p, new Promise<void>(r => setTimeout(r, AP_GUARD_MS))]);
+        }
+        tapLog(outer, "ap:measure:start:done");
 
         // Re-measure bands without any SVG transform applied
         const newBands = withUntransformedSvg(outer, (svg) => measureSystemsPx(outer, svg)) ?? [];
@@ -1665,8 +1683,20 @@ export default function ScoreOSMD({
 
       purgeWebGL(outer);
 
-      stage(outer, "measure:start"); 
-      await ap("measure:start"); 
+      stage(outer, "measure:start");
+      // Don't let AP wedge here after zoom/scale changes.
+      {
+        const AP_GUARD_MS = 900; // 0.9s is plenty to let HUD paint, but never blocks forever
+        const p = ap("measure:start");
+        await Promise.race([p, new Promise<void>(r => setTimeout(r, AP_GUARD_MS))]);
+      }
+      tapLog(outer, "ap:measure:start:await");
+      {
+        const AP_GUARD_MS = 900;
+        const p = ap("measure:start");
+        await Promise.race([p, new Promise<void>(r => setTimeout(r, AP_GUARD_MS))]);
+      }
+      tapLog(outer, "ap:measure:start:done");
 
       const bands = withUntransformedSvg(outer, (svg) => measureSystemsPx(outer, svg)) ?? [];
       if (bands.length === 0) {
