@@ -118,23 +118,26 @@ function withUntransformedSvg<T>(outer: HTMLDivElement, fn: (svg: SVGSVGElement)
 
 /** Very small debug HUD + data-* breadcrumbs (shows even when console is stripped) */
 function hud(outer: HTMLDivElement, text: string) {
-  let el = outer.querySelector<HTMLDivElement>('[data-osmd-hud]');
+  // Make the HUD global + fixed to the viewport top
+  let el = document.querySelector<HTMLDivElement>('[data-osmd-hud="1"]'); // NEW: query document
   if (!el) {
     el = document.createElement('div');
     el.dataset.osmdHud = '1';
     Object.assign(el.style, {
-      position: 'absolute',
-      top: '6px',
+      position: 'fixed',                                        // NEW: fixed at viewport
+      top: 'calc(env(safe-area-inset-top, 0px) + 2px)',         // NEW: hug the very top
       right: '6px',
-      zIndex: '99999',
+      zIndex: '100003',
       font: '12px/1.2 monospace',
       color: '#0f0',
       background: 'rgba(0,0,0,0.6)',
       padding: '4px 6px',
       borderRadius: '6px',
       pointerEvents: 'none',
-        } as CSSStyleDeclaration);
-    outer.appendChild(el);
+      maxWidth: '80vw',
+      boxSizing: 'border-box',
+    } as CSSStyleDeclaration);
+    document.body.appendChild(el);                              // NEW: append to body (not outer)
   }
   el.textContent = text;
 }
@@ -1039,7 +1042,8 @@ export default function ScoreOSMD({
         tapLog(outer, `[render] starting attempt#${attemptForRender}`);
 
         outer.dataset.osmdPhase = 'render';
-        mark('render:starting');
+        stage(outer, "render:start"); 
+        await ap("render:start"); 
         const t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
         renderWithEffectiveWidth(outer, osmd);
 
@@ -1402,8 +1406,12 @@ export default function ScoreOSMD({
       outer.dataset.osmdStep = "mount";
       hud(outer, "boot • mount");
 
+      // Create afterPaint helper *before* heavy steps so we can flush HUD
+      const ap = makeAfterPaint(outer);
+
       const tImp0 = tnow();
       stage(outer, "import:OSMD");
+      await ap("import:OSMD"); // flush so HUD shows before dynamic import
       const { OpenSheetMusicDisplay: OSMDClass } =
         (await import("opensheetmusicdisplay")) as typeof import("opensheetmusicdisplay");
       tapLog(outer, `import: ${Math.round(tnow() - tImp0)}ms`);
@@ -1429,7 +1437,7 @@ export default function ScoreOSMD({
       // Pin the boot spinner; we will hide it explicitly at the end.
       setBusyMsg(DEFAULT_BUSY);
       setBusy(true);
-      const ap = makeAfterPaint(outer); ap('boot');
+      ap("boot");
 
       // Load score (instrumented + single awaitLoad)
       stage(outer, "load:begin");
@@ -1443,48 +1451,47 @@ export default function ScoreOSMD({
         const ab = await withTimeout(res.arrayBuffer(), 12000, "fetch:timeout");
         tapLog(outer, `fetch: ${ab.byteLength} bytes`);
         stage(outer, "fetch:done");
+        await ap("fetch:done"); // NEW: yield so the HUD updates before unzip work
 
+        // Import unzipit (single path) and yield so "zip:lib:import" shows immediately
         stage(outer, "zip:lib:import");
-        // Try unzipit (worker-based). If the dynamic import hangs or fails, fall back.
-        let doUnzip: (ab: ArrayBuffer) => Promise<{ entries: Record<string, { text(): Promise<string> }> }>;
+        await ap("zip:lib:import");
+
+        let unzip!: typeof import("unzipit").unzip;
         try {
           const uz = await withTimeout(import("unzipit"), 4000, "zip:lib:import:timeout");
-          doUnzip = (ab: ArrayBuffer) => uz.unzip(ab);
+          ({ unzip } = uz as typeof import("unzipit"));
           stage(outer, "zip:lib:ready");
-        } catch {
-          stage(outer, "zip:lib:fallback:fflate");
-          const fl = await withTimeout(import("fflate"), 3000, "zip:fflate:import:timeout");
-          doUnzip = async (ab: ArrayBuffer) => {
-            const src = new Uint8Array(ab);
-            const files = await new Promise<Record<string, Uint8Array>>((res, rej) =>
-              fl.unzip(src, (err: unknown, data: Record<string, Uint8Array>) => (err ? rej(err) : res(data)))
-            );
-            const entries: Record<string, { text(): Promise<string> }> = {};
-            const td = new TextDecoder("utf-8");
-            for (const [name, bytes] of Object.entries(files)) {
-              const buf = bytes; // Uint8Array
-              entries[name] = { text: async () => td.decode(buf) };
-            }
-            return { entries };
-          };
-          stage(outer, "zip:lib:fallback:ready");
+          await ap("zip:lib:ready");
+        } catch (e) {
+          stage(outer, "zip:lib:error");
+          await ap("zip:lib:error");
+          throw e; // no fallback
         }
 
+        // Open the zip and yield so "zip:open" shows before work starts
         const tZip0 = tnow();
         stage(outer, "zip:open");
-        const { entries } = await withTimeout(doUnzip(ab), 8000, "zip:open:timeout");
+        await ap("zip:open");
+        const { entries } = await withTimeout(unzip(ab), 8000, "zip:open:timeout");
         tapLog(outer, `zip:open: ${Math.round(tnow() - tZip0)}ms`);
         stage(outer, "zip:opened");
+        await ap("zip:opened");
 
         // 1) Prefer META-INF/container.xml
         let entryName: string | undefined;
+
         stage(outer, "zip:container:probe");
+        await ap("zip:container:probe");
+
         const container = entries["META-INF/container.xml"];
         if (container) {
           stage(outer, "zip:container:read");
+          await ap("zip:container:read");
           const containerXml = await withTimeout(container.text(), 6000, "zip:container:timeout");
 
           stage(outer, "zip:container:parse");
+          await ap("zip:container:parse");
           const cdoc = new DOMParser().parseFromString(containerXml, "application/xml");
           const rootfile = cdoc.querySelector('rootfile[full-path]') || cdoc.querySelector("rootfile");
           const fullPath =
@@ -1496,21 +1503,28 @@ export default function ScoreOSMD({
           if (fullPath && entries[fullPath]) {
             entryName = fullPath;
             stage(outer, `zip:container:selected:${entryName}`);
+            await ap("zip:container:selected");
           } else {
             stage(outer, "zip:container:no-match");
+            await ap("zip:container:no-match");
           }
         } else {
           stage(outer, "zip:container:missing");
+          await ap("zip:container:missing");
         }
 
-        // 2) Fallback: scan for likely MusicXML
+        // 2) Scan for likely MusicXML (not a library fallback; just file selection)
         if (!entryName) {
           stage(outer, "zip:scan:start");
+          await ap("zip:scan:start");
+
           const candidates = Object.keys(entries).filter((p) => {
             const q = p.toLowerCase();
             return !q.startsWith("meta-inf/") && (q.endsWith(".musicxml") || q.endsWith(".xml"));
           });
+
           stage(outer, `zip:scan:found:${candidates.length}`);
+          await ap("zip:scan:found");
 
           candidates.sort((a, b) => {
             const aa = a.toLowerCase(), bb = b.toLowerCase();
@@ -1525,12 +1539,14 @@ export default function ScoreOSMD({
 
           entryName = candidates[0];
           stage(outer, `zip:scan:pick:${entryName ?? "(none)"}`);
+          await ap("zip:scan:pick");
         }
 
         if (!entryName) { throw new Error("zip:no-musicxml-in-archive"); }
 
-        // 3) Read + parse XML (off-thread inflate)
+        // 3) Read + parse XML (inflate happens in worker; text() is async)
         stage(outer, "zip:file:read");
+        await ap("zip:file:read");
 
         // Guard: the entry must exist
         const entry = entries[entryName];
@@ -1541,11 +1557,14 @@ export default function ScoreOSMD({
         // Read text with a hard timeout (prevents hangs)
         const xmlText = await withTimeout(entry.text(), 10000, "zip:file:read:timeout");
         stage(outer, "zip:file:read:ok");
+        await ap("zip:file:read:ok");
         tapLog(outer, `zip:file:chars:${xmlText.length}`);
 
         stage(outer, "xml:parse:start");
+        await ap("xml:parse:start");
         const xmlDoc = new DOMParser().parseFromString(xmlText, "application/xml");
         stage(outer, "xml:parse:done");
+        await ap("xml:parse:done");
 
         // Helpful: detect XML parser errors explicitly
         if (xmlDoc.getElementsByTagName("parsererror").length > 0) {
@@ -1555,12 +1574,14 @@ export default function ScoreOSMD({
         const hasPartwise = xmlDoc.getElementsByTagName("score-partwise").length > 0;
         const hasTimewise = xmlDoc.getElementsByTagName("score-timewise").length > 0;
         stage(outer, `xml:tags:pw=${String(hasPartwise)} tw=${String(hasTimewise)}`);
+        await ap("xml:tags");
         if (!hasPartwise && !hasTimewise) {
           throw new Error("MusicXML parse error: no score-partwise/score-timewise");
         }
 
         const xmlString = new XMLSerializer().serializeToString(xmlDoc);
         stage(outer, "load:ready");
+        await ap("load:ready");
         loadInput = xmlString;   // <-- assigned for osmd.load
       }
       else {
@@ -1574,24 +1595,30 @@ export default function ScoreOSMD({
 
       const tLoad0 = tnow();
       stage(outer, "osmd.load:start");
+      await ap("osmd.load:start"); // NEW: flush before heavy load
+
       try {
         await awaitLoad(osmd, loadInput);
         tapLog(outer, `osmd.load: ${Math.round(tnow() - tLoad0)}ms`);
         stage(outer, "osmd.load:done");
+        await ap("osmd.load:done"); // (optional) flush completion
       } finally {
         clearInterval(loadWatch);
       }
 
       stage(outer, "fonts:waiting");
+      await ap("fonts:waiting");   // NEW: flush before waiting
       await waitForFonts();
       stage(outer, "fonts:ready");
+      await ap("fonts:ready");     // NEW: optional flush on completion
 
       const attemptForRender = Number(outer.dataset.osmdZoomEntered || "0");
       outer.dataset.osmdRenderAttempt = String(attemptForRender);
       tapLog(outer, `[render] starting attempt#${attemptForRender}`);
 
       outer.dataset.osmdPhase = 'render';
-      mark('render:starting');
+      stage(outer, "render:start");           // NEW: stage name
+      await ap("render:start");               // NEW: flush so it paints
       const t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
       renderWithEffectiveWidth(outer, osmd);
 
@@ -1610,6 +1637,9 @@ export default function ScoreOSMD({
       });
 
       purgeWebGL(outer);
+
+      stage(outer, "measure:start"); 
+      await ap("measure:start"); 
 
       const bands = withUntransformedSvg(outer, (svg) => measureSystemsPx(outer, svg)) ?? [];
       if (bands.length === 0) {
@@ -1631,6 +1661,7 @@ export default function ScoreOSMD({
       pageIdxRef.current = 0;
       applyPage(0);
       stage(outer, "apply:first");
+      await ap("apply:first"); // lets the first page paint before repagination kicks in
 
       // show a first HUD snapshot
       hud(outer, `init • svg:${outer.dataset.osmdSvg} • bands:${outer.dataset.osmdBands} • pages:${outer.dataset.osmdPages}`);
