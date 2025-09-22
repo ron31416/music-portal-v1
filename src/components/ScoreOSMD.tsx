@@ -1053,6 +1053,7 @@ export default function ScoreOSMD({
         outer.dataset.osmdPhase = 'post-render-continue';
         mark('afterPaint:nonblocking');
         ap('post-render').then(() => {
+          if (wrapRef.current !== outer) return; // component unmounted or replaced
           outer.dataset.osmdPhase = 'render:painted';
           mark('render:painted');
         });
@@ -1161,7 +1162,7 @@ export default function ScoreOSMD({
         }
       }
     },
-    [applyPage, getPAGE_H, hideBusy, log, mark, renderWithEffectiveWidth]
+    [applyPage, getPAGE_H, hideBusy, log, mark, renderWithEffectiveWidth, fmtFlags]
   );
 
   useEffect(() => {
@@ -1581,6 +1582,7 @@ export default function ScoreOSMD({
       outer.dataset.osmdPhase = 'post-render-continue';
       mark('afterPaint:nonblocking');
       ap('post-render').then(() => {
+        if (wrapRef.current !== outer) return; // component unmounted or replaced
         outer.dataset.osmdPhase = 'render:painted';
         mark('render:painted');
       });
