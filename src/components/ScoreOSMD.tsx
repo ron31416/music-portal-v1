@@ -155,7 +155,10 @@ function hud(_outer: HTMLDivElement, text: string) {
 
     // Keep pinned to the *visual* top when mobile toolbars move
     try {
-      const vv = (window as any).visualViewport as VisualViewport | undefined;
+      const vv: VisualViewport | undefined =
+        typeof window !== "undefined" && "visualViewport" in window
+          ? window.visualViewport ?? undefined
+          : undefined;
       if (vv) {
         const syncTop = () => { el!.style.top = `${Math.max(0, Math.floor(vv.offsetTop))}px`; };
         syncTop();
