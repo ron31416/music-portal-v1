@@ -1641,7 +1641,7 @@ export default function ScoreOSMD({
         void logStep("osmd.load:still-running");
       }, 1000)
 
-      const tLoadStart = tnow();d
+      const tLoadStart = tnow();
       await logStep("osmd.load:start");
       try {
         await awaitLoad(osmd, loadInput);
