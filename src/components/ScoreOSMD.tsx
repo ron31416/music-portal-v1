@@ -116,28 +116,41 @@ function withUntransformedSvg<T>(outer: HTMLDivElement, fn: (svg: SVGSVGElement)
   }
 }
 
-/** Very small debug HUD + data-* breadcrumbs (shows even when console is stripped) */
 function hud(outer: HTMLDivElement, text: string) {
-  // Make the HUD global + fixed to the viewport top
-  let el = document.querySelector<HTMLDivElement>('[data-osmd-hud="1"]'); // NEW: query document
+  // Ensure the page itself hugs the viewport top
+  try {
+    if (document?.body) {
+      // Only set if not already 0, to avoid stomping site styles repeatedly
+      const cs = getComputedStyle(document.body);
+      if (
+        cs.marginTop !== "0px" || cs.marginRight !== "0px" ||
+        cs.marginBottom !== "0px" || cs.marginLeft !== "0px"
+      ) {
+        document.body.style.margin = "0";
+      }
+    }
+  } catch {}
+
+  // Single global HUD, fixed to the viewport's top edge
+  let el = document.querySelector<HTMLDivElement>('[data-osmd-hud="1"]');
   if (!el) {
-    el = document.createElement('div');
-    el.dataset.osmdHud = '1';
+    el = document.createElement("div");
+    el.dataset.osmdHud = "1";
     Object.assign(el.style, {
-      position: 'fixed',                                        // NEW: fixed at viewport
-      top: 'calc(env(safe-area-inset-top, 0px) + 2px)',         // NEW: hug the very top
-      right: '6px',
-      zIndex: '100003',
-      font: '12px/1.2 monospace',
-      color: '#0f0',
-      background: 'rgba(0,0,0,0.6)',
-      padding: '4px 6px',
-      borderRadius: '6px',
-      pointerEvents: 'none',
-      maxWidth: '80vw',
-      boxSizing: 'border-box',
+      position: "fixed",
+      top: "0",                 // ← exact top, no env() offsets
+      right: "6px",
+      zIndex: "100003",
+      font: "12px/1.2 monospace",
+      color: "#0f0",
+      background: "rgba(0,0,0,0.6)",
+      padding: "4px 6px",
+      borderRadius: "6px",
+      pointerEvents: "none",
+      maxWidth: "80vw",
+      boxSizing: "border-box",
     } as CSSStyleDeclaration);
-    document.body.appendChild(el);                              // NEW: append to body (not outer)
+    document.body.appendChild(el);
   }
   el.textContent = text;
 }
@@ -443,54 +456,65 @@ export default function ScoreOSMD({
     }
   }, []);
 
-  const renderWithEffectiveWidth = useCallback((
-    outer: HTMLDivElement,
-    osmd: OpenSheetMusicDisplay
-  ): void => {
-    const host = hostRef.current;
-    if (!host || !outer) { return; }
+  const renderWithEffectiveWidth = useCallback(
+    async (
+      outer: HTMLDivElement,
+      osmd: OpenSheetMusicDisplay,
+      ap: (label?: string, timeoutMs?: number) => Promise<void>   // <— include ap
+    ): Promise<void> => {
+      const host = hostRef.current;
+      if (!host || !outer) { return; }
 
-    // use our zoom source of truth
-    applyZoomFromRef();
-    const zf = Math.min(3, Math.max(0.5, zoomFactorRef.current || 1));
+      // Use our zoom source of truth
+      applyZoomFromRef();
+      const zf = Math.min(3, Math.max(0.5, zoomFactorRef.current || 1));
 
-    const hostW = Math.max(1, Math.floor(outer.clientWidth));
-    const rawLayoutW = Math.max(1, Math.floor(hostW / zf));
-    const MAX_LAYOUT_W = 1600;   // clamp to avoid extreme widths on zoom-out
-    const MIN_LAYOUT_W = 320;
-    const layoutW = Math.max(MIN_LAYOUT_W, Math.min(rawLayoutW, MAX_LAYOUT_W));
+      const hostW = Math.max(1, Math.floor(outer.clientWidth));
+      const rawLayoutW = Math.max(1, Math.floor(hostW / zf));
+      const MAX_LAYOUT_W = 1600;
+      const MIN_LAYOUT_W = 320;
+      const layoutW = Math.max(MIN_LAYOUT_W, Math.min(rawLayoutW, MAX_LAYOUT_W));
 
-    outer.dataset.osmdZf = String(zf);
-    outer.dataset.osmdLayoutW = String(layoutW);
+      outer.dataset.osmdZf = String(zf);
+      outer.dataset.osmdLayoutW = String(layoutW);
 
-    // temporarily let width control layout
-    const prevLeft  = host.style.left;
-    const prevRight = host.style.right;
-    const prevWidth = host.style.width;
+      // Temporarily let width control layout
+      const prevLeft  = host.style.left;
+      const prevRight = host.style.right;
+      const prevWidth = host.style.width;
 
-    host.style.left = "0";
-    host.style.right = "auto";
-    host.style.width = `${layoutW}px`;
-    void host.getBoundingClientRect(); // ensure style takes effect this frame
+      host.style.left = "0";
+      host.style.right = "auto";
+      host.style.width = `${layoutW}px`;
+      void host.getBoundingClientRect(); // ensure style takes effect this frame
 
-    try {
-    tapLog(
-      outer,
-      `render: hostW=${hostW} zf=${zf.toFixed(3)} rawW=${rawLayoutW} clampedW=${layoutW} osmd.Zoom=${osmd.Zoom ?? "n/a"}`
-    );
-      osmd.render();
-    } catch (e) {
-      tapLog(outer, `render:error ${(e as Error).message || e}`);
-      throw e;
-    } finally {
-      host.style.left  = prevLeft;
-      host.style.right = prevRight;
-      host.style.width = prevWidth;
-    }
+      // Log + guaranteed flush BEFORE the heavy sync render
+      tapLog(outer, `render:call:w=${layoutW} hostW=${hostW} zf=${zf.toFixed(3)} osmd.Zoom=${osmd.Zoom ?? "n/a"}`);
+      await ap("render:call");
 
-    const svg = getSvg(outer);
-    if (svg) { svg.style.transformOrigin = "top left"; }
-  }, [applyZoomFromRef]);
+      // Watchdog: label long-running render calls
+      let lagTimer: number | null = null;
+      try {
+        lagTimer = window.setTimeout(() => {
+          outer.dataset.osmdRenderLag = "1";
+          tapLog(outer, "render:lag>300ms");
+          hud(outer, "render:lag");
+        }, 300);
+
+        osmd.render(); // sync & heavy
+      } finally {
+        if (lagTimer) { window.clearTimeout(lagTimer); }
+        delete outer.dataset.osmdRenderLag;
+        host.style.left  = prevLeft;
+        host.style.right = prevRight;
+        host.style.width = prevWidth;
+
+        const svg = getSvg(outer);
+        if (svg) { svg.style.transformOrigin = "top left"; }
+      }
+    },
+    [applyZoomFromRef]
+  );
 
   // convenience logger that writes into the page (not DevTools)
   const log = useCallback((msg: string) => {
@@ -1045,7 +1069,7 @@ export default function ScoreOSMD({
         stage(outer, "render:start"); 
         await ap("render:start"); 
         const t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
-        renderWithEffectiveWidth(outer, osmd);
+        await renderWithEffectiveWidth(outer, osmd, ap);
 
         const t1 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
         const renderMs = Math.round(t1 - t0);
@@ -1620,7 +1644,7 @@ export default function ScoreOSMD({
       stage(outer, "render:start");           // NEW: stage name
       await ap("render:start");               // NEW: flush so it paints
       const t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
-      renderWithEffectiveWidth(outer, osmd);
+      await renderWithEffectiveWidth(outer, osmd, ap);
 
       const t1 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
       const renderMs = Math.round(t1 - t0);
