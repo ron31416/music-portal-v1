@@ -219,23 +219,28 @@ function hud(_outer: HTMLDivElement, text: string) {
 }
 
 function tapLog(outer: HTMLDivElement, line: string) {
-  let box = document.querySelector<HTMLPreElement>('pre[data-osmd-log="1"]');
-  if (!box) {
-    const root = getOsmdTopLayer(); // <<< use the fixed top-layer
-    box = document.createElement('pre');
-    box.dataset.osmdLog = '1';
-    Object.assign(box.style, {
-      position: 'absolute', left: '8px', bottom: '8px', zIndex: '1',
-      maxWidth: '80vw', maxHeight: '42vh', overflow: 'auto',
-      background: 'rgba(0,0,0,0.75)', color: '#0f0', padding: '6px 8px',
-      borderRadius: '8px', font: '11px/1.35 monospace', whiteSpace: 'pre-wrap',
-      pointerEvents: 'none',
-    } as CSSStyleDeclaration);
-    root.appendChild(box); // <<< append to top-layer
+  try {
+    let box = document.querySelector<HTMLPreElement>('pre[data-osmd-log="1"]');
+    if (!box) {
+      const root = getOsmdTopLayer();
+      box = document.createElement('pre');
+      box.dataset.osmdLog = '1';
+      Object.assign(box.style, {
+        position: 'absolute', left: '8px', bottom: '8px', zIndex: '1',
+        maxWidth: '80vw', maxHeight: '42vh', overflow: 'auto',
+        background: 'rgba(0,0,0,0.75)', color: '#0f0', padding: '6px 8px',
+        borderRadius: '8px', font: '11px/1.35 monospace', whiteSpace: 'pre-wrap',
+        pointerEvents: 'none',
+      } as CSSStyleDeclaration);
+      root.appendChild(box);
+    }
+    const ts = new Date().toISOString().split('T')[1]?.split('.')[0] ?? '';
+    box.textContent += `[${ts}] ${line}\n`;
+    box.scrollTop = box.scrollHeight;
+  } catch (e) {
+    // Never let logging break the app
+    try { outer.dataset.osmdLogError = '1'; } catch {}
   }
-  const ts = new Date().toISOString().split('T')[1]?.split('.')[0] ?? '';
-  box.textContent += `[${ts}] ${line}\n`;
-  box.scrollTop = box.scrollHeight;
 }
 
 function enterPhase(outer: HTMLDivElement | null, tag: string) {
@@ -1170,23 +1175,27 @@ export default function ScoreOSMD({
           outer.dataset.osmdPhase = 'render:painted';
           mark('render:painted');
         });
-/*
-        // Defer the purge so it can’t block the reflow path.
-        // Also log clearly so we can prove whether it runs.
-        if (outer.querySelector('canvas')) {
-          tapLog(outer, "purge:queued");
-          setTimeout(() => {
-            try { purgeWebGL(outer); tapLog(outer, "purge:done"); }
-            catch (e) { tapLog(outer, `purge:error:${(e as Error)?.message ?? e}`); }
-          }, 0);
-        } else {
-          tapLog(outer, "purge:skip(no-canvas)");
+
+        try {
+          const canvasCount = outer.querySelectorAll('canvas').length;
+          tapLog(outer, `purge:probe canvas#=${canvasCount}`);
+
+          if (canvasCount > 0) {
+            tapLog(outer, "purge:queued");
+            setTimeout(() => {
+              try { purgeWebGL(outer); tapLog(outer, "purge:done"); }
+              catch (e) { tapLog(outer, `purge:error:${(e as Error)?.message ?? e}`); }
+            }, 0);
+          } else {
+            tapLog(outer, "purge:skip(no-canvas)");
+          }
+
+          outer.dataset.osmdPhase = 'measure';
+          stage(outer, "measure:start");          // NOTE: stage() already calls hud()+tapLog()
+          tapLog(outer, "diag: entering measure:start await");
+        } catch (e) {
+          tapLog(outer, `MEASURE-ENTRY:exception:${(e as Error)?.message ?? e}`);
         }
-*/
-        outer.dataset.osmdPhase = 'measure';
-        stage(outer, "measure:start");
-        hud(outer, "measure:start");
-        tapLog(outer, "diag: entering measure:start await");
 
         // Yield one macrotask so HUD/log can actually paint before we await
         await new Promise<void>(r => setTimeout(r, 0));
@@ -1776,21 +1785,26 @@ export default function ScoreOSMD({
         mark('render:painted');
       });
 
-      // Defer purge on init as well
-      if (outer.querySelector('canvas')) {
-        tapLog(outer, "purge(init):queued");
-        setTimeout(() => {
-          try { purgeWebGL(outer); tapLog(outer, "purge(init):done"); }
-          catch (e) { tapLog(outer, `purge(init):error:${(e as Error)?.message ?? e}`); }
-        }, 0);
-      } else {
-        tapLog(outer, "purge(init):skip(no-canvas)");
-      }
+      try {
+        const canvasCount = outer.querySelectorAll('canvas').length;
+        tapLog(outer, `purge:probe canvas#=${canvasCount}`);
 
-      outer.dataset.osmdPhase = 'measure';
-      stage(outer, "measure:start");
-      hud(outer, "measure:start");
-      tapLog(outer, "diag: entering measure:start await");
+        if (canvasCount > 0) {
+          tapLog(outer, "purge:queued");
+          setTimeout(() => {
+            try { purgeWebGL(outer); tapLog(outer, "purge:done"); }
+            catch (e) { tapLog(outer, `purge:error:${(e as Error)?.message ?? e}`); }
+          }, 0);
+        } else {
+          tapLog(outer, "purge:skip(no-canvas)");
+        }
+
+        outer.dataset.osmdPhase = 'measure';
+        stage(outer, "measure:start");          // NOTE: stage() already calls hud()+tapLog()
+        tapLog(outer, "diag: entering measure:start await");
+      } catch (e) {
+        tapLog(outer, `MEASURE-ENTRY:exception:${(e as Error)?.message ?? e}`);
+      }
 
       // Beacons to prove the event loop/HUD are alive
       try {
