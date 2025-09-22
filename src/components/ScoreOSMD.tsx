@@ -120,28 +120,53 @@ function withUntransformedSvg<T>(outer: HTMLDivElement, fn: (svg: SVGSVGElement)
   }
 }
 
-function hud(_outer: HTMLDivElement, text: string) {
-  // One-time hard reset to avoid any “mystery gap” from global CSS
-  if (!document.querySelector('style[data-osmd-hud-reset]')) {
-    const st = document.createElement('style');
-    st.setAttribute('data-osmd-hud-reset', '');
-    st.textContent = `
-      html, body { margin:0 !important; padding:0 !important; border:0 !important; }
-      /* Neutralize transforms/filters on app roots so fixed stays viewport-relative */
-      html, body, #__next, [data-osmd-root] { transform:none !important; filter:none !important; }
-    `;
-    document.head.appendChild(st);
-  }
+/** A fixed, fullscreen top-layer so HUD/log never get affected by transforms */
+function getOsmdTopLayer(): HTMLDivElement {
+  let root = document.querySelector<HTMLDivElement>('[data-osmd-toplayer="1"]');
+  if (!root) {
+    root = document.createElement('div');
+    root.dataset.osmdToplayer = '1';
+    Object.assign(root.style, {
+      position: 'fixed',
+      inset: '0',
+      zIndex: String(2147483647),
+      pointerEvents: 'none',
+      margin: '0',
+      padding: '0',
+      // make sure nothing on ancestors can move this layer
+      transform: 'none',
+      filter: 'none',
+      contain: 'layout style paint',
+    } as CSSStyleDeclaration);
+    document.body.appendChild(root);
 
-  let el = document.querySelector<HTMLDivElement>('[data-osmd-hud="1"]');
+    // hard reset once to avoid global CSS shifting the viewport edges
+    if (!document.querySelector('style[data-osmd-hud-reset]')) {
+      const st = document.createElement('style');
+      st.setAttribute('data-osmd-hud-reset', '');
+      st.textContent = `
+        html, body { margin:0 !important; padding:0 !important; border:0 !important; }
+        /* prevent fixed-position bugs caused by transforms on app roots */
+        html, body, #__next, [data-osmd-root] { transform:none !important; filter:none !important; }
+      `;
+      document.head.appendChild(st);
+    }
+  }
+  return root;
+}
+
+function hud(_outer: HTMLDivElement, text: string) {
+  const root = getOsmdTopLayer();
+
+  let el = root.querySelector<HTMLDivElement>('[data-osmd-hud="1"]');
   if (!el) {
     el = document.createElement('div');
     el.dataset.osmdHud = '1';
     Object.assign(el.style, {
-      position: 'fixed',
-      top: '0px',
+      position: 'absolute',          // inside our fixed top-layer
       right: '6px',
-      zIndex: String(2147483647),
+      top: '0px',
+      zIndex: '1',
       margin: '0',
       font: '12px/1.2 monospace',
       color: '#0f0',
@@ -152,41 +177,61 @@ function hud(_outer: HTMLDivElement, text: string) {
       maxWidth: '80vw',
       boxSizing: 'border-box',
       contain: 'layout style',
+      // force to be on-screen even with notches
+      // (env() is safe; browsers that don't support it treat it as 0)
+      paddingTop: 'max(0px, env(safe-area-inset-top, 0px))',
     } as CSSStyleDeclaration);
-    el.style.setProperty('top', '0px', 'important');
-    document.body.appendChild(el);
+    root.appendChild(el);
 
-    // Keep pinned to the *visual* top when mobile toolbars move
-    try {
-      const vv: VisualViewport | undefined =
-        typeof window !== "undefined" && "visualViewport" in window
-          ? window.visualViewport ?? undefined
+    // Keep pinned to the *visual* top when mobile toolbars/zoom move
+    const syncTop = () => {
+      try {
+        const vv = (typeof window !== 'undefined' && 'visualViewport' in window)
+          ? window.visualViewport
           : undefined;
-      if (vv) {
-        const syncTop = () => { el!.style.top = `${Math.max(0, Math.floor(vv.offsetTop))}px`; };
-        syncTop();
-        vv.addEventListener('resize', syncTop);
-        vv.addEventListener('scroll', syncTop);
+        const vvTop = vv ? Math.floor(vv.offsetTop) : 0;
+
+        // stay exactly at the visible top, plus safe-area notch if any
+        // we do the addition in CSS to let the browser handle safe-area
+        el!.style.top = `calc(${Math.max(0, vvTop)}px + env(safe-area-inset-top, 0px))`;
+      } catch {
+        el!.style.top = '0px';
       }
+    };
+
+    // Robust set of listeners + a lightweight periodic nudge
+    try {
+      window.visualViewport?.addEventListener('resize', syncTop);
+      window.visualViewport?.addEventListener('scroll', syncTop);
     } catch {}
+    window.addEventListener('resize', syncTop);
+    window.addEventListener('scroll', syncTop, { passive: true });
+    window.addEventListener('orientationchange', syncTop);
+
+    // safety: if events get throttled, correct drift every 1s
+    setInterval(syncTop, 1000);
+
+    // initial position
+    syncTop();
   }
 
   el.textContent = text;
 }
 
-/** Append a line into a fixed on-page console (no DevTools required) */
 function tapLog(outer: HTMLDivElement, line: string) {
   let box = document.querySelector<HTMLPreElement>('pre[data-osmd-log="1"]');
   if (!box) {
+    const root = getOsmdTopLayer(); // <<< use the fixed top-layer
     box = document.createElement('pre');
     box.dataset.osmdLog = '1';
     Object.assign(box.style, {
-      position: 'fixed', left: '8px', bottom: '8px', zIndex: '100001',
+      position: 'absolute', left: '8px', bottom: '8px', zIndex: '1',
       maxWidth: '80vw', maxHeight: '42vh', overflow: 'auto',
       background: 'rgba(0,0,0,0.75)', color: '#0f0', padding: '6px 8px',
-      borderRadius: '8px', font: '11px/1.35 monospace', whiteSpace: 'pre-wrap'
+      borderRadius: '8px', font: '11px/1.35 monospace', whiteSpace: 'pre-wrap',
+      pointerEvents: 'none',
     } as CSSStyleDeclaration);
-    document.body.appendChild(box);
+    root.appendChild(box); // <<< append to top-layer
   }
   const ts = new Date().toISOString().split('T')[1]?.split('.')[0] ?? '';
   box.textContent += `[${ts}] ${line}\n`;
@@ -1125,7 +1170,7 @@ export default function ScoreOSMD({
           outer.dataset.osmdPhase = 'render:painted';
           mark('render:painted');
         });
-
+/*
         // Defer the purge so it can’t block the reflow path.
         // Also log clearly so we can prove whether it runs.
         if (outer.querySelector('canvas')) {
@@ -1137,7 +1182,7 @@ export default function ScoreOSMD({
         } else {
           tapLog(outer, "purge:skip(no-canvas)");
         }
-
+*/
         outer.dataset.osmdPhase = 'measure';
         stage(outer, "measure:start");
         hud(outer, "measure:start");
