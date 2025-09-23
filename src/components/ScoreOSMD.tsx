@@ -2253,17 +2253,29 @@ export default function ScoreOSMD({
     }
   }, [busy]);
 
-  // Ctrl+Shift+D → dump debug to the on-screen console
+  // Focus the overlay when busy so it can catch keys
+  useEffect(() => {
+    if (busy) {
+      overlayRef.current?.focus?.();
+    }
+  }, [busy]);
+
+  // Debug hotkeys: Alt+Shift+D  OR  Ctrl+Alt+D  OR  backtick `
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!(e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "d")) { return; }
+      const k = (e.key.length === 1 ? e.key.toLowerCase() : e.key);
+      const trigger =
+        ((e.altKey && e.shiftKey && k === "d") ||
+        (e.ctrlKey && e.altKey && k === "d") ||
+        (k === "`"));
+
+      if (!trigger) return;
 
       e.preventDefault();
 
       const outer = wrapRef.current;
-      if (!outer) { return; }
+      if (!outer) return;
 
-      // snapshot basic state
       const zf = zoomFactorRef.current ?? 1;
       const layoutW = Number(outer.dataset.osmdLayoutW || NaN);
       const w = outer.clientWidth || 0;
@@ -2275,7 +2287,6 @@ export default function ScoreOSMD({
         `debug:data zf=${zf.toFixed(3)} layoutW=${isNaN(layoutW) ? "?" : layoutW} W×H=${w}×${h} busy=${busyNow} phase=${phase}`
       );
 
-      // measure now and recompute starts (pure, no re-render)
       const measured =
         withUntransformedSvg(outer, (svg) => measureSystemsPx(outer, svg)) ?? [];
       const H = getPAGE_H(outer);
@@ -2286,7 +2297,6 @@ export default function ScoreOSMD({
       );
     };
 
-    // capture phase so the key makes it through even if something stops it later
     window.addEventListener("keydown", onKey, { capture: true });
     return () => window.removeEventListener("keydown", onKey, { capture: true });
   }, [getPAGE_H]);
@@ -2358,8 +2368,9 @@ export default function ScoreOSMD({
         ref={overlayRef}
         aria-busy={busy}
         role="status"
-        aria-live="polite"   /* screen readers announce “Please wait…” */
-        aria-atomic="true"   /* read the whole message when it changes */
+        aria-live="polite"
+        aria-atomic="true"
+        tabIndex={-1}                 // <-- make it focusable to receive key events
         style={blockerStyle}
         onPointerDown={stop}
         onPointerMove={stop}
@@ -2370,13 +2381,19 @@ export default function ScoreOSMD({
         onScroll={stop}
         onMouseDown={stop}
         onContextMenu={stop}
-        // allow only Ctrl+Shift+D to pass through; block every other key
+        // allow only our debug hotkeys; block every other key
         onKeyDown={(e) => {
-          const isDebug = e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "d";
+          const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+          const isDebug =
+            ((e.altKey && e.shiftKey && k === "d") ||      // Alt+Shift+D
+            (e.ctrlKey && e.altKey && k === "d") ||       // Ctrl+Alt+D
+            (k === "`"));                                  // backtick `
           if (!isDebug) {
             e.preventDefault();
             e.stopPropagation();
+            return;
           }
+          // fall through: let our global listener pick it up too
         }}
       >
         <div
