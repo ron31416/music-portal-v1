@@ -2260,46 +2260,17 @@ export default function ScoreOSMD({
     }
   }, [busy]);
 
-  // Debug hotkeys: Alt+Shift+D  OR  Ctrl+Alt+D  OR  backtick `
+  // TEMP: log *every* keydown so we can see what the browser actually emits
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const k = (e.key.length === 1 ? e.key.toLowerCase() : e.key);
-      const trigger =
-        ((e.altKey && e.shiftKey && k === "d") ||
-        (e.ctrlKey && e.altKey && k === "d") ||
-        (k === "`"));
-
-      if (!trigger) { return; }
-
-      e.preventDefault();
-
-      const outer = wrapRef.current;
-      if (!outer) { return; }
-
-      const zf = zoomFactorRef.current ?? 1;
-      const layoutW = Number(outer.dataset.osmdLayoutW || NaN);
-      const w = outer.clientWidth || 0;
-      const h = outer.clientHeight || 0;
-      const phase = outer.dataset.osmdPhase || "(none)";
-      const busyNow = busyRef.current;
-
       void logStep(
-        `debug:data zf=${zf.toFixed(3)} layoutW=${isNaN(layoutW) ? "?" : layoutW} W×H=${w}×${h} busy=${busyNow} phase=${phase}`
-      );
-
-      const measured =
-        withUntransformedSvg(outer, (svg) => measureSystemsPx(outer, svg)) ?? [];
-      const H = getPAGE_H(outer);
-      const starts = computePageStartIndices(measured, H);
-
-      void logStep(
-        `debug:probe measured bands=${measured.length} H=${H} starts=${starts.join(",") || "(none)"}`
+        `key event: key="${e.key}" code="${e.code}" ctrl=${e.ctrlKey} shift=${e.shiftKey} alt=${e.altKey} meta=${(e as any).metaKey ?? false}`
       );
     };
 
     window.addEventListener("keydown", onKey, { capture: true });
     return () => window.removeEventListener("keydown", onKey, { capture: true });
-  }, [getPAGE_H]);
+  }, []);
 
   useEffect(() => {
     void logStep("hotkeys:effect-mounted");
