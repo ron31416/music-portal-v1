@@ -2256,7 +2256,7 @@ export default function ScoreOSMD({
   // --- HUD hotkey: Ctrl+Shift+D -> dump + probe-measure (no mutation) ---
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!(e.ctrlKey && e.shiftKey && e.code === "KeyD")) return;
+      if (!(e.ctrlKey && e.shiftKey && e.code === "KeyD")) { return; }
 
       const outer = wrapRef.current;
       if (!outer) { void logStep("debug: no wrapper"); return; }
