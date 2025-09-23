@@ -1208,28 +1208,14 @@ export default function ScoreOSMD({
           void logStep(`MEASURE-ENTRY:exception:${(e as Error)?.message ?? e}`);
         }
 
-        // Yield one macrotask so logs can paint before AP wait
+        // After render, do a single macrotask yield and continue.
+        // (Skip the rAF/message race — some environments never deliver it
+        //  while the tab is visible, which wedged us at `render:painted`.)
         await new Promise<void>((r) => setTimeout(r, 0));
-
-        // record how long this window actually takes (breadcrumb only)
-        const __tMeasureWait0 =
-          (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
-
-        let __via: "ap" | "guard" = "guard"; // how we left this wait
-        await Promise.race([
-          ap("measure:start").then(() => { __via = "ap"; }),
-          // give large SVGs a bit more slack but still guarantee progress
-          new Promise<void>((r) => setTimeout(r, 2000)),
-        ]);
-
-        const __tMeasureWait1 =
-          (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
-        outer.dataset.osmdMeasureWaitMs = String(Math.round(__tMeasureWait1 - __tMeasureWait0));
-        outer.dataset.osmdMeasureAwaitVia = __via;
-
-        void logStep("measure:race:done"); // ← ADD THIS LINE
-        // keep the exact log line for apples-to-apples comparisons
-        void logStep("ap:measure:start:done"); 
+        outer.dataset.osmdMeasureWaitMs = "0";
+        outer.dataset.osmdMeasureAwaitVia = "skipped";
+        void logStep("measure:race:skipped");
+        void logStep("ap:measure:start:done");
 
         void logStep("measure:about-to-scan");
 
