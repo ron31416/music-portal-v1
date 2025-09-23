@@ -1049,7 +1049,6 @@ export default function ScoreOSMD({
     repagFnRef.current = recomputePaginationHeightOnly;
   }, [recomputePaginationHeightOnly]);
 
-
   const reflowOnWidthChange = useCallback(
     async function reflowOnWidthChange(resetToFirst = false) {
       const outer = wrapRef.current;
@@ -1057,9 +1056,7 @@ export default function ScoreOSMD({
 
       let measureWatchdog: ReturnType<typeof setTimeout> | null = null;
 
-      // Entry breadcrumb
       if (outer) { void logStep("phase:reflowOnWidthChange"); }
-
       if (!outer || !osmd) {
         const o = outer ? "1" : "0";
         const m = osmd ? "1" : "0";
@@ -1067,14 +1064,12 @@ export default function ScoreOSMD({
         return;
       }
 
-      // Spinner is ALWAYS on for width reflow
+      // Always show spinner for width reflow
       const wantSpinner = true;
-
       void logStep(
         `reflow:enter reset=${resetToFirst} spin=${wantSpinner} running=${reflowRunningRef.current} repag=${repagRunningRef.current} busy=${busyRef.current}`
       );
 
-      // Correlate with the most recent zoom click attempt
       const attempt = Number(outer.dataset.osmdZoomAttempt || "0");
       outer.dataset.osmdZoomEntered   = String(attempt);
       outer.dataset.osmdZoomEnteredAt = String(Date.now());
@@ -1082,7 +1077,6 @@ export default function ScoreOSMD({
 
       const ap = makeAfterPaint(outer);
 
-      // If a width reflow is in progress, queue exactly one follow-up and bail.
       if (reflowRunningRef.current) {
         reflowAgainRef.current = "width";
         outer.dataset.osmdZoomQueued   = String(attempt);
@@ -1093,8 +1087,6 @@ export default function ScoreOSMD({
       }
       reflowRunningRef.current = true;
 
-      // Watchdog: log current phase every 2s while this run is active.
-      // Use wrapRef.current inside the interval to avoid stale refs.
       let wd: number | null = null;
       wd = window.setInterval(() => {
         const el = wrapRef.current;
@@ -1112,7 +1104,7 @@ export default function ScoreOSMD({
         );
         outer.dataset.osmdPhase = "pre-spinner";
 
-        // Always show spinner
+        // Spinner on (with unconditional fail-safe)
         {
           const token = Symbol("spin");
           spinnerOwnerRef.current = token;
@@ -1123,21 +1115,8 @@ export default function ScoreOSMD({
           outer.dataset.osmdPhase = "spinner-requested";
           void logStep("spinner-requested");
 
-          // If we don't reach "spinner-on" quickly, force it so we don't stall
-          window.setTimeout(() => {
-            if (
-              spinnerOwnerRef.current === token &&
-              outer.dataset.osmdPhase === "spinner-requested"
-            ) {
-              outer.dataset.osmdPhase = "spinner-on:force";
-              void logStep("spinner-on:force");
-            }
-          }, 250);
-
-          // 1) Yield so React can commit the overlay
+          // Commit overlay
           await new Promise<void>((r) => setTimeout(r, 0));
-
-          // 2) If visible, try to give it a frame (but don't block forever)
           if (document.visibilityState === "visible") {
             await Promise.race([
               new Promise<void>((r) => requestAnimationFrame(() => r())),
@@ -1148,41 +1127,37 @@ export default function ScoreOSMD({
           outer.dataset.osmdPhase = "spinner-on";
           void logStep("spinner-on");
 
-          // Fail-safe: NEVER leave overlay stuck (unconditional clear)
+          // Hard fail-safe (always clears even if ownership is stale)
           if (spinnerFailSafeRef.current) { window.clearTimeout(spinnerFailSafeRef.current); }
           spinnerFailSafeRef.current = window.setTimeout(() => {
-            // Clear regardless of "owner" — we prefer no overlay to a wedged UI
             spinnerOwnerRef.current = null;
             hideBusy();
             void logStep("spinner:failsafe-clear:unconditional");
           }, 9000);
         }
 
-        // Heavy render section
+        // --------- HEAVY RENDER ---------
         const attemptForRender = Number(outer.dataset.osmdZoomEntered || "0");
         outer.dataset.osmdRenderAttempt = String(attemptForRender);
         await logStep(`[render] starting attempt#${attemptForRender}`);
 
         outer.dataset.osmdPhase = "render";
         await logStep("render:start");
-        await new Promise<void>((r) => setTimeout(r, 0)); // macrotask yield
-        await ap("render:yield");                         // rAF/message tick
+        await new Promise<void>((r) => setTimeout(r, 0)); // macrotask
+        await ap("render:yield");                         // one paint opportunity
 
-        // --- RENDER WATCHDOG: force cleanup if osmd.render() never returns
+        // Render watchdog
         let renderWd: number | null = window.setTimeout(() => {
           outer.dataset.osmdPhase = "render:watchdog";
           void logStep("render:watchdog:force-finalize");
-          // Drop spinner and running guards so future attempts can proceed
           spinnerOwnerRef.current = null;
           hideBusy();
           reflowRunningRef.current = false;
-        }, 20000); // 20s safety
-        // --- END WATCHDOG
+        }, 20000);
 
         const t0 = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
         await renderWithEffectiveWidth(outer, osmd);
         const t1 = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
-
         if (renderWd !== null) { window.clearTimeout(renderWd); renderWd = null; }
 
         const renderMs = Math.round(t1 - t0);
@@ -1190,68 +1165,43 @@ export default function ScoreOSMD({
         void logStep(`render:finished (${renderMs}ms)`);
         void logStep(`[render] finished attempt#${attemptForRender} (${renderMs}ms)`);
 
-        // Post-render → measure:start (non-blocking AP)
-        outer.dataset.osmdPhase = "post-render-continue";
-        void logStep("afterPaint:nonblocking");
-        ap("post-render").then(() => {
-          if (wrapRef.current !== outer) { return; }
-          outer.dataset.osmdPhase = "render:painted";
-          void logStep("render:painted");
-        });
+        // --------- CRUCIAL: BLOCKING “TWO BEATS” AFTER RENDER ---------
+        // Give the browser time to *paint* the new SVG and flush layout before measuring.
+        // This restores the behavior you saw before we “took out that promise”.
+        outer.dataset.osmdPhase = "post-render-wait";
+        const tWait0 = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
+        let via: "ap" | "timeout" = "timeout";
+        await Promise.race([
+          ap("post-render:block", 600).then(() => { via = "ap"; }),
+          new Promise<void>((r) => setTimeout(r, 450)),
+        ]);
+        void logStep(`post-render:block done via=${via} waited=${Math.round(((typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now()) - tWait0)}ms`);
 
-        // Optional: purge stray WebGL canvases
-        try {
-          const canvasCount = outer.querySelectorAll("canvas").length;
-          void logStep(`purge:probe canvas#=${canvasCount}`);
-          if (canvasCount > 0) {
-            void logStep("purge:queued");
-            setTimeout(() => {
-              try { purgeWebGL(outer); void logStep("purge:done"); }
-              catch (e) { void logStep(`purge:error:${(e as Error)?.message ?? e}`); }
-            }, 0);
-          } else {
-            void logStep("purge:skip(no-canvas)");
-          }
-          outer.dataset.osmdPhase = "measure";
-          outer.dataset.osmdMeasurePath = "reflow-skip-ap";
-          void logStep("measure:start");
-          void logStep("diag: entering measure:start await");
-          // WATCHDOG: if we don't reach "measured:*" soon, log and keep going
-          if (measureWatchdog) { clearTimeout(measureWatchdog); measureWatchdog = null; }
-          measureWatchdog = setTimeout(() => {
-            try {
-              outer.dataset.osmdPhase = "measure:watchdog";
-              void logStep("measure:watchdog:force-continue");
-            } catch { /* noop */ }
-          }, 2500);
-        } catch (e) {
-          void logStep(`MEASURE-ENTRY:exception:${(e as Error)?.message ?? e}`);
-        }
+        // --------- MEASURE ---------
+        outer.dataset.osmdPhase = "measure";
+        void logStep("measure:start");
 
-        void logStep("SIG: reflow.measure.skip-ap:enter");
-        outer.dataset.osmdMeasureWaitMs = "0";
-        outer.dataset.osmdMeasureAwaitVia = "skipped";
-        void logStep("SIG: reflow.measure.skip-ap:direct");
-        void logStep("measure:race:skipped");
-        void logStep("ap:measure:start:done");
+        // (light watchdog so logs continue even if something stalls)
+        if (measureWatchdog) { clearTimeout(measureWatchdog); measureWatchdog = null; }
+        measureWatchdog = setTimeout(() => {
+          try {
+            outer.dataset.osmdPhase = "measure:watchdog";
+            void logStep("measure:watchdog:force-continue");
+          } catch {}
+        }, 2500);
 
-        void logStep("measure:about-to-scan");
-
-        // Re-measure bands without SVG transform
         const newBands =
           withUntransformedSvg(outer, (svg) => measureSystemsPx(outer, svg)) ?? [];
         outer.dataset.osmdPhase = `measure:${newBands.length}`;
         void logStep(`measured:${newBands.length}`);
-        // clear the measure watchdog
         if (measureWatchdog) { clearTimeout(measureWatchdog); measureWatchdog = null; }
+
         if (newBands.length === 0) {
           outer.dataset.osmdPhase = "measure:0:reflow-abort";
-          void logStep("measure:0:reflow-abort");
           void logStep("reflow: measured 0 bands — abort");
           return;
         }
 
-        // Save current reading position BEFORE replacing starts
         const prevStarts = pageStartsRef.current.slice();
         const prevPage   = pageIdxRef.current;
         const oldTopIdx  = prevStarts.length
@@ -1260,7 +1210,6 @@ export default function ScoreOSMD({
 
         bandsRef.current = newBands;
 
-        // Compute page starts using unified pagination height
         const newStarts = computePageStartIndices(newBands, getPAGE_H(outer));
         pageStartsRef.current = newStarts;
         outer.dataset.osmdPhase = `starts:${newStarts.length}`;
@@ -1280,14 +1229,13 @@ export default function ScoreOSMD({
           outer.dataset.osmdPhase = "reset:first";
           void logStep("reset:first");
           applyPage(0);
-          await ap("apply:first");
+          await Promise.race([ap("apply:first"), new Promise<void>((r)=>setTimeout(r,400))]);
           applyPage(0);
           outer.dataset.osmdPhase = "reset:first:done";
           void logStep("reset:first:done");
           return;
         }
 
-        // Keep user near the same music
         let nearest = 0, best = Number.POSITIVE_INFINITY;
         for (let i = 0; i < newStarts.length; i++) {
           const s = newStarts[i];
@@ -1320,12 +1268,8 @@ export default function ScoreOSMD({
         outer.dataset.osmdPhase = "finally";
         void logStep("finally");
 
-        if (wd !== null) {
-          window.clearInterval(wd);
-          wd = null;
-        }
+        if (wd !== null) { window.clearInterval(wd); wd = null; }
 
-        // Always clear the spinner we showed
         spinnerOwnerRef.current = null;
         hideBusy();
         void logStep("reflow:finally:hid-spinner");
