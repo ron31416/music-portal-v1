@@ -1125,11 +1125,16 @@ export default function ScoreOSMD({
 
       // Always show spinner for width reflow
       const wantSpinner = true;
+
       void logStep(
         `reflow:enter reset=${resetToFirst} spin=${wantSpinner} running=${reflowRunningRef.current} repag=${repagRunningRef.current} busy=${busyRef.current}`
       );
 
-      const attempt = Number(outer.dataset.osmdZoomAttempt || "0");
+      // Increment and stamp the zoom attempt ID
+      const nextAttempt = (Number(outer.dataset.osmdZoomAttempt || "0") + 1);
+      outer.dataset.osmdZoomAttempt = String(nextAttempt);
+
+      const attempt = nextAttempt;
       outer.dataset.osmdZoomEntered   = String(attempt);
       outer.dataset.osmdZoomEnteredAt = String(Date.now());
       void logStep(`[reflow] ENTER attempt#${attempt} • ${fmtFlags()}`);
@@ -1221,6 +1226,7 @@ export default function ScoreOSMD({
           spinnerOwnerRef.current = null;
           hideBusy();
           reflowRunningRef.current = false;
+          try { revealHost(); } catch {}
         }, 20000);
 
         const t0 = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
