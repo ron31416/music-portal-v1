@@ -2037,49 +2037,6 @@ export default function ScoreOSMD({
     };
   }, [applyPage, goNext, goPrev]);
 
-
-  useEffect(() => {
-  const onKey = (e: KeyboardEvent) => {
-    const mod = e.shiftKey && (e.ctrlKey || e.metaKey);
-    if (!mod || e.key.toLowerCase() !== "d") { return; }
-
-    const outer = wrapRef.current;
-    if (!outer) { return; }
-
-    const dump = {
-      // guards/queues
-      ready: readyRef.current,
-      busy: busyRef.current,
-      reflowRunning: reflowRunningRef.current,
-      repagRunning: repagRunningRef.current,
-      queued: reflowAgainRef.current,
-
-      // layout + pagination
-      w: outer.clientWidth,
-      h: outer.clientHeight,
-      PAGE_H: (() => {
-        try { return getPAGE_H(outer); } catch { return -1; }
-      })(),
-      bands: bandsRef.current.length,
-      starts: pageStartsRef.current,
-      page: pageIdxRef.current,
-
-      // breadcrumbs from data-*
-      phase: outer.dataset.osmdPhase,
-      overlay: outer.dataset.osmdOverlay,
-      handled: outer.dataset.osmdHandled,
-      renderMs: outer.dataset.osmdRenderMs,
-      zf: outer.dataset.osmdZf,
-      layoutW: outer.dataset.osmdLayoutW,
-    };
-
-    void logStep("DUMP " + JSON.stringify(dump));
-  };
-
-  window.addEventListener("keydown", onKey);
-  return () => window.removeEventListener("keydown", onKey);
-}, [getPAGE_H]);
-
   // Touch swipe paging (disabled while busy)
   useEffect(() => {
     const outer = wrapRef.current;
@@ -2295,6 +2252,59 @@ export default function ScoreOSMD({
       }, 0);
     }
   }, [busy]);
+
+  // --- HUD hotkey: Ctrl+Shift+D -> dump + probe-measure (no mutation) ---
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey && e.shiftKey && e.code === "KeyD")) return;
+
+      const outer = wrapRef.current;
+      if (!outer) { void logStep("debug: no wrapper"); return; }
+
+      // 1) Snapshot key bits
+      const r = outer.getBoundingClientRect();
+      const vv = window.visualViewport;
+      const snap = {
+        rect: { w: Math.round(r.width), h: Math.round(r.height) },
+        vv: vv ? { w: Math.round(vv.width), h: Math.round(vv.height), scale: vv.scale } : null,
+        dpr: window.devicePixelRatio || 1,
+        data: {
+          phase: outer.dataset.osmdPhase,
+          pages: outer.dataset.osmdPages,
+          starts: outer.dataset.osmdStarts,
+          page: outer.dataset.osmdPage,
+          H: outer.dataset.osmdH,
+          ty: outer.dataset.osmdTy,
+          zf: outer.dataset.osmdZf,
+          layoutW: outer.dataset.osmdLayoutW,
+          renderMs: outer.dataset.osmdRenderMs,
+          measureWaitMs: outer.dataset.osmdMeasureWaitMs,
+          measureVia: outer.dataset.osmdMeasureAwaitVia,
+          overlay: outer.dataset.osmdOverlay,
+          busy: outer.dataset.osmdBusy,
+          run: outer.dataset.osmdRun,
+        }
+      };
+
+      void logStep(`debug:dump rect=${snap.rect.w}×${snap.rect.h} dpr=${snap.dpr} vv=${snap.vv ? `${snap.vv.w}×${snap.vv.h}@${snap.vv.scale}` : 'n/a'}`);
+      void logStep(`debug:data phase=${snap.data.phase} pages=${snap.data.pages} page=${snap.data.page} starts=${snap.data.starts}`);
+      void logStep(`debug:render ms=${snap.data.renderMs} measureWait=${snap.data.measureWaitMs} via=${snap.data.measureVia} zf=${snap.data.zf} layoutW=${snap.data.layoutW}`);
+      void logStep(`debug:flags overlay=${snap.data.overlay} busy=${snap.data.busy} run=${snap.data.run}`);
+
+      // 2) Probe-measure WITHOUT changing the DOM (no state writes)
+      const svg = outer.querySelector("svg");
+      if (!svg) { void logStep("debug:probe no-svg"); return; }
+
+      const bands = withUntransformedSvg(outer, s => measureSystemsPx(outer, s)) ?? [];
+      const H = getPAGE_H(outer);
+      const starts = computePageStartIndices(bands, H);
+
+      void logStep(`debug:probe measured bands=${bands.length} H=${H} starts=${starts.join(',')}`);
+    };
+
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [getPAGE_H]);
 
   /* ---------- Styles ---------- */
 
