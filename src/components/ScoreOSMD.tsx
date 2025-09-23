@@ -503,7 +503,6 @@ export default function ScoreOSMD({
 
   const resizeTimerRef = useRef<number | null>(null); // ResizeObserver debounce
   const vvTimerRef = useRef<number | null>(null);     // visualViewport debounce
-  const zoomKickTimerRef = useRef<number | null>(null); // debounce for browser zoom
 
   const handledWRef = useRef<number>(-1);
   const handledHRef = useRef<number>(-1);
@@ -1447,7 +1446,7 @@ void logStep("reflowOnWidth: past measure:start");
       if (kick !== null) { window.clearTimeout(kick); }
     };
   }, [computeZoomFactor]);
-
+/*
   // Window resize fallback (debounced): ensure width/height changes trigger reflow
   useEffect(() => {
     let timer: number | null = null;
@@ -1496,7 +1495,7 @@ void logStep("reflowOnWidth: past measure:start");
           handledHRef.current = currH;
         } else if (heightChanged) {
           void logStep("resize:fallback:repag(height)");
-          repagFnRef.current(true /* resetToFirst */, false /* no spinner */);
+          repagFnRef.current(true, false);
           handledHRef.current = currH;
         }
       }, 150);
@@ -1510,7 +1509,8 @@ void logStep("reflowOnWidth: past measure:start");
         timer = null;
       }
     };
-  }, []);
+  }, []); 
+*/
 
   /** Init OSMD */
   useEffect(function initOSMDEffect() {
