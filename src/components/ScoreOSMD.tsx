@@ -495,6 +495,7 @@ export default function ScoreOSMD({
 
   // Busy lock (blocks input while OSMD works)
   const [busy, setBusy] = useState<boolean>(false);
+  const overlayRef = useRef<HTMLDivElement | null>(null);
   const [busyMsg, setBusyMsg] = useState<string>(DEFAULT_BUSY);
 
   // Debounce + reentry guards for resize/viewport changes
@@ -1151,11 +1152,9 @@ export default function ScoreOSMD({
           outer.dataset.osmdPhase = "render:painted";
           void logStep("render:painted");
         });
-void logStep("reflowOnWidth: past render:painted");
 
         // Optional: purge stray WebGL canvases
         try {
- void logStep("reflowOnWidth: in try");
          const canvasCount = outer.querySelectorAll("canvas").length;
           void logStep(`purge:probe canvas#=${canvasCount}`);
           if (canvasCount > 0) {
@@ -1167,14 +1166,12 @@ void logStep("reflowOnWidth: past render:painted");
           } else {
             void logStep("purge:skip(no-canvas)");
           }
-void logStep("reflowOnWidth: past canvasCount");
           outer.dataset.osmdPhase = "measure";
           void logStep("measure:start");
           void logStep("diag: entering measure:start await");
         } catch (e) {
           void logStep(`MEASURE-ENTRY:exception:${(e as Error)?.message ?? e}`);
         }
-void logStep("reflowOnWidth: past measure:start");
 
         // Yield one macrotask so logs can paint before AP wait
         await new Promise<void>((r) => setTimeout(r, 0));
@@ -1270,7 +1267,7 @@ void logStep("reflowOnWidth: past measure:start");
         void logStep(`reflow:done page=${nearest + 1}/${newStarts.length} bands=${newBands.length}`);
         stampHandledDims(outer);
       } finally {
-        void logStep("reflow:finally:enter");
+        await logStep("reflow:finally:enter", { paint: true });
 
         outer.dataset.osmdZoomExited   = outer.dataset.osmdZoomEntered || "0";
         outer.dataset.osmdZoomExitedAt = String(Date.now());
@@ -1738,12 +1735,10 @@ void logStep("reflowOnWidth: past measure:start");
         outer.dataset.osmdPhase = "render:painted";
         void logStep("render:painted");
       });
-void logStep("initOSMD: past render:painted");
 
       try {
         const canvasCount = outer.querySelectorAll("canvas").length;
         void logStep(`purge:probe canvas#=${canvasCount}`);
-void logStep("initOSMD: in try");
 
         if (canvasCount > 0) {
           void logStep("purge:queued");
@@ -1754,7 +1749,6 @@ void logStep("initOSMD: in try");
         } else {
           void logStep("purge:skip(no-canvas)");
         }
-void logStep("initOSMD: past canvassCount");
 
         outer.dataset.osmdPhase = "measure";
         void logStep("measure:start");
@@ -1762,7 +1756,6 @@ void logStep("initOSMD: past canvassCount");
       } catch (e) {
         void logStep(`MEASURE-ENTRY:exception:${(e as Error)?.message ?? e}`);
       }
-void logStep("initOSMD: past measure:start");
       // Beacons: prove event loop is alive
       try {
         Promise.resolve().then(() => void logStep("beacon:microtask"));
@@ -1770,7 +1763,6 @@ void logStep("initOSMD: past measure:start");
         setTimeout(() => void logStep("beacon:setTimeout:1000ms"), 1000);
         try { requestAnimationFrame(() => void logStep("beacon:raf")); } catch {}
       } catch {}
-void logStep("initOSMD: past beacons");
 
       // Yield one macrotask so logs can paint before we await AP
       await new Promise<void>((r) => setTimeout(r, 0));
@@ -1840,7 +1832,15 @@ void logStep("initOSMD: past beacons");
           const heightChangedSinceHandled =
             handledHRef.current === -1 || Math.abs(currH - handledHRef.current) >= 1;
 
-          // Respect running guards: queue once and bail
+          if (busyRef.current) {
+            if (widthChangedSinceHandled) {
+              reflowAgainRef.current = "width";
+            } else if (heightChangedSinceHandled) {
+              reflowAgainRef.current = "height";
+            }
+            return;
+          }
+            // Respect running guards: queue once and bail
           if (reflowRunningRef.current) {
             if (widthChangedSinceHandled) {
               reflowAgainRef.current = "width";
@@ -2175,6 +2175,16 @@ void logStep("initOSMD: past beacons");
     void logStep(`busy:${busy ? "true" : "false"}`);
   }, [busy]);
 
+  useEffect(() => {
+    const outer = wrapRef.current;
+    const ov = overlayRef.current;
+    if (!outer || !ov) { return; }
+    // Read the DOM we just rendered
+    const visible = ov.style.display !== 'none';
+    outer.dataset.osmdOverlay = visible ? 'shown' : 'hidden';
+    void logStep(`overlay:${visible ? 'shown' : 'hidden'} busy=${busy}`);
+  }, [busy]);
+
   // BUSY FAIL-SAFE: if the overlay lingers too long, force-clear and log once.
   // Light breadcrumb only — no need to block on paint here.
   useEffect(() => {
@@ -2271,6 +2281,7 @@ void logStep("initOSMD: past beacons");
 
       {/* Input-blocking overlay while busy */}
       <div
+        ref={overlayRef}
         aria-busy={busy}
         role="status"
         aria-live="polite"   /* screen readers announce “Please wait…” */
