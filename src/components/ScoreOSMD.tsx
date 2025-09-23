@@ -2034,6 +2034,49 @@ export default function ScoreOSMD({
     };
   }, [applyPage, goNext, goPrev]);
 
+  
+  useEffect(() => {
+  const onKey = (e: KeyboardEvent) => {
+    const mod = e.shiftKey && (e.ctrlKey || e.metaKey);
+    if (!mod || e.key.toLowerCase() !== "d") return;
+
+    const outer = wrapRef.current;
+    if (!outer) return;
+
+    const dump = {
+      // guards/queues
+      ready: readyRef.current,
+      busy: busyRef.current,
+      reflowRunning: reflowRunningRef.current,
+      repagRunning: repagRunningRef.current,
+      queued: reflowAgainRef.current,
+
+      // layout + pagination
+      w: outer.clientWidth,
+      h: outer.clientHeight,
+      PAGE_H: (() => {
+        try { return getPAGE_H(outer); } catch { return -1; }
+      })(),
+      bands: bandsRef.current.length,
+      starts: pageStartsRef.current,
+      page: pageIdxRef.current,
+
+      // breadcrumbs from data-*
+      phase: outer.dataset.osmdPhase,
+      overlay: outer.dataset.osmdOverlay,
+      handled: outer.dataset.osmdHandled,
+      renderMs: outer.dataset.osmdRenderMs,
+      zf: outer.dataset.osmdZf,
+      layoutW: outer.dataset.osmdLayoutW,
+    };
+
+    void logStep("DUMP " + JSON.stringify(dump));
+  };
+
+  window.addEventListener("keydown", onKey);
+  return () => window.removeEventListener("keydown", onKey);
+}, [getPAGE_H]);
+
   // Touch swipe paging (disabled while busy)
   useEffect(() => {
     const outer = wrapRef.current;
