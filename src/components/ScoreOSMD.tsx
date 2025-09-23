@@ -1369,88 +1369,82 @@ void logStep("reflowOnWidth: past measure:start");
     return () => document.removeEventListener("visibilitychange", onVis);
   }, []);
 
-  // Reflow only when the *browser zoom* changes (not generic resizes)
+  // Reflow only for actual zoom; never start immediately, just queue safely.
   useEffect(() => {
-    // Don’t react until first layout is ready
-    if (!readyRef.current) { return; }
+    const vv = typeof window !== "undefined" ? window.visualViewport : undefined;
 
-    const schedule = () => {
-      const outer = wrapRef.current;
-      if (!outer) { return; }
+    let lastScale = vv?.scale ?? 1;
+    let lastDpr   = window.devicePixelRatio || 1;
+    let kick: number | null = null;
 
-      if (zoomKickTimerRef.current !== null) {
-        window.clearTimeout(zoomKickTimerRef.current);
+    const schedule = (why: "vv-scale" | "dpr") => {
+      // Ignore before first layout is fully ready
+      if (!readyRef.current) {
+        void logStep(`zoom:ignored (pre-ready) reason=${why}`);
+        return;
       }
-      zoomKickTimerRef.current = window.setTimeout(() => {
-        zoomKickTimerRef.current = null;
 
-        // Update source-of-truth zoom factor once per burst
+      // Debounce a burst of zoom changes
+      if (kick !== null) window.clearTimeout(kick);
+      kick = window.setTimeout(() => {
+        kick = null;
+
         const before = zoomFactorRef.current;
         zoomFactorRef.current = computeZoomFactor();
 
-        // Only act if zoom factor actually changed
-        if (Math.abs(zoomFactorRef.current - before) < 0.003) { return; }
+        // Only act if zoom actually changed
+        if (Math.abs(zoomFactorRef.current - before) < 0.003) return;
 
-        void logStep(`zoom:debounced zf=${zoomFactorRef.current.toFixed(3)}`);
+        void logStep(`zoom:debounced zf=${zoomFactorRef.current.toFixed(3)} reason=${why}`);
 
-        // Respect guards; if something is running, queue once and bail
+        // Queue only; let our normal drain paths run it when safe
+        reflowAgainRef.current = "width";
+
         if (reflowRunningRef.current || repagRunningRef.current || busyRef.current) {
-          reflowAgainRef.current = "width";
           void logStep("zoom: queued width reflow (guard busy)");
           return;
         }
 
-        // Zoom-driven width reflow: reset to first page, with spinner
-        reflowFnRef.current(true, true);
-
-        // Record handled dims
-        if (wrapRef.current) {
-          handledWRef.current = wrapRef.current.clientWidth;
-          handledHRef.current = wrapRef.current.clientHeight;
-        }
+        // If we're idle, drain the queue ourselves on the next tick
+        setTimeout(() => {
+          if (
+            reflowAgainRef.current === "width" &&
+            !reflowRunningRef.current &&
+            !repagRunningRef.current &&
+            !busyRef.current
+          ) {
+            reflowAgainRef.current = "none";
+            reflowFnRef.current(true, true); // safe to start now
+          }
+        }, 0);
       }, 220);
     };
 
-    // Track *actual zoom* signals only:
-    //  - visualViewport.scale changes
-    //  - devicePixelRatio changes
-    const vv = typeof window !== "undefined" ? window.visualViewport : undefined;
-    let lastScale = vv?.scale ?? 1;
-    let lastDpr   = window.devicePixelRatio || 1;
-
     const onVV = () => {
-      // Only schedule when scale changed
       const s = vv?.scale ?? 1;
       if (Math.abs(s - lastScale) > 0.003) {
         lastScale = s;
-        schedule();
+        schedule("vv-scale");
       }
     };
 
-    const onDprPoll = () => {
-      const now = window.devicePixelRatio || 1;
-      if (Math.abs(now - lastDpr) > 0.003) {
-        lastDpr = now;
-        schedule();
+    const dprPoll = () => {
+      const d = window.devicePixelRatio || 1;
+      if (Math.abs(d - lastDpr) > 0.003) {
+        lastDpr = d;
+        schedule("dpr");
       }
     };
 
-    // Listen to VV changes for browsers that support it
     vv?.addEventListener("resize", onVV);
     vv?.addEventListener("scroll", onVV);
-
-    // Fallback: some browsers don’t expose VV.scale changes reliably.
-    // We poll DPR very lightly; cheap and avoids false window.resize triggers.
-    const dprTimer = window.setInterval(onDprPoll, 400);
+    const t = window.setInterval(dprPoll, 400);
 
     return () => {
       vv?.removeEventListener("resize", onVV);
       vv?.removeEventListener("scroll", onVV);
-      window.clearInterval(dprTimer);
-      if (zoomKickTimerRef.current !== null) {
-        window.clearTimeout(zoomKickTimerRef.current);
-        zoomKickTimerRef.current = null;
-      }
+      window.clearInterval(t);
+      if (kick !== null) window.clearTimeout(kick);
     };
   }, [computeZoomFactor]);
 
