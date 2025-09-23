@@ -1209,14 +1209,10 @@ export default function ScoreOSMD({
           void logStep(`MEASURE-ENTRY:exception:${(e as Error)?.message ?? e}`);
         }
 
-        // After render, do a single macrotask yield and continue.
-        // (Skip the rAF/message race — some environments never deliver it
-        //  while the tab is visible, which wedged us at `render:painted`.)
         void logStep("SIG: reflow.measure.skip-ap:enter");
-        await new Promise<void>((r) => setTimeout(r, 0));
-        void logStep("SIG: reflow.measure.skip-ap:after-yield");
         outer.dataset.osmdMeasureWaitMs = "0";
         outer.dataset.osmdMeasureAwaitVia = "skipped";
+        void logStep("SIG: reflow.measure.skip-ap:direct");
         void logStep("measure:race:skipped");
         void logStep("ap:measure:start:done");
 
