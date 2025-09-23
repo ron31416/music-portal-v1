@@ -152,21 +152,24 @@ function getTopLayer(): HTMLDivElement {
   return root;
 }
 
-/** The only on-page console: pinned to the top */
+/** The only on-page console: docked left, full height */
 function getConsoleTop(): HTMLPreElement {
   const root = getTopLayer();
+
   let box = root.querySelector<HTMLPreElement>('pre[data-osmd-log="1"]');
   if (!box) {
     box = document.createElement('pre');
     box.dataset.osmdLog = '1';
+
     Object.assign(box.style, {
       position: 'absolute',
       left: '8px',
-      top: '0px',
-      zIndex: '1',
-      maxWidth: 'min(720px, calc(100vw - 16px))',
       right: 'auto',
-      maxHeight: '60vh',      // was 44vh
+      // we’ll drive top/bottom dynamically to fill full height
+      top: '0px',
+      bottom: '0px',
+      width: 'min(560px, 45vw)',           // narrow column; resizeable
+      maxWidth: 'calc(100vw - 16px)',
       overflow: 'auto',
       background: 'rgba(0,0,0,0.85)',
       color: '#0f0',
@@ -174,33 +177,52 @@ function getConsoleTop(): HTMLPreElement {
       borderRadius: '8px',
       font: '11px/1.35 monospace',
       whiteSpace: 'pre-wrap',
-      pointerEvents: 'auto',  // was 'none' (prevents scrolling)
+      pointerEvents: 'auto',               // allow scrolling
       touchAction: 'pan-y',
       overscrollBehavior: 'contain',
       boxSizing: 'border-box',
+      resize: 'horizontal',                // drag to widen/narrow
     } as CSSStyleDeclaration);
+
     root.appendChild(box);
 
-    const syncTop = () => {
+    const syncBounds = () => {
       try {
         const vv = (typeof window !== 'undefined' && 'visualViewport' in window)
           ? window.visualViewport
           : undefined;
-        const vvTop = vv ? Math.floor(vv.offsetTop) : 0;
-        box!.style.top = `calc(${Math.max(0, vvTop)}px + env(safe-area-inset-top, 0px))`;
+
+        if (vv) {
+          const topPx = Math.max(0, Math.floor(vv.offsetTop));
+          const bottomGapPx = Math.max(
+            0,
+            Math.floor((window.innerHeight || 0) - (vv.offsetTop + vv.height))
+          );
+          // Fill the visible viewport between its top and bottom edges
+          box!.style.top    = `calc(${topPx}px + env(safe-area-inset-top, 0px))`;
+          box!.style.bottom = `calc(${bottomGapPx}px + env(safe-area-inset-bottom, 0px))`;
+        } else {
+          // Desktop fallback: simply fill from top to bottom
+          box!.style.top = 'env(safe-area-inset-top, 0px)';
+          box!.style.bottom = 'env(safe-area-inset-bottom, 0px)';
+        }
       } catch {
         box!.style.top = '0px';
+        box!.style.bottom = '0px';
       }
     };
+
+    // Keep pinned to the visible viewport
     try {
-      window.visualViewport?.addEventListener('resize', syncTop);
-      window.visualViewport?.addEventListener('scroll', syncTop);
+      window.visualViewport?.addEventListener('resize', syncBounds);
+      window.visualViewport?.addEventListener('scroll', syncBounds);
     } catch {}
-    window.addEventListener('resize', syncTop);
-    window.addEventListener('scroll', syncTop, { passive: true });
-    window.addEventListener('orientationchange', syncTop);
-    setInterval(syncTop, 1000);
-    syncTop();
+    window.addEventListener('resize', syncBounds);
+    window.addEventListener('scroll', syncBounds, { passive: true });
+    window.addEventListener('orientationchange', syncBounds);
+
+    // Initial layout
+    syncBounds();
   }
   return box;
 }
