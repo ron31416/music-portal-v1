@@ -572,9 +572,13 @@ export default function ScoreOSMD({
 
       const hostW = Math.max(1, Math.floor(outer.clientWidth));
       const rawLayoutW = Math.max(1, Math.floor(hostW / zf));
+
+      // Nudge to dodge width-specific layout edge cases
+      const widthNudge = -1; // try -1; if problems persist, try -2
+
       const MAX_LAYOUT_W = 1600;
       const MIN_LAYOUT_W = 320;
-      const layoutW = Math.max(MIN_LAYOUT_W, Math.min(rawLayoutW, MAX_LAYOUT_W));
+      const layoutW = Math.max(MIN_LAYOUT_W, Math.min(rawLayoutW + widthNudge, MAX_LAYOUT_W));
 
       outer.dataset.osmdZf = String(zf);
       outer.dataset.osmdLayoutW = String(layoutW);
@@ -592,25 +596,27 @@ export default function ScoreOSMD({
       await logStep(`render:call w=${layoutW} hostW=${hostW} zf=${zf.toFixed(3)} osmd.Zoom=${osmd.Zoom ?? "n/a"}`
       );
 
-      // Watchdog: label long-running render calls
-      let lagTimer: number | null = null;
+      // --- START: render heartbeat wrapper ---
+      let beat: number | null = null;
+      let startedAt = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
+
+      // Emit a log every second while we are inside osmd.render()
+      beat = window.setInterval(() => {
+        const now = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
+        const secs = Math.round((now - startedAt) / 1000);
+        // single, small line so it paints even under load
+        void logStep(`render:heartbeat +${secs}s`);
+      }, 1000);
+
       try {
-        lagTimer = window.setTimeout(async () => {
-          outer.dataset.osmdRenderLag = "1";
-          await logStep("render:lag>300ms");
-        }, 300);
-
-        osmd.render(); // sync & heavy
+        osmd.render(); // <— synchronous & heavy; if this never returns, heartbeats keep printing
+      } catch (e) {
+        void logStep(`render:error ${(e as Error)?.message ?? e}`);
+        throw e;
       } finally {
-        if (lagTimer) { window.clearTimeout(lagTimer); }
-        delete outer.dataset.osmdRenderLag;
-        host.style.left  = prevLeft;
-        host.style.right = prevRight;
-        host.style.width = prevWidth;
-
-        const svg = getSvg(outer);
-        if (svg) { svg.style.transformOrigin = "top left"; }
+        if (beat) { window.clearInterval(beat); beat = null; }
       }
+      // --- END: render heartbeat wrapper ---
     },
     [applyZoomFromRef]
   );
@@ -1710,24 +1716,26 @@ export default function ScoreOSMD({
         loadInput = src;
       }
 
-      // --- osmd.load (watchdog + timing) ---
-      let loadWatch: number | undefined;
-
-      loadWatch = window.setInterval(() => {
-        // keep message EXACTLY as before for apples-to-apples comparisons
-        void logStep("osmd.load:still-running");
-      }, 1000)
-
-      const tLoadStart = tnow();
+      // --- osmd.load (heartbeat + timing) ---
       await logStep("osmd.load:start");
+      const loadStart = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
+      let loadBeat: number | null = null;
+
+      loadBeat = window.setInterval(() => {
+        const now = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
+        const secs = Math.round((now - loadStart) / 1000);
+        void logStep(`osmd.load:heartbeat +${secs}s`);
+      }, 1000);
+
       try {
         await awaitLoad(osmd, loadInput);
-        void logStep(`osmd.load: ${Math.round(tnow() - tLoadStart)}ms`);
+        const durMs = ((typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now()) - loadStart;
+        void logStep(`osmd.load: ${Math.round(durMs)}ms`);
         await logStep("osmd.load:done");
       } finally {
-        if (loadWatch !== undefined) {
-          window.clearInterval(loadWatch);
-          loadWatch = undefined;
+        if (loadBeat !== null) {
+          window.clearInterval(loadBeat);
+          loadBeat = null;
         }
       }
 
