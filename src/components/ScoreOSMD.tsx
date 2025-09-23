@@ -1385,7 +1385,7 @@ void logStep("reflowOnWidth: past measure:start");
       }
 
       // Debounce a burst of zoom changes
-      if (kick !== null) window.clearTimeout(kick);
+      if (kick !== null) { window.clearTimeout(kick); }
       kick = window.setTimeout(() => {
         kick = null;
 
@@ -1393,7 +1393,7 @@ void logStep("reflowOnWidth: past measure:start");
         zoomFactorRef.current = computeZoomFactor();
 
         // Only act if zoom actually changed
-        if (Math.abs(zoomFactorRef.current - before) < 0.003) return;
+        if (Math.abs(zoomFactorRef.current - before) < 0.003) { return; }
 
         void logStep(`zoom:debounced zf=${zoomFactorRef.current.toFixed(3)} reason=${why}`);
 
@@ -1444,7 +1444,7 @@ void logStep("reflowOnWidth: past measure:start");
       vv?.removeEventListener("resize", onVV);
       vv?.removeEventListener("scroll", onVV);
       window.clearInterval(t);
-      if (kick !== null) window.clearTimeout(kick);
+      if (kick !== null) { window.clearTimeout(kick); }
     };
   }, [computeZoomFactor]);
 
