@@ -1832,6 +1832,11 @@ export default function ScoreOSMD({
           const heightChangedSinceHandled =
             handledHRef.current === -1 || Math.abs(currH - handledHRef.current) >= 1;
 
+          // NEW: trace RO events and deltas
+          void logStep(
+            `resize:ro w=${currW} h=${currH} handled=${handledWRef.current}×${handledHRef.current} ΔW=${widthChangedSinceHandled} ΔH=${heightChangedSinceHandled}`
+          );
+
           if (busyRef.current) {
             if (widthChangedSinceHandled) {
               reflowAgainRef.current = "width";
@@ -1840,7 +1845,8 @@ export default function ScoreOSMD({
             }
             return;
           }
-            // Respect running guards: queue once and bail
+
+          // Respect running guards: queue once and bail
           if (reflowRunningRef.current) {
             if (widthChangedSinceHandled) {
               reflowAgainRef.current = "width";
@@ -2119,6 +2125,21 @@ export default function ScoreOSMD({
           handledWRef.current === -1 || Math.abs(currW - handledWRef.current) >= 1;
         const heightChanged =
           handledHRef.current === -1 || Math.abs(currH - handledHRef.current) >= 1;
+
+        // NEW: log what VV reported
+        void logStep(
+          `vv:change w=${currW} h=${currH} handled=${handledWRef.current}×${handledHRef.current} ΔW=${widthChanged} ΔH=${heightChanged}`
+        );
+
+        // NEW: if we're busy, just queue the right follow-up and bail
+        if (busyRef.current) {
+          if (widthChanged) {
+            reflowAgainRef.current = "width";
+          } else if (heightChanged) {
+            reflowAgainRef.current = "height";
+          }
+          return;
+        }
 
         // If a width reflow is already running, queue one follow-up and bail.
         if (reflowRunningRef.current) {
