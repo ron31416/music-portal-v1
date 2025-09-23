@@ -1061,6 +1061,7 @@ export default function ScoreOSMD({
     repagFnRef.current = recomputePaginationHeightOnly;
   }, [recomputePaginationHeightOnly]);
 
+  
   const reflowOnWidthChange = useCallback(
     async function reflowOnWidthChange(resetToFirst = false) {
       const outer = wrapRef.current;
@@ -1075,6 +1076,19 @@ export default function ScoreOSMD({
         if (outer) { void logStep(`reflow:early-bail outer=${o} osmd=${m}`); }
         return;
       }
+
+      // --- NEW: hide the host before render to prevent painting the full SVG ---
+      const hostForReflow = hostRef.current;
+      const prevVisForReflow = hostForReflow?.style.visibility ?? "";
+      const revealHost = () => {
+        try {
+          if (hostForReflow) {
+            hostForReflow.style.visibility = prevVisForReflow || "visible";
+            outer.dataset.osmdHostHidden = "0";
+            void logStep("host:revealed(after-apply)");
+          }
+        } catch {}
+      };
 
       // Always show spinner for width reflow
       const wantSpinner = true;
@@ -1139,6 +1153,15 @@ export default function ScoreOSMD({
           outer.dataset.osmdPhase = "spinner-on";
           void logStep("spinner-on");
 
+          // NEW: hide host only once spinner is visible (prevents flash)
+          try {
+            if (hostForReflow) {
+              hostForReflow.style.visibility = "hidden";
+              outer.dataset.osmdHostHidden = "1";
+              void logStep("host:hidden(before-render)");
+            }
+          } catch {}
+
           // Hard fail-safe (always clears even if ownership is stale)
           if (spinnerFailSafeRef.current) { window.clearTimeout(spinnerFailSafeRef.current); }
           spinnerFailSafeRef.current = window.setTimeout(() => {
@@ -1152,11 +1175,6 @@ export default function ScoreOSMD({
         const attemptForRender = Number(outer.dataset.osmdZoomEntered || "0");
         outer.dataset.osmdRenderAttempt = String(attemptForRender);
         await logStep(`[render] starting attempt#${attemptForRender}`);
-
-        // Prevent giant paint during reflow render
-        const hostForReflow = hostRef.current;
-        const prevVisForReflow = hostForReflow?.style.visibility ?? "";
-        if (hostForReflow) { hostForReflow.style.visibility = "hidden"; }
 
         outer.dataset.osmdPhase = "render";
         await logStep("render:start");
@@ -1182,15 +1200,15 @@ export default function ScoreOSMD({
         void logStep(`render:finished (${renderMs}ms)`);
         void logStep(`[render] finished attempt#${attemptForRender} (${renderMs}ms)`);
 
-        // --------- CRUCIAL: BLOCKING “TWO BEATS” AFTER RENDER ---------
+        // --------- BLOCK BRIEFLY AFTER RENDER (but host still hidden) ---------
         outer.dataset.osmdPhase = "post-render-wait";
         const tWait0 = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
-        let viaPost: "ap" | "timeout" = "timeout";
+        let via: "ap" | "timeout" = "timeout";
         await Promise.race([
-          ap("post-render:block", 600).then(() => { viaPost = "ap"; }),
+          ap("post-render:block", 600).then(() => { via = "ap"; }),
           new Promise<void>((r) => setTimeout(r, 450)),
         ]);
-        void logStep(`post-render:block done via=${viaPost} waited=${Math.round(((typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now()) - tWait0)}ms`);
+        void logStep(`post-render:block done via=${via} waited=${Math.round(((typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now()) - tWait0)}ms`);
 
         // --------- MEASURE ---------
         outer.dataset.osmdPhase = "measure";
@@ -1216,6 +1234,7 @@ export default function ScoreOSMD({
         if (newBands.length === 0) {
           outer.dataset.osmdPhase = "measure:0:reflow-abort";
           void logStep("reflow: measured 0 bands — abort");
+          revealHost();
           return;
         }
 
@@ -1242,6 +1261,7 @@ export default function ScoreOSMD({
           applyPage(0);
           outer.dataset.osmdPhase = "reset:first:done";
           void logStep("reset:first:done");
+          revealHost();
           return;
         }
 
@@ -1253,6 +1273,8 @@ export default function ScoreOSMD({
           timeSection("apply:first", () => { applyPage(0); });
           outer.dataset.osmdPhase = "reset:first:done";
           void logStep("reset:first:done");
+          stampHandledDims(outer);
+          revealHost();
           return;
         }
 
@@ -1274,19 +1296,19 @@ export default function ScoreOSMD({
         ]);
         timeSection("apply:nearest", () => { applyPage(nearest); });
 
-        // Reveal host now that target page is applied
-        try {
-          const hostNow = hostRef.current;
-          if (hostNow) { hostNow.style.visibility = prevVisForReflow || "visible"; }
-        } catch {}
-
         outer.dataset.osmdPhase = `applied:${nearest}`;
         void logStep(`applied:${nearest}`);
-        
         void logStep(`reflow:done page=${nearest + 1}/${newStarts.length} bands=${newBands.length}`);
         stampHandledDims(outer);
+
+        // Reveal after we’ve applied the page so the browser paints only one page
+        revealHost();
+
       } finally {
         await logStep("reflow:finally:enter", { paint: true });
+
+        // Safety: ensure host is not left hidden on any path
+        try { revealHost(); } catch {}
 
         outer.dataset.osmdZoomExited   = outer.dataset.osmdZoomEntered || "0";
         outer.dataset.osmdZoomExitedAt = String(Date.now());
