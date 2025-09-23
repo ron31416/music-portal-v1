@@ -1202,8 +1202,11 @@ export default function ScoreOSMD({
         outer.dataset.osmdMeasureWaitMs = String(Math.round(__tMeasureWait1 - __tMeasureWait0));
         outer.dataset.osmdMeasureAwaitVia = __via;
 
+        void logStep("measure:race:done"); // ← ADD THIS LINE
         // keep the exact log line for apples-to-apples comparisons
         void logStep("ap:measure:start:done"); 
+
+        void logStep("measure:about-to-scan");
 
         // Re-measure bands without SVG transform
         const newBands =
@@ -2034,14 +2037,14 @@ export default function ScoreOSMD({
     };
   }, [applyPage, goNext, goPrev]);
 
-  
+
   useEffect(() => {
   const onKey = (e: KeyboardEvent) => {
     const mod = e.shiftKey && (e.ctrlKey || e.metaKey);
-    if (!mod || e.key.toLowerCase() !== "d") return;
+    if (!mod || e.key.toLowerCase() !== "d") { return; }
 
     const outer = wrapRef.current;
-    if (!outer) return;
+    if (!outer) { return; }
 
     const dump = {
       // guards/queues
