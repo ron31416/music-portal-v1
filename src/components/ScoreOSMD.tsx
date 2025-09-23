@@ -2260,16 +2260,20 @@ export default function ScoreOSMD({
     }
   }, [busy]);
 
-  // TEMP: log *every* keydown so we can see what the browser actually emits
+  // TEMP: log every keydown so we can see what the browser actually emits
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      void logStep(
-        `key event: key="${e.key}" code="${e.code}" ctrl=${e.ctrlKey} shift=${e.shiftKey} alt=${e.altKey} meta=${(e as any).metaKey ?? false}`
-      );
+    const onKey = (e: KeyboardEvent): void => {
+      // stringify safely without `any`
+      const msg =
+        `key event: key="${e.key}" code="${e.code}"` +
+        ` ctrl=${e.ctrlKey} shift=${e.shiftKey} alt=${e.altKey} meta=${e.metaKey}`;
+      void logStep(msg);
     };
 
     window.addEventListener("keydown", onKey, { capture: true });
-    return () => window.removeEventListener("keydown", onKey, { capture: true });
+    return (): void => {
+      window.removeEventListener("keydown", onKey, { capture: true });
+    };
   }, []);
 
   useEffect(() => {
