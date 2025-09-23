@@ -2269,12 +2269,12 @@ export default function ScoreOSMD({
         (e.ctrlKey && e.altKey && k === "d") ||
         (k === "`"));
 
-      if (!trigger) return;
+      if (!trigger) { return; }
 
       e.preventDefault();
 
       const outer = wrapRef.current;
-      if (!outer) return;
+      if (!outer) { return; }
 
       const zf = zoomFactorRef.current ?? 1;
       const layoutW = Number(outer.dataset.osmdLayoutW || NaN);
