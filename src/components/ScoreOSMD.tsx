@@ -1203,7 +1203,7 @@ export default function ScoreOSMD({
         outer.dataset.osmdMeasureAwaitVia = __via;
 
         // keep the exact log line for apples-to-apples comparisons
-        void logStep("ap:measure:start:done");
+        void logStep("ap:measure:start:done"); 
 
         // Re-measure bands without SVG transform
         const newBands =
