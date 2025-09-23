@@ -1194,6 +1194,7 @@ export default function ScoreOSMD({
             void logStep("purge:skip(no-canvas)");
           }
           outer.dataset.osmdPhase = "measure";
+          outer.dataset.osmdMeasurePath = "reflow-skip-ap";
           void logStep("measure:start");
           void logStep("diag: entering measure:start await");
           // WATCHDOG: if we don't reach "measured:*" soon, log and keep going
@@ -1211,7 +1212,9 @@ export default function ScoreOSMD({
         // After render, do a single macrotask yield and continue.
         // (Skip the rAF/message race — some environments never deliver it
         //  while the tab is visible, which wedged us at `render:painted`.)
+        void logStep("SIG: reflow.measure.skip-ap:enter");
         await new Promise<void>((r) => setTimeout(r, 0));
+        void logStep("SIG: reflow.measure.skip-ap:after-yield");
         outer.dataset.osmdMeasureWaitMs = "0";
         outer.dataset.osmdMeasureAwaitVia = "skipped";
         void logStep("measure:race:skipped");
@@ -1555,6 +1558,8 @@ export default function ScoreOSMD({
       const host = hostRef.current;
       const outer = wrapRef.current;
       if (!host || !outer) { return; }
+
+      await logStep("BUILD: ScoreOSMD v10 @ reflow-skip-ap");
 
       // Phase breadcrumb + first log
       outer.dataset.osmdPhase = "initOSMD";
@@ -2360,7 +2365,7 @@ export default function ScoreOSMD({
     <div
       ref={wrapRef}
       data-osmd-wrapper="1"
-      data-osmd-probe="v9"
+      data-osmd-probe="v10"
       className={className}
       style={{ /* outline: "4px solid fuchsia", */ ...outerStyle, ...style }}
     >
