@@ -609,13 +609,11 @@ export default function ScoreOSMD({
         void logStep(`render:error ${(e as Error)?.message ?? e}`);
         throw e;
       } finally {
-        // Always stop heartbeat and reset styles
-        window.clearInterval(beat);
-
+        try { window.clearInterval(beat); } catch {}
+        // Always reset styles even if another render started
         host.style.left  = "";
         host.style.right = "";
         host.style.width = "";
-
         const svg = getSvg(outer);
         if (svg) { svg.style.transformOrigin = "top left"; }
       }
@@ -1052,7 +1050,6 @@ export default function ScoreOSMD({
   }, [recomputePaginationHeightOnly]);
 
 
-  // --- WIDTH REFLOW (OSMD render at new width) ---
   const reflowOnWidthChange = useCallback(
     async function reflowOnWidthChange(resetToFirst = false) {
       const outer = wrapRef.current;
@@ -1151,15 +1148,14 @@ export default function ScoreOSMD({
           outer.dataset.osmdPhase = "spinner-on";
           void logStep("spinner-on");
 
-          // Fail-safe: never leave overlay stuck
+          // Fail-safe: NEVER leave overlay stuck (unconditional clear)
           if (spinnerFailSafeRef.current) { window.clearTimeout(spinnerFailSafeRef.current); }
           spinnerFailSafeRef.current = window.setTimeout(() => {
-            if (spinnerOwnerRef.current) {
-              spinnerOwnerRef.current = null;
-              hideBusy();
-              void logStep("spinner:failsafe-clear");
-            }
-          }, 5000);
+            // Clear regardless of "owner" — we prefer no overlay to a wedged UI
+            spinnerOwnerRef.current = null;
+            hideBusy();
+            void logStep("spinner:failsafe-clear:unconditional");
+          }, 9000);
         }
 
         // Heavy render section
@@ -1172,9 +1168,23 @@ export default function ScoreOSMD({
         await new Promise<void>((r) => setTimeout(r, 0)); // macrotask yield
         await ap("render:yield");                         // rAF/message tick
 
+        // --- RENDER WATCHDOG: force cleanup if osmd.render() never returns
+        let renderWd: number | null = window.setTimeout(() => {
+          outer.dataset.osmdPhase = "render:watchdog";
+          void logStep("render:watchdog:force-finalize");
+          // Drop spinner and running guards so future attempts can proceed
+          spinnerOwnerRef.current = null;
+          hideBusy();
+          reflowRunningRef.current = false;
+        }, 20000); // 20s safety
+        // --- END WATCHDOG
+
         const t0 = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
         await renderWithEffectiveWidth(outer, osmd);
         const t1 = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
+
+        if (renderWd !== null) { window.clearTimeout(renderWd); renderWd = null; }
+
         const renderMs = Math.round(t1 - t0);
         outer.dataset.osmdRenderMs = String(renderMs);
         void logStep(`render:finished (${renderMs}ms)`);
@@ -1191,7 +1201,7 @@ export default function ScoreOSMD({
 
         // Optional: purge stray WebGL canvases
         try {
-         const canvasCount = outer.querySelectorAll("canvas").length;
+          const canvasCount = outer.querySelectorAll("canvas").length;
           void logStep(`purge:probe canvas#=${canvasCount}`);
           if (canvasCount > 0) {
             void logStep("purge:queued");
