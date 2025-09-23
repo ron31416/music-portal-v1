@@ -583,40 +583,43 @@ export default function ScoreOSMD({
       outer.dataset.osmdZf = String(zf);
       outer.dataset.osmdLayoutW = String(layoutW);
 
-      // Temporarily let width control layout
-      const prevLeft  = host.style.left;
-      const prevRight = host.style.right;
-      const prevWidth = host.style.width;
+      // --- START: render heartbeat + safe style wrapper ---
+      const startedAt =
+        (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
 
-      host.style.left = "0";
-      host.style.right = "auto";
-      host.style.width = `${layoutW}px`;
-      void host.getBoundingClientRect(); // ensure style takes effect this frame
-
-      await logStep(`render:call w=${layoutW} hostW=${hostW} zf=${zf.toFixed(3)} osmd.Zoom=${osmd.Zoom ?? "n/a"}`
-      );
-
-      // --- START: render heartbeat wrapper ---
-      let beat: number | null = null;
-      let startedAt = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
-
-      // Emit a log every second while we are inside osmd.render()
-      beat = window.setInterval(() => {
+      const beat = window.setInterval(() => {
         const now = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
         const secs = Math.round((now - startedAt) / 1000);
-        // single, small line so it paints even under load
         void logStep(`render:heartbeat +${secs}s`);
       }, 1000);
 
       try {
-        osmd.render(); // <— synchronous & heavy; if this never returns, heartbeats keep printing
+        // Force layout width just for the duration of render
+        host.style.left = "0";
+        host.style.right = "auto";
+        host.style.width = `${layoutW}px`;
+        void host.getBoundingClientRect(); // ensure style takes effect this frame
+
+        await logStep(
+          `render:call w=${layoutW} hostW=${hostW} zf=${zf.toFixed(3)} osmd.Zoom=${osmd.Zoom ?? "n/a"}`
+        );
+
+        osmd.render(); // synchronous & heavy
       } catch (e) {
         void logStep(`render:error ${(e as Error)?.message ?? e}`);
         throw e;
       } finally {
-        if (beat) { window.clearInterval(beat); beat = null; }
+        // Always stop heartbeat and reset styles
+        window.clearInterval(beat);
+
+        host.style.left  = "";
+        host.style.right = "";
+        host.style.width = "";
+
+        const svg = getSvg(outer);
+        if (svg) { svg.style.transformOrigin = "top left"; }
       }
-      // --- END: render heartbeat wrapper ---
+      // --- END: render heartbeat + safe style wrapper ---
     },
     [applyZoomFromRef]
   );
