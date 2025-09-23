@@ -1832,7 +1832,7 @@ export default function ScoreOSMD({
           const heightChangedSinceHandled =
             handledHRef.current === -1 || Math.abs(currH - handledHRef.current) >= 1;
 
-          // NEW: trace RO events and deltas
+          // NEW trace RO events and deltas
           void logStep(
             `resize:ro w=${currW} h=${currH} handled=${handledWRef.current}×${handledHRef.current} ΔW=${widthChangedSinceHandled} ΔH=${heightChangedSinceHandled}`
           );
