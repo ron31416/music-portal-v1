@@ -681,6 +681,31 @@ export default function ScoreOSMD({
     [pageHeight]
   );
 
+  // ---- On-demand debug dump (no keyboard needed)
+  const dumpDebug = useCallback((): void => {
+    const outer = wrapRef.current;
+    if (!outer) { return; }
+
+    const zf = zoomFactorRef.current ?? 1;
+    const layoutW = Number(outer.dataset.osmdLayoutW || NaN);
+    const w = outer.clientWidth || 0;
+    const h = outer.clientHeight || 0;
+    const phase = outer.dataset.osmdPhase || "(none)";
+    const busyNow = busyRef.current;
+
+    void logStep(
+      `debug:data zf=${zf.toFixed(3)} layoutW=${Number.isNaN(layoutW) ? "?" : layoutW} W×H=${w}×${h} busy=${busyNow} phase=${phase}`
+    );
+
+    const measured = withUntransformedSvg(outer, (svg) => measureSystemsPx(outer, svg)) ?? [];
+    const H = getPAGE_H(outer);
+    const starts = computePageStartIndices(measured, H);
+
+    void logStep(
+      `debug:probe measured bands=${measured.length} H=${H} starts=${starts.join(",") || "(none)"}`
+    );
+  }, [getPAGE_H]);
+
   /** Apply a page index */
   const applyPage = useCallback(
     (pageIdx: number, depth: number = 0): void => {
@@ -2253,32 +2278,46 @@ export default function ScoreOSMD({
     }
   }, [busy]);
 
-  // Focus the overlay when busy so it can catch keys
+  // Auto-dump once if we linger in render:painted (no keys required)
   useEffect(() => {
-    if (busy) {
-      overlayRef.current?.focus?.();
+    const outer = wrapRef.current;
+    if (!outer) { return; }
+
+    let timer: number | null = null;
+    let armed = false;
+
+    const arm = (): void => {
+      if (timer !== null) { window.clearTimeout(timer); }
+      timer = window.setTimeout(() => {
+        const now = wrapRef.current;
+        if (now && now.dataset.osmdPhase === "render:painted" && !armed) {
+          armed = true;
+          dumpDebug();
+        }
+      }, 1200);
+    };
+
+    const mo = new MutationObserver(() => {
+      const now = wrapRef.current;
+      if (now && now.dataset.osmdPhase === "render:painted") {
+        arm();
+      } else {
+        if (timer !== null) { window.clearTimeout(timer); timer = null; }
+      }
+    });
+
+    mo.observe(outer, { attributes: true, attributeFilter: ["data-osmd-phase"] });
+
+    // If we're already in render:painted when this mounts, arm immediately
+    if (outer.dataset.osmdPhase === "render:painted") {
+      arm();
     }
-  }, [busy]);
 
-  // TEMP: log every keydown so we can see what the browser actually emits
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent): void => {
-      // stringify safely without `any`
-      const msg =
-        `key event: key="${e.key}" code="${e.code}"` +
-        ` ctrl=${e.ctrlKey} shift=${e.shiftKey} alt=${e.altKey} meta=${e.metaKey}`;
-      void logStep(msg);
-    };
-
-    window.addEventListener("keydown", onKey, { capture: true });
     return (): void => {
-      window.removeEventListener("keydown", onKey, { capture: true });
+      mo.disconnect();
+      if (timer !== null) { window.clearTimeout(timer); }
     };
-  }, []);
-
-  useEffect(() => {
-    void logStep("hotkeys:effect-mounted");
-  }, []);
+  }, [dumpDebug]);
 
   /* ---------- Styles ---------- */
 
@@ -2349,7 +2388,6 @@ export default function ScoreOSMD({
         role="status"
         aria-live="polite"
         aria-atomic="true"
-        tabIndex={-1}                 // <-- make it focusable to receive key events
         style={blockerStyle}
         onPointerDown={stop}
         onPointerMove={stop}
@@ -2360,20 +2398,6 @@ export default function ScoreOSMD({
         onScroll={stop}
         onMouseDown={stop}
         onContextMenu={stop}
-        // allow only our debug hotkeys; block every other key
-        onKeyDown={(e) => {
-          const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
-          const isDebug =
-            ((e.altKey && e.shiftKey && k === "d") ||      // Alt+Shift+D
-            (e.ctrlKey && e.altKey && k === "d") ||       // Ctrl+Alt+D
-            (k === "`"));                                  // backtick `
-          if (!isDebug) {
-            e.preventDefault();
-            e.stopPropagation();
-            return;
-          }
-          // fall through: let our global listener pick it up too
-        }}
       >
         <div
           style={{
@@ -2401,6 +2425,31 @@ export default function ScoreOSMD({
           <div>{busyMsg || DEFAULT_BUSY}</div>
         </div>
       </div>
+      {/* Tiny fixed debug button (on top of overlay) */}
+      <button
+        type="button"
+        onClick={() => dumpDebug()}
+        style={{
+          position: "fixed",
+          top: 8,
+          right: 8,
+          zIndex: 10000,          // higher than the overlay (overlay is 9999)
+          pointerEvents: "auto",  // ensure it can be clicked even over overlay
+          background: "#111",
+          color: "#0f0",
+          border: "1px solid #0f0",
+          borderRadius: 6,
+          padding: "4px 6px",
+          fontSize: 11,
+          fontFamily: "monospace",
+          cursor: "pointer",
+          opacity: 0.9,
+          userSelect: "none"
+        }}
+        aria-label="Dump debug info"
+      >
+        DBG
+      </button>
 
       <style>{`@keyframes osmd-spin { from { transform: rotate(0) } to { transform: rotate(360deg) } }`}</style>
     </div>
