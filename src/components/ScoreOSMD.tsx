@@ -583,7 +583,7 @@ export default function ScoreOSMD({
       const rawLayoutW = Math.max(1, Math.floor(hostW / zf));
 
       // Nudge to dodge width-specific layout edge cases
-      const widthNudge = -1; // try -1; if problems persist, try -2
+      const widthNudge = -1;
 
       const MAX_LAYOUT_W = 1600;
       const MIN_LAYOUT_W = 320;
@@ -592,7 +592,7 @@ export default function ScoreOSMD({
       outer.dataset.osmdZf = String(zf);
       outer.dataset.osmdLayoutW = String(layoutW);
 
-      // --- START: render heartbeat + safe style wrapper ---
+      // --- START: render heartbeat + strong containment/offscreen render ---
       const startedAt =
         (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
 
@@ -602,31 +602,64 @@ export default function ScoreOSMD({
         void logStep(`render:heartbeat +${secs}s`);
       }, 1000);
 
+      // Snapshot styles we’re going to touch
+      const prev = {
+        position: host.style.position,
+        left: host.style.left,
+        right: host.style.right,
+        top: host.style.top,
+        bottom: host.style.bottom, 
+        width: host.style.width,
+        visibility: host.style.visibility,
+        pointerEvents: host.style.pointerEvents,
+        contain: host.style.contain,
+      };
+
       try {
-        // Force layout width just for the duration of render
-        host.style.left = "0";
+        // Render the giant SVG **offscreen** with strong containment so the
+        // browser doesn’t try to paint it in-viewport before we paginate.
+        host.style.position = "fixed";
+        host.style.top = "-100000px";
+        host.style.left = "-100000px";
         host.style.right = "auto";
+        host.style.bottom = "auto";
+        host.style.visibility = "hidden";
+        host.style.pointerEvents = "none";
+        host.style.contain = "layout style paint"; // strong containment
         host.style.width = `${layoutW}px`;
-        void host.getBoundingClientRect(); // ensure style takes effect this frame
+
+        // Ensure styles take effect this task
+        void host.getBoundingClientRect();
 
         await logStep(
           `render:call w=${layoutW} hostW=${hostW} zf=${zf.toFixed(3)} osmd.Zoom=${osmd.Zoom ?? "n/a"}`
         );
 
         osmd.render(); // synchronous & heavy
+
+        // Give the browser one macrotask tick to breathe before we return.
+        // (If layout wants to flush, this lets timers/rAF queue up.)
+        await new Promise<void>((r) => setTimeout(r, 0));
       } catch (e) {
         void logStep(`render:error ${(e as Error)?.message ?? e}`);
         throw e;
       } finally {
         try { window.clearInterval(beat); } catch {}
-        // Always reset styles even if another render started
-        host.style.left  = "";
-        host.style.right = "";
-        host.style.width = "";
+        // Always restore styles even if another render started
+        host.style.position      = prev.position;
+        host.style.top           = prev.top;
+        host.style.left          = prev.left;
+        host.style.right         = prev.right;
+        host.style.bottom        = prev.bottom;
+        host.style.width         = prev.width;
+        host.style.visibility    = prev.visibility;
+        host.style.pointerEvents = prev.pointerEvents;
+        host.style.contain       = prev.contain;
+
         const svg = getSvg(outer);
         if (svg) { svg.style.transformOrigin = "top left"; }
       }
-      // --- END: render heartbeat + safe style wrapper ---
+      // --- END ---
     },
     [applyZoomFromRef]
   );
@@ -1061,7 +1094,7 @@ export default function ScoreOSMD({
     repagFnRef.current = recomputePaginationHeightOnly;
   }, [recomputePaginationHeightOnly]);
 
-  
+
   const reflowOnWidthChange = useCallback(
     async function reflowOnWidthChange(resetToFirst = false) {
       const outer = wrapRef.current;
@@ -1943,8 +1976,8 @@ export default function ScoreOSMD({
       });
 
       resizeObs.observe(outer);
-      const hostE1 = hostRef.current;
-      if (hostE1) { resizeObs.observe(hostE1); }
+      //const hostE1 = hostRef.current;
+      //if (hostE1) { resizeObs.observe(hostE1); }
 
     })().catch((err: unknown) => {
       hideBusy();
@@ -2372,6 +2405,7 @@ export default function ScoreOSMD({
     inset: 0,
     overflow: "hidden",
     minWidth: 0,
+    contain: "layout style paint",   // ← add this line
   };
 
   /* ---------- Busy overlay ---------- */
