@@ -2253,57 +2253,42 @@ export default function ScoreOSMD({
     }
   }, [busy]);
 
-  // --- HUD hotkey: Ctrl+Shift+D -> dump + probe-measure (no mutation) ---
+  // Ctrl+Shift+D → dump debug to the on-screen console
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!(e.ctrlKey && e.shiftKey && e.code === "KeyD")) { return; }
+      if (!(e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "d")) { return; }
+
+      e.preventDefault();
 
       const outer = wrapRef.current;
-      if (!outer) { void logStep("debug: no wrapper"); return; }
+      if (!outer) { return; }
 
-      // 1) Snapshot key bits
-      const r = outer.getBoundingClientRect();
-      const vv = window.visualViewport;
-      const snap = {
-        rect: { w: Math.round(r.width), h: Math.round(r.height) },
-        vv: vv ? { w: Math.round(vv.width), h: Math.round(vv.height), scale: vv.scale } : null,
-        dpr: window.devicePixelRatio || 1,
-        data: {
-          phase: outer.dataset.osmdPhase,
-          pages: outer.dataset.osmdPages,
-          starts: outer.dataset.osmdStarts,
-          page: outer.dataset.osmdPage,
-          H: outer.dataset.osmdH,
-          ty: outer.dataset.osmdTy,
-          zf: outer.dataset.osmdZf,
-          layoutW: outer.dataset.osmdLayoutW,
-          renderMs: outer.dataset.osmdRenderMs,
-          measureWaitMs: outer.dataset.osmdMeasureWaitMs,
-          measureVia: outer.dataset.osmdMeasureAwaitVia,
-          overlay: outer.dataset.osmdOverlay,
-          busy: outer.dataset.osmdBusy,
-          run: outer.dataset.osmdRun,
-        }
-      };
+      // snapshot basic state
+      const zf = zoomFactorRef.current ?? 1;
+      const layoutW = Number(outer.dataset.osmdLayoutW || NaN);
+      const w = outer.clientWidth || 0;
+      const h = outer.clientHeight || 0;
+      const phase = outer.dataset.osmdPhase || "(none)";
+      const busyNow = busyRef.current;
 
-      void logStep(`debug:dump rect=${snap.rect.w}×${snap.rect.h} dpr=${snap.dpr} vv=${snap.vv ? `${snap.vv.w}×${snap.vv.h}@${snap.vv.scale}` : 'n/a'}`);
-      void logStep(`debug:data phase=${snap.data.phase} pages=${snap.data.pages} page=${snap.data.page} starts=${snap.data.starts}`);
-      void logStep(`debug:render ms=${snap.data.renderMs} measureWait=${snap.data.measureWaitMs} via=${snap.data.measureVia} zf=${snap.data.zf} layoutW=${snap.data.layoutW}`);
-      void logStep(`debug:flags overlay=${snap.data.overlay} busy=${snap.data.busy} run=${snap.data.run}`);
+      void logStep(
+        `debug:data zf=${zf.toFixed(3)} layoutW=${isNaN(layoutW) ? "?" : layoutW} W×H=${w}×${h} busy=${busyNow} phase=${phase}`
+      );
 
-      // 2) Probe-measure WITHOUT changing the DOM (no state writes)
-      const svg = outer.querySelector("svg");
-      if (!svg) { void logStep("debug:probe no-svg"); return; }
-
-      const bands = withUntransformedSvg(outer, s => measureSystemsPx(outer, s)) ?? [];
+      // measure now and recompute starts (pure, no re-render)
+      const measured =
+        withUntransformedSvg(outer, (svg) => measureSystemsPx(outer, svg)) ?? [];
       const H = getPAGE_H(outer);
-      const starts = computePageStartIndices(bands, H);
+      const starts = computePageStartIndices(measured, H);
 
-      void logStep(`debug:probe measured bands=${bands.length} H=${H} starts=${starts.join(',')}`);
+      void logStep(
+        `debug:probe measured bands=${measured.length} H=${H} starts=${starts.join(",") || "(none)"}`
+      );
     };
 
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    // capture phase so the key makes it through even if something stops it later
+    window.addEventListener("keydown", onKey, { capture: true });
+    return () => window.removeEventListener("keydown", onKey, { capture: true });
   }, [getPAGE_H]);
 
   /* ---------- Styles ---------- */
@@ -2385,7 +2370,14 @@ export default function ScoreOSMD({
         onScroll={stop}
         onMouseDown={stop}
         onContextMenu={stop}
-        onKeyDown={stop}
+        // allow only Ctrl+Shift+D to pass through; block every other key
+        onKeyDown={(e) => {
+          const isDebug = e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "d";
+          if (!isDebug) {
+            e.preventDefault();
+            e.stopPropagation();
+          }
+        }}
       >
         <div
           style={{
