@@ -1038,7 +1038,7 @@ export default function ScoreOSMD({
 
         timeSection("apply:nearest", () => { applyPage(nearest); });
         // applyPage(nearest);
-        
+
       } finally {
         if (withSpinner) {
           hideBusy(); // clear overlay + any pending fail-safe
@@ -1153,6 +1153,11 @@ export default function ScoreOSMD({
         outer.dataset.osmdRenderAttempt = String(attemptForRender);
         await logStep(`[render] starting attempt#${attemptForRender}`);
 
+        // Prevent giant paint during reflow render
+        const hostForReflow = hostRef.current;
+        const prevVisForReflow = hostForReflow?.style.visibility ?? "";
+        if (hostForReflow) { hostForReflow.style.visibility = "hidden"; }
+
         outer.dataset.osmdPhase = "render";
         await logStep("render:start");
         await new Promise<void>((r) => setTimeout(r, 0)); // macrotask
@@ -1178,16 +1183,14 @@ export default function ScoreOSMD({
         void logStep(`[render] finished attempt#${attemptForRender} (${renderMs}ms)`);
 
         // --------- CRUCIAL: BLOCKING “TWO BEATS” AFTER RENDER ---------
-        // Give the browser time to *paint* the new SVG and flush layout before measuring.
-        // This restores the behavior you saw before we “took out that promise”.
         outer.dataset.osmdPhase = "post-render-wait";
         const tWait0 = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
-        let via: "ap" | "timeout" = "timeout";
+        let viaPost: "ap" | "timeout" = "timeout";
         await Promise.race([
-          ap("post-render:block", 600).then(() => { via = "ap"; }),
+          ap("post-render:block", 600).then(() => { viaPost = "ap"; }),
           new Promise<void>((r) => setTimeout(r, 450)),
         ]);
-        void logStep(`post-render:block done via=${via} waited=${Math.round(((typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now()) - tWait0)}ms`);
+        void logStep(`post-render:block done via=${viaPost} waited=${Math.round(((typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now()) - tWait0)}ms`);
 
         // --------- MEASURE ---------
         outer.dataset.osmdPhase = "measure";
@@ -1271,8 +1274,15 @@ export default function ScoreOSMD({
         ]);
         timeSection("apply:nearest", () => { applyPage(nearest); });
 
+        // Reveal host now that target page is applied
+        try {
+          const hostNow = hostRef.current;
+          if (hostNow) { hostNow.style.visibility = prevVisForReflow || "visible"; }
+        } catch {}
+
         outer.dataset.osmdPhase = `applied:${nearest}`;
         void logStep(`applied:${nearest}`);
+        
         void logStep(`reflow:done page=${nearest + 1}/${newStarts.length} bands=${newBands.length}`);
         stampHandledDims(outer);
       } finally {
@@ -1723,6 +1733,11 @@ export default function ScoreOSMD({
       outer.dataset.osmdRenderAttempt = String(attemptForRender);
       void logStep(`[render] starting attempt#${attemptForRender}`);
 
+      // Prevent giant paint during render: hide host, keep layout available
+      const hostForInit = hostRef.current;
+      const prevVisForInit = hostForInit?.style.visibility ?? "";
+      if (hostForInit) { hostForInit.style.visibility = "hidden"; }
+
       outer.dataset.osmdPhase = "render";
       await logStep("render:start");        // flush before heavy sync render
       await new Promise<void>(r => setTimeout(r, 0)); // macrotask yield
@@ -1733,17 +1748,18 @@ export default function ScoreOSMD({
       const t1 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
       const renderMs = Math.round(t1 - t0);
       outer.dataset.osmdRenderMs = String(renderMs);
+      outer.dataset.osmdRenderEndedAt = String(Date.now());
       void logStep(`render:finished ${renderMs}ms`);
       void logStep(`[render] finished attempt#${attemptForRender} (${renderMs}ms)`);
 
-      // Post-render → measure:start (non-blocking AP)
-      outer.dataset.osmdPhase = "post-render-continue";
-      void logStep("afterPaint:nonblocking");
-      ap("post-render").then(() => {
-        if (wrapRef.current !== outer) { return; }
-        outer.dataset.osmdPhase = "render:painted";
-        void logStep("render:painted");
-      });
+      // Block briefly so the new SVG can paint/settle before measurement
+      outer.dataset.osmdPhase = "post-render-block";
+      let viaPost: "ap" | "timeout" = "timeout";
+      await Promise.race([
+        ap("post-render:block", 600).then(() => { viaPost = "ap"; }),
+        new Promise<void>((r) => setTimeout(r, 450)),
+      ]);
+      void logStep(`post-render:block done via=${viaPost}`);
 
       try {
         const canvasCount = outer.querySelectorAll("canvas").length;
@@ -1777,18 +1793,19 @@ export default function ScoreOSMD({
       await new Promise<void>((r) => setTimeout(r, 0));
 
       const tWait0 = tnow();
-      let via: "ap" | "timeout" = "timeout";
+      let viaMeasure: "ap" | "timeout" = "timeout";
       await Promise.race([
-        ap("measure:start").then(() => { via = "ap"; }),
+        ap("measure:start").then(() => { viaMeasure = "ap"; }),
         new Promise<void>((r) => setTimeout(r, 2000)),
       ]);
-      void logStep(`ap:measure:start:done via=${via} waited=${Math.round(tnow() - tWait0)}ms`);
+      void logStep(`ap:measure:start:done via=${viaMeasure} waited=${Math.round(tnow() - tWait0)}ms`);
 
       // --- Measure systems + first pagination ---
       const bands =
         withUntransformedSvg(outer, (svg) =>
           timeSection("measure:scan", () => measureSystemsPx(outer, svg))
         ) ?? [];
+
       if (bands.length === 0) {
         outer.dataset.osmdPhase = "measure:0:init-abort";
         void logStep("measure:init:0 — aborting first pagination");
@@ -1811,6 +1828,12 @@ export default function ScoreOSMD({
       pageIdxRef.current = 0;
       timeSection("apply:first", () => { applyPage(0); });
       await logStep("apply:first");  // let first page paint before repagination
+
+      // Reveal host now that first page is applied
+      try {
+        const hostForInit2 = hostRef.current;
+        if (hostForInit2) { hostForInit2.style.visibility = prevVisForInit || "visible"; }
+      } catch {}
 
       // Quick snapshot
       void logStep(`init: svg=${outer.dataset.osmdSvg} bands=${outer.dataset.osmdBands} pages=${outer.dataset.osmdPages}`);
