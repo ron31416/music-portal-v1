@@ -162,10 +162,11 @@ function getConsoleTop(): HTMLPreElement {
     Object.assign(box.style, {
       position: 'absolute',
       left: '8px',
-      right: '8px',
       top: '0px',
       zIndex: '1',
-      maxHeight: '44vh',
+      maxWidth: 'min(720px, calc(100vw - 16px))',
+      right: 'auto',
+      maxHeight: '60vh',      // was 44vh
       overflow: 'auto',
       background: 'rgba(0,0,0,0.85)',
       color: '#0f0',
@@ -173,7 +174,9 @@ function getConsoleTop(): HTMLPreElement {
       borderRadius: '8px',
       font: '11px/1.35 monospace',
       whiteSpace: 'pre-wrap',
-      pointerEvents: 'none',
+      pointerEvents: 'auto',  // was 'none' (prevents scrolling)
+      touchAction: 'pan-y',
+      overscrollBehavior: 'contain',
       boxSizing: 'border-box',
     } as CSSStyleDeclaration);
     root.appendChild(box);
@@ -1139,10 +1142,24 @@ export default function ScoreOSMD({
 
         // Yield one macrotask so logs can paint before AP wait
         await new Promise<void>((r) => setTimeout(r, 0));
+
+        // record how long this window actually takes (breadcrumb only)
+        const __tMeasureWait0 =
+          (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
+
+        let __via: "ap" | "guard" = "guard"; // how we left this wait
         await Promise.race([
-          ap("measure:start"),
-          new Promise<void>((r) => setTimeout(r, 900)), // guard
+          ap("measure:start").then(() => { __via = "ap"; }),
+          // give large SVGs a bit more slack but still guarantee progress
+          new Promise<void>((r) => setTimeout(r, 2000)),
         ]);
+
+        const __tMeasureWait1 =
+          (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
+        outer.dataset.osmdMeasureWaitMs = String(Math.round(__tMeasureWait1 - __tMeasureWait0));
+        outer.dataset.osmdMeasureAwaitVia = __via;
+
+        // keep the exact log line for apples-to-apples comparisons
         void logStep("ap:measure:start:done");
 
         // Re-measure bands without SVG transform
