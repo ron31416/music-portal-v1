@@ -2301,6 +2301,10 @@ export default function ScoreOSMD({
     return () => window.removeEventListener("keydown", onKey, { capture: true });
   }, [getPAGE_H]);
 
+  useEffect(() => {
+    void logStep("hotkeys:effect-mounted");
+  }, []);
+
   /* ---------- Styles ---------- */
 
   const isFill = fillParent;
