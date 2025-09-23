@@ -1176,6 +1176,8 @@ export default function ScoreOSMD({
           new Promise<void>((r) => setTimeout(r, 2000)),
         ]);
 
+        void logStep("mad it past measure:start");
+
         const __tMeasureWait1 =
           (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
         outer.dataset.osmdMeasureWaitMs = String(Math.round(__tMeasureWait1 - __tMeasureWait0));
