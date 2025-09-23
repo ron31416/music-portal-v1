@@ -1176,8 +1176,6 @@ export default function ScoreOSMD({
           new Promise<void>((r) => setTimeout(r, 2000)),
         ]);
 
-        void logStep("mad it past measure:start");
-
         const __tMeasureWait1 =
           (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
         outer.dataset.osmdMeasureWaitMs = String(Math.round(__tMeasureWait1 - __tMeasureWait0));
@@ -1725,10 +1723,12 @@ export default function ScoreOSMD({
         outer.dataset.osmdPhase = "render:painted";
         void logStep("render:painted");
       });
+void logStep("initOSMD: past render:painted");
 
       try {
         const canvasCount = outer.querySelectorAll("canvas").length;
         void logStep(`purge:probe canvas#=${canvasCount}`);
+void logStep("initOSMD: in try");
 
         if (canvasCount > 0) {
           void logStep("purge:queued");
@@ -1739,6 +1739,7 @@ export default function ScoreOSMD({
         } else {
           void logStep("purge:skip(no-canvas)");
         }
+void logStep("initOSMD: past canvassCount");
 
         outer.dataset.osmdPhase = "measure";
         void logStep("measure:start");
@@ -1746,7 +1747,7 @@ export default function ScoreOSMD({
       } catch (e) {
         void logStep(`MEASURE-ENTRY:exception:${(e as Error)?.message ?? e}`);
       }
-
+void logStep("initOSMD: past measure:start");
       // Beacons: prove event loop is alive
       try {
         Promise.resolve().then(() => void logStep("beacon:microtask"));
@@ -1754,6 +1755,7 @@ export default function ScoreOSMD({
         setTimeout(() => void logStep("beacon:setTimeout:1000ms"), 1000);
         try { requestAnimationFrame(() => void logStep("beacon:raf")); } catch {}
       } catch {}
+void logStep("initOSMD: past beacons");
 
       // Yield one macrotask so logs can paint before we await AP
       await new Promise<void>(r => setTimeout(r, 0));
