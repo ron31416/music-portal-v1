@@ -279,6 +279,15 @@ function tnow() {
     : Date.now();
 }
 
+// --- DIAGNOSTIC: tiny timing helper (no behavior change) ---
+function timeSection<T>(label: string, fn: () => T): T {
+  const t0 = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
+  const out = fn();
+  const t1 = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
+  void logStep(`${label}: ${Math.round(t1 - t0)}ms`);
+  return out;
+}
+
 /** Wait for web fonts to be ready (bounded; prevents rare long hangs) */
 async function waitForFonts(): Promise<void> {
   try {
@@ -1000,7 +1009,7 @@ export default function ScoreOSMD({
         }
 
         const H = getPAGE_H(outer);
-        const starts = computePageStartIndices(bands, H);
+        const starts = timeSection("starts:compute", () => computePageStartIndices(bands, H));
         const oldStarts = pageStartsRef.current;
 
         void logStep(`recompute h=${H} bands=${bands.length} old=${oldStarts.join(',')} new=${starts.join(',')} page=${pageIdxRef.current}`
@@ -1010,7 +1019,7 @@ export default function ScoreOSMD({
         outer.dataset.osmdPages = String(starts.length);
 
         if (resetToFirst) {
-          applyPage(0);
+          timeSection("apply:first", () => { applyPage(0); });
           void logStep(`recompute: applied page 1 pages=${starts.length}`);
           return;
         }
@@ -1026,7 +1035,10 @@ export default function ScoreOSMD({
           const d = Math.abs(s - oldStartIdx);
           if (d < best) { best = d; nearest = i; }
         }
-        applyPage(nearest);
+
+        timeSection("apply:nearest", () => { applyPage(nearest); });
+        // applyPage(nearest);
+        
       } finally {
         if (withSpinner) {
           hideBusy(); // clear overlay + any pending fail-safe
@@ -1191,7 +1203,9 @@ export default function ScoreOSMD({
         }, 2500);
 
         const newBands =
-          withUntransformedSvg(outer, (svg) => measureSystemsPx(outer, svg)) ?? [];
+          withUntransformedSvg(outer, (svg) =>
+            timeSection("measure:scan", () => measureSystemsPx(outer, svg))
+          ) ?? [];
         outer.dataset.osmdPhase = `measure:${newBands.length}`;
         void logStep(`measured:${newBands.length}`);
         if (measureWatchdog) { clearTimeout(measureWatchdog); measureWatchdog = null; }
@@ -1210,7 +1224,10 @@ export default function ScoreOSMD({
 
         bandsRef.current = newBands;
 
-        const newStarts = computePageStartIndices(newBands, getPAGE_H(outer));
+        const newStarts = timeSection(
+          "starts:compute",
+          () => computePageStartIndices(newBands, getPAGE_H(outer))
+        );
         pageStartsRef.current = newStarts;
         outer.dataset.osmdPhase = `starts:${newStarts.length}`;
         void logStep(`starts:${newStarts.length}`);
@@ -1228,9 +1245,9 @@ export default function ScoreOSMD({
         if (resetToFirst) {
           outer.dataset.osmdPhase = "reset:first";
           void logStep("reset:first");
-          applyPage(0);
+          timeSection("apply:first", () => { applyPage(0); });
           await Promise.race([ap("apply:first"), new Promise<void>((r)=>setTimeout(r,400))]);
-          applyPage(0);
+          timeSection("apply:first", () => { applyPage(0); });
           outer.dataset.osmdPhase = "reset:first:done";
           void logStep("reset:first:done");
           return;
@@ -1247,12 +1264,12 @@ export default function ScoreOSMD({
         outer.dataset.osmdPhase = `apply-page:${nearest}`;
         void logStep(`apply-page:${nearest}`);
 
-        applyPage(nearest);
+        timeSection("apply:nearest", () => { applyPage(nearest); });
         await Promise.race([
           ap("apply:nearest"),
           new Promise<void>((res) => setTimeout(res, 700)),
         ]);
-        applyPage(nearest);
+        timeSection("apply:nearest", () => { applyPage(nearest); });
 
         outer.dataset.osmdPhase = `applied:${nearest}`;
         void logStep(`applied:${nearest}`);
@@ -1768,7 +1785,10 @@ export default function ScoreOSMD({
       void logStep(`ap:measure:start:done via=${via} waited=${Math.round(tnow() - tWait0)}ms`);
 
       // --- Measure systems + first pagination ---
-      const bands = withUntransformedSvg(outer, (svg) => measureSystemsPx(outer, svg)) ?? [];
+      const bands =
+        withUntransformedSvg(outer, (svg) =>
+          timeSection("measure:scan", () => measureSystemsPx(outer, svg))
+        ) ?? [];
       if (bands.length === 0) {
         outer.dataset.osmdPhase = "measure:0:init-abort";
         void logStep("measure:init:0 — aborting first pagination");
@@ -1780,12 +1800,16 @@ export default function ScoreOSMD({
       outer.dataset.osmdSvg = String(!!getSvg(outer));
       outer.dataset.osmdBands = String(bands.length);
 
-      pageStartsRef.current = computePageStartIndices(bands, getPAGE_H(outer));
+      const __startsInit = timeSection(
+        "starts:compute",
+        () => computePageStartIndices(bands, getPAGE_H(outer))
+      );
+      pageStartsRef.current = __startsInit;
       outer.dataset.osmdPages = String(pageStartsRef.current.length);
       void logStep(`starts:init: ${pageStartsRef.current.join(",")}`);
 
       pageIdxRef.current = 0;
-      applyPage(0);
+      timeSection("apply:first", () => { applyPage(0); });
       await logStep("apply:first");  // let first page paint before repagination
 
       // Quick snapshot
