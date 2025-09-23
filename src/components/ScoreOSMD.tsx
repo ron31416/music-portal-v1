@@ -1372,11 +1372,11 @@ void logStep("reflowOnWidth: past measure:start");
   // Reflow only when the *browser zoom* changes (not generic resizes)
   useEffect(() => {
     // Don’t react until first layout is ready
-    if (!readyRef.current) return;
+    if (!readyRef.current) { return; }
 
     const schedule = () => {
       const outer = wrapRef.current;
-      if (!outer) return;
+      if (!outer) { return; }
 
       if (zoomKickTimerRef.current !== null) {
         window.clearTimeout(zoomKickTimerRef.current);
@@ -1389,7 +1389,7 @@ void logStep("reflowOnWidth: past measure:start");
         zoomFactorRef.current = computeZoomFactor();
 
         // Only act if zoom factor actually changed
-        if (Math.abs(zoomFactorRef.current - before) < 0.003) return;
+        if (Math.abs(zoomFactorRef.current - before) < 0.003) { return; }
 
         void logStep(`zoom:debounced zf=${zoomFactorRef.current.toFixed(3)}`);
 
