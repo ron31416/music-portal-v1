@@ -1024,6 +1024,8 @@ export default function ScoreOSMD({
       const outer = wrapRef.current;
       const osmd  = osmdRef.current;
 
+      let measureWatchdog: ReturnType<typeof setTimeout> | null = null;
+
       // Entry breadcrumb
       if (outer) { void logStep("phase:reflowOnWidthChange"); }
 
@@ -1169,6 +1171,14 @@ export default function ScoreOSMD({
           outer.dataset.osmdPhase = "measure";
           void logStep("measure:start");
           void logStep("diag: entering measure:start await");
+          // WATCHDOG: if we don't reach "measured:*" soon, log and keep going
+          if (measureWatchdog) { clearTimeout(measureWatchdog); measureWatchdog = null; }
+          measureWatchdog = setTimeout(() => {
+            try {
+              outer.dataset.osmdPhase = "measure:watchdog";
+              void logStep("measure:watchdog:force-continue");
+            } catch { /* noop */ }
+          }, 2500);
         } catch (e) {
           void logStep(`MEASURE-ENTRY:exception:${(e as Error)?.message ?? e}`);
         }
@@ -1200,6 +1210,8 @@ export default function ScoreOSMD({
           withUntransformedSvg(outer, (svg) => measureSystemsPx(outer, svg)) ?? [];
         outer.dataset.osmdPhase = `measure:${newBands.length}`;
         void logStep(`measured:${newBands.length}`);
+        // clear the measure watchdog
+        if (measureWatchdog) { clearTimeout(measureWatchdog); measureWatchdog = null; }
         if (newBands.length === 0) {
           outer.dataset.osmdPhase = "measure:0:reflow-abort";
           void logStep("measure:0:reflow-abort");
