@@ -1369,17 +1369,15 @@ void logStep("reflowOnWidth: past measure:start");
     return () => document.removeEventListener("visibilitychange", onVis);
   }, []);
 
-  // Reflow when the *browser* zoom level changes (debounced, spinner off)
+  // Reflow only when the *browser zoom* changes (not generic resizes)
   useEffect(() => {
-    let lastDpr = window.devicePixelRatio || 1;
-    let lastIW  = window.innerWidth;
-    let lastIH  = window.innerHeight;
+    // Don’t react until first layout is ready
+    if (!readyRef.current) return;
 
     const schedule = () => {
       const outer = wrapRef.current;
-      if (!outer) { return; }
+      if (!outer) return;
 
-      // Coalesce multiple zoom events into one reflow after a short quiet period
       if (zoomKickTimerRef.current !== null) {
         window.clearTimeout(zoomKickTimerRef.current);
       }
@@ -1387,61 +1385,68 @@ void logStep("reflowOnWidth: past measure:start");
         zoomKickTimerRef.current = null;
 
         // Update source-of-truth zoom factor once per burst
+        const before = zoomFactorRef.current;
         zoomFactorRef.current = computeZoomFactor();
+
+        // Only act if zoom factor actually changed
+        if (Math.abs(zoomFactorRef.current - before) < 0.003) return;
+
         void logStep(`zoom:debounced zf=${zoomFactorRef.current.toFixed(3)}`);
 
-        // Respect guards; if something is running, queue *one* width reflow and bail
+        // Respect guards; if something is running, queue once and bail
         if (reflowRunningRef.current || repagRunningRef.current || busyRef.current) {
           reflowAgainRef.current = "width";
           void logStep("zoom: queued width reflow (guard busy)");
           return;
         }
 
-        // Always use spinner for zoom-driven width reflow so we yield to paint
-        reflowFnRef.current(true);
+        // Zoom-driven width reflow: reset to first page, with spinner
+        reflowFnRef.current(true, true);
 
-        // Record the dimensions this layout corresponds to
+        // Record handled dims
         if (wrapRef.current) {
           handledWRef.current = wrapRef.current.clientWidth;
           handledHRef.current = wrapRef.current.clientHeight;
         }
-      }, 220); // tweak 180–300ms if you like
+      }, 220);
     };
 
-    const onWindowResize = () => {
-      const nowDpr = window.devicePixelRatio || 1;
-      const iw = window.innerWidth;
-      const ih = window.innerHeight;
-
-      const dprChanged = Math.abs(nowDpr - lastDpr) > 0.001;
-      const sizeChanged = iw !== lastIW || ih !== lastIH;
-
-      if (dprChanged || sizeChanged) {
-        lastDpr = nowDpr; lastIW = iw; lastIH = ih;
-        schedule();
-      }
-    };
-
+    // Track *actual zoom* signals only:
+    //  - visualViewport.scale changes
+    //  - devicePixelRatio changes
     const vv = typeof window !== "undefined" ? window.visualViewport : undefined;
     let lastScale = vv?.scale ?? 1;
+    let lastDpr   = window.devicePixelRatio || 1;
 
     const onVV = () => {
-      if (!vv) { return; }
-      const s = vv.scale ?? 1;
-      if (Math.abs(s - lastScale) > 0.001) {
+      // Only schedule when scale changed
+      const s = vv?.scale ?? 1;
+      if (Math.abs(s - lastScale) > 0.003) {
         lastScale = s;
         schedule();
       }
     };
 
-    window.addEventListener("resize", onWindowResize);
+    const onDprPoll = () => {
+      const now = window.devicePixelRatio || 1;
+      if (Math.abs(now - lastDpr) > 0.003) {
+        lastDpr = now;
+        schedule();
+      }
+    };
+
+    // Listen to VV changes for browsers that support it
     vv?.addEventListener("resize", onVV);
     vv?.addEventListener("scroll", onVV);
 
+    // Fallback: some browsers don’t expose VV.scale changes reliably.
+    // We poll DPR very lightly; cheap and avoids false window.resize triggers.
+    const dprTimer = window.setInterval(onDprPoll, 400);
+
     return () => {
-      window.removeEventListener("resize", onWindowResize);
       vv?.removeEventListener("resize", onVV);
       vv?.removeEventListener("scroll", onVV);
+      window.clearInterval(dprTimer);
       if (zoomKickTimerRef.current !== null) {
         window.clearTimeout(zoomKickTimerRef.current);
         zoomKickTimerRef.current = null;
