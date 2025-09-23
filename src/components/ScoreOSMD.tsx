@@ -507,6 +507,14 @@ export default function ScoreOSMD({
   const handledWRef = useRef<number>(-1);
   const handledHRef = useRef<number>(-1);
 
+  // Record the dimensions we just handled so observers don't re-queue
+  const stampHandledDims = (outer: HTMLDivElement) => {
+    handledWRef.current = outer.clientWidth;
+    handledHRef.current = outer.clientHeight;
+    outer.dataset.osmdHandled = `${handledWRef.current}×${handledHRef.current}`;
+    void logStep(`handled:set W×H=${handledWRef.current}×${handledHRef.current}`);
+  };
+
   // add near handledWRef/handledHRef
   const reflowRunningRef = useRef(false);   // guards width reflow
   const reflowAgainRef = useRef<"none" | "width" | "height">("none");
@@ -994,6 +1002,9 @@ export default function ScoreOSMD({
           reflowAgainRef.current = "none";
           setTimeout(() => { reflowFnRef.current(true); }, 0);
         }
+        // Update handled height so listeners don't think height changed again
+        handledHRef.current = outer.clientHeight || handledHRef.current;
+
         repagRunningRef.current = false; // release the guard
       }
     },
@@ -1257,6 +1268,7 @@ void logStep("reflowOnWidth: past measure:start");
         outer.dataset.osmdPhase = `applied:${nearest}`;
         void logStep(`applied:${nearest}`);
         void logStep(`reflow:done page=${nearest + 1}/${newStarts.length} bands=${newBands.length}`);
+        stampHandledDims(outer);
       } finally {
         void logStep("reflow:finally:enter");
 
@@ -1413,7 +1425,7 @@ void logStep("reflowOnWidth: past measure:start");
             !busyRef.current
           ) {
             reflowAgainRef.current = "none";
-            reflowFnRef.current(true, true); // safe to start now
+            reflowFnRef.current(true); // safe to start now
           }
         }, 0);
       }, 220);
@@ -1761,12 +1773,15 @@ void logStep("initOSMD: past measure:start");
 void logStep("initOSMD: past beacons");
 
       // Yield one macrotask so logs can paint before we await AP
-      await new Promise<void>(r => setTimeout(r, 0));
+      await new Promise<void>((r) => setTimeout(r, 0));
+
+      const tWait0 = tnow();
+      let via: "ap" | "timeout" = "timeout";
       await Promise.race([
-        ap("measure:start"),
-        new Promise<void>(r => setTimeout(r, 900)),  // guard
+        ap("measure:start").then(() => { via = "ap"; }),
+        new Promise<void>((r) => setTimeout(r, 2000)),
       ]);
-      void logStep("ap:measure:start:done");
+      void logStep(`ap:measure:start:done via=${via} waited=${Math.round(tnow() - tWait0)}ms`);
 
       // --- Measure systems + first pagination ---
       const bands = withUntransformedSvg(outer, (svg) => measureSystemsPx(outer, svg)) ?? [];
