@@ -1141,10 +1141,12 @@ export default function ScoreOSMD({
           outer.dataset.osmdPhase = "render:painted";
           void logStep("render:painted");
         });
+void logStep("reflowOnWidth: past render:painted");
 
         // Optional: purge stray WebGL canvases
         try {
-          const canvasCount = outer.querySelectorAll("canvas").length;
+ void logStep("reflowOnWidth: in try");
+         const canvasCount = outer.querySelectorAll("canvas").length;
           void logStep(`purge:probe canvas#=${canvasCount}`);
           if (canvasCount > 0) {
             void logStep("purge:queued");
@@ -1155,12 +1157,14 @@ export default function ScoreOSMD({
           } else {
             void logStep("purge:skip(no-canvas)");
           }
+void logStep("reflowOnWidth: past canvasCount");
           outer.dataset.osmdPhase = "measure";
           void logStep("measure:start");
           void logStep("diag: entering measure:start await");
         } catch (e) {
           void logStep(`MEASURE-ENTRY:exception:${(e as Error)?.message ?? e}`);
         }
+void logStep("reflowOnWidth: past measure:start");
 
         // Yield one macrotask so logs can paint before AP wait
         await new Promise<void>((r) => setTimeout(r, 0));
