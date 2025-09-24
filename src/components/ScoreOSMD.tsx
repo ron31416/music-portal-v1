@@ -635,6 +635,9 @@ export default function ScoreOSMD({
         contain: host.style.contain,
       };
 
+        const prevCvValue: string = host.style.getPropertyValue("content-visibility");
+        const prevCvPriority: string = host.style.getPropertyPriority("content-visibility");
+      
       try {
         // Render the giant SVG **offscreen** with strong containment so the
         // browser doesn’t try to paint it in-viewport before we paginate.
@@ -647,6 +650,8 @@ export default function ScoreOSMD({
         host.style.pointerEvents = "none";
         host.style.contain = "layout style paint"; // strong containment
         host.style.width = `${layoutW}px`;
+
+        host.style.setProperty("content-visibility", "hidden", prevCvPriority || "");
 
         // Ensure styles take effect this task
         void host.getBoundingClientRect();
@@ -676,8 +681,17 @@ export default function ScoreOSMD({
         host.style.pointerEvents = prev.pointerEvents;
         host.style.contain       = prev.contain;
 
+        if (prevCvValue) {
+          host.style.setProperty("content-visibility", prevCvValue, prevCvPriority || "");
+        } else {
+          host.style.removeProperty("content-visibility");
+        }
+
         const svg = getSvg(outer);
-        if (svg) { svg.style.transformOrigin = "top left"; }
+        if (svg) {
+          svg.style.transformOrigin = "top left"; 
+          svg.style.willChange = "auto"
+        }
       }
       // --- END ---
     },
@@ -1140,24 +1154,30 @@ export default function ScoreOSMD({
         return;
       }
 
-      // NEW: stamp the immediate cause of this reflow
       outer.dataset.osmdReflowCause = reflowCause;
 
-      // --- hide the host before render to prevent painting the full SVG ---
       const hostForReflow = hostRef.current;
       const prevVisForReflow = hostForReflow?.style.visibility ?? "";
+      // Track previous content-visibility too (value + priority, no `any`)
+      const prevCvValueForReflow: string =
+        hostForReflow ? hostForReflow.style.getPropertyValue("content-visibility") : "";
+      const prevCvPriorityForReflow: string =
+        hostForReflow ? hostForReflow.style.getPropertyPriority("content-visibility") : "";
+
       const revealHost = () => {
         try {
           if (hostForReflow) {
+            if (prevCvValueForReflow) {
+              hostForReflow.style.setProperty("content-visibility", prevCvValueForReflow, prevCvPriorityForReflow || "");
+            } else {
+              hostForReflow.style.removeProperty("content-visibility");
+            }
             hostForReflow.style.visibility = prevVisForReflow || "visible";
             outer.dataset.osmdHostHidden = "0";
           }
         } catch {}
       };
-
-      void logStep(
-        `reflow:enter reset=${resetToFirst} running=${reflowRunningRef.current} repag=${repagRunningRef.current} busy=${busyRef.current} cause=${reflowCause}`
-      );
+      void logStep(`reflow:enter reset=${resetToFirst} running=${reflowRunningRef.current} repag=${repagRunningRef.current} busy=${busyRef.current} cause=${reflowCause}`);
 
       // Increment and stamp the zoom attempt ID
       const nextAttempt = (Number(outer.dataset.osmdZoomAttempt || "0") + 1);
@@ -1222,9 +1242,10 @@ export default function ScoreOSMD({
           // Hide host once spinner is visible (prevents flash)
           try {
             if (hostForReflow) {
+              hostForReflow.style.setProperty("content-visibility", "hidden", prevCvPriorityForReflow || "");
               hostForReflow.style.visibility = "hidden";
               outer.dataset.osmdHostHidden = "1";
-              void logStep("host:hidden(before-render)");
+              void logStep("host:hidden+cv(before-render)");
             }
           } catch {}
         }
@@ -1796,8 +1817,18 @@ export default function ScoreOSMD({
       // Prevent giant paint during render: hide host, keep layout available
       const hostForInit = hostRef.current;
       const prevVisForInit = hostForInit?.style.visibility ?? "";
-      if (hostForInit) { hostForInit.style.visibility = "hidden"; }
 
+      const prevCvValueForInit: string =
+        hostForInit ? hostForInit.style.getPropertyValue("content-visibility") : "";
+      const prevCvPriorityForInit: string =
+        hostForInit ? hostForInit.style.getPropertyPriority("content-visibility") : "";
+
+      if (hostForInit) {
+        hostForInit.style.setProperty("content-visibility", "hidden", prevCvPriorityForInit || "");
+        hostForInit.style.visibility = "hidden";
+        outer.dataset.osmdHostHidden = "1";
+      }
+      
       outer.dataset.osmdPhase = "render";
       await logStep("render:start");        // flush before heavy sync render
       await new Promise<void>(r => window.setTimeout(r, 0)); // macrotask yield
@@ -1871,8 +1902,14 @@ export default function ScoreOSMD({
           if (!/^starts:/.test(ph) && !/^applied:/.test(ph)) {
             try {
               const hostForInitX = hostRef.current;
-              const prevVis = (hostForInitX?.style.visibility ?? "") || "visible";
-              if (hostForInitX) { hostForInitX.style.visibility = prevVis; }
+              if (hostForInitX) {
+                if (prevCvValueForInit) {
+                  hostForInitX.style.setProperty("content-visibility", prevCvValueForInit, prevCvPriorityForInit || "");
+                } else {
+                  hostForInitX.style.removeProperty("content-visibility");
+                }
+                hostForInitX.style.visibility = (hostForInitX.style.visibility || "visible");
+              }
               o.dataset.osmdHostHidden = "0";
             } catch {}
             o.dataset.osmdPhase = "init:forced-finalize";
@@ -1925,7 +1962,15 @@ export default function ScoreOSMD({
       // Reveal host now that first page is applied
       try {
         const hostForInit2 = hostRef.current;
-        if (hostForInit2) { hostForInit2.style.visibility = prevVisForInit || "visible"; }
+        if (hostForInit2) {
+          if (prevCvValueForInit) {
+            hostForInit2.style.setProperty("content-visibility", prevCvValueForInit, prevCvPriorityForInit || "");
+          } else {
+            hostForInit2.style.removeProperty("content-visibility");
+          }
+          hostForInit2.style.visibility = prevVisForInit || "visible";
+          outer.dataset.osmdHostHidden = "0";
+        }
       } catch {}
 
       // Quick snapshot
