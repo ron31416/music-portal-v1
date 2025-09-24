@@ -1873,7 +1873,7 @@ export default function ScoreOSMD({
           } catch {}
           // Hard backstop in case everything is throttled
           window.setTimeout(r, 500);
-        }).then(() => { if (gate === "none") gate = "fallback"; }),
+        }).then(() => { if (gate === "none") { gate = "fallback"; } }),
       ]);
       void logStep(`measure:await:continue via=${gate}`);
 
