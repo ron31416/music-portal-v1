@@ -18,6 +18,25 @@ interface Props {
 
 interface Band { top: number; bottom: number; height: number }
 
+/* ---------- Reflow & pagination sizing (central knobs) ---------- */
+const REFLOW = {
+  // Width used for OSMD's layout (computed from container width / zoom, then clamped)
+  MIN_LAYOUT_W: 320,
+  MAX_LAYOUT_W: 1600,
+  WIDTH_NUDGE: -1,           // small bias to avoid edge-case layouts
+
+  // Pagination height slop: lets us fill the page slightly past the visible height
+  PAGE_FILL_SLOP_PX: 8,
+
+  // “Last page” spacing: if a system is too close to the bottom, push it to a new page
+  LAST_PAGE_BOTTOM_PAD_PX: 12,
+
+  // Masking/peek guards between pages (don’t usually need to touch)
+  MASK_BOTTOM_SAFETY_PX: 12,
+  PEEK_GUARD_LO_DPR: 5,
+  PEEK_GUARD_HI_DPR: 7,
+};
+
 async function withTimeout<T>(p: Promise<T>, ms: number, tag: string): Promise<T> {
   return Promise.race([
     p,
@@ -528,15 +547,12 @@ export default function ScoreOSMD({
   // add near handledWRef/handledHRef
   const reflowRunningRef = useRef(false);   // guards width reflow
   const reflowAgainRef = useRef<"none" | "width" | "height">("none");
+  const reflowQueuedCauseRef = useRef<string>("");   // ← remember why a reflow was queued
   const repagRunningRef = useRef(false);    // guards height-only repagination
-
-  // --- spinner ownership to prevent "stuck overlay" across overlapping calls ---
-  const spinnerOwnerRef = useRef<symbol | null>(null);
 
   const spinnerFailSafeRef = useRef<number | null>(null);
 
-
-    // Track browser zoom relative to mount
+  // Track browser zoom relative to mount
   const baseScaleRef = useRef<number>(1);
   const zoomFactorRef = useRef<number>(1);
 
@@ -581,13 +597,10 @@ export default function ScoreOSMD({
 
       const hostW = Math.max(1, Math.floor(outer.clientWidth));
       const rawLayoutW = Math.max(1, Math.floor(hostW / zf));
-
-      // Nudge to dodge width-specific layout edge cases
-      const widthNudge = -1;
-
-      const MAX_LAYOUT_W = 1600;
-      const MIN_LAYOUT_W = 320;
-      const layoutW = Math.max(MIN_LAYOUT_W, Math.min(rawLayoutW + widthNudge, MAX_LAYOUT_W));
+      const layoutW = Math.max(
+        REFLOW.MIN_LAYOUT_W,
+        Math.min(rawLayoutW + REFLOW.WIDTH_NUDGE, REFLOW.MAX_LAYOUT_W)
+      );
 
       outer.dataset.osmdZf = String(zf);
       outer.dataset.osmdLayoutW = String(layoutW);
@@ -693,8 +706,9 @@ export default function ScoreOSMD({
 
   // ---- callback ref proxies (used by queued setTimeouts) ----
   const reflowFnRef = useRef<
-    (resetToFirst?: boolean, showBusy?: boolean) => void | Promise<void>
+    (resetToFirst?: boolean, reflowCause?: string) => void | Promise<void>
   >(() => {});
+  
   const repagFnRef = useRef<
     (resetToFirst?: boolean, showBusy?: boolean) => void
   >(() => {});
@@ -724,9 +738,8 @@ export default function ScoreOSMD({
   );
 
   // --- Unify pagination height (memoized so identity is stable) ---
-  const FILL_SLOP_PX = 8; // keep your existing slop
   const getPAGE_H = React.useCallback(
-    (outer: HTMLDivElement) => pageHeight(outer) + FILL_SLOP_PX,
+    (outer: HTMLDivElement) => pageHeight(outer) + REFLOW.PAGE_FILL_SLOP_PX,
     [pageHeight]
   );
 
@@ -839,7 +852,7 @@ export default function ScoreOSMD({
       }
 
       // --- last-page margin rule: push final system to a new page if too close ---
-      const LAST_PAGE_BOTTOM_PAD_PX = 12; // try 10–14
+      const LAST_PAGE_BOTTOM_PAD_PX = REFLOW.LAST_PAGE_BOTTOM_PAD_PX;
 
       if (nextStartIndex < 0) { // we are on the last page
         let cutIdx = -1;
@@ -901,8 +914,12 @@ export default function ScoreOSMD({
       }
 
       // ---- masking: hide anything that belongs to the next page ----
-      const MASK_BOTTOM_SAFETY_PX = 12;
-      const PEEK_GUARD = (window.devicePixelRatio || 1) >= 2 ? 7 : 5; // was 4/3
+      //const MASK_BOTTOM_SAFETY_PX = 12;
+      //const PEEK_GUARD = (window.devicePixelRatio || 1) >= 2 ? 7 : 5; // was 4/3
+      const MASK_BOTTOM_SAFETY_PX = REFLOW.MASK_BOTTOM_SAFETY_PX;
+      const PEEK_GUARD = (window.devicePixelRatio || 1) >= 2
+        ? REFLOW.PEEK_GUARD_HI_DPR
+        : REFLOW.PEEK_GUARD_LO_DPR;
 
       const maskTopWithinMusicPx = (() => {
         // Last page → never mask; show full height
@@ -1074,16 +1091,22 @@ export default function ScoreOSMD({
 
       } finally {
         if (withSpinner) {
-          hideBusy(); // clear overlay + any pending fail-safe
+          hideBusy();
         }
-        if (reflowAgainRef.current === "width") {
-          reflowAgainRef.current = "none";
-          setTimeout(() => { reflowFnRef.current(true); }, 0);
-        }
-        // Update handled height so listeners don't think height changed again
-        handledHRef.current = outer.clientHeight || handledHRef.current;
 
-        repagRunningRef.current = false; // release the guard
+        const queued = reflowAgainRef.current;
+        const cause  = reflowQueuedCauseRef.current || "drain:after-repag";
+        reflowAgainRef.current = "none";
+        reflowQueuedCauseRef.current = "";
+
+        if (queued === "width") {
+          setTimeout(() => { reflowFnRef.current(true, cause); }, 0);
+        } else if (queued === "height") {
+          setTimeout(() => { repagFnRef.current(true, false); }, 0);
+        }
+
+        handledHRef.current = outer.clientHeight || handledHRef.current;
+        repagRunningRef.current = false;
       }
     },
     [applyPage, getPAGE_H, hideBusy]
@@ -1096,7 +1119,7 @@ export default function ScoreOSMD({
 
 
   const reflowOnWidthChange = useCallback(
-    async function reflowOnWidthChange(resetToFirst = false) {
+    async function reflowOnWidthChange(resetToFirst = false, reflowCause: string = "unknown") {
       const outer = wrapRef.current;
       const osmd  = osmdRef.current;
 
@@ -1106,9 +1129,12 @@ export default function ScoreOSMD({
       if (!outer || !osmd) {
         const o = outer ? "1" : "0";
         const m = osmd ? "1" : "0";
-        if (outer) { void logStep(`reflow:early-bail outer=${o} osmd=${m}`); }
+        if (outer) { void logStep(`reflow:early-bail outer=${o} osmd=${m} cause=${reflowCause}`); }
         return;
       }
+
+      // NEW: stamp the immediate cause of this reflow
+      outer.dataset.osmdReflowCause = reflowCause;
 
       // --- NEW: hide the host before render to prevent painting the full SVG ---
       const hostForReflow = hostRef.current;
@@ -1123,11 +1149,7 @@ export default function ScoreOSMD({
         } catch {}
       };
 
-      // Always show spinner for width reflow
-      const wantSpinner = true;
-
-      void logStep(
-        `reflow:enter reset=${resetToFirst} spin=${wantSpinner} running=${reflowRunningRef.current} repag=${repagRunningRef.current} busy=${busyRef.current}`
+      void logStep(`reflow:enter reset=${resetToFirst} running=${reflowRunningRef.current} repag=${repagRunningRef.current} busy=${busyRef.current} cause=${reflowCause}`
       );
 
       // Increment and stamp the zoom attempt ID
@@ -1137,16 +1159,18 @@ export default function ScoreOSMD({
       const attempt = nextAttempt;
       outer.dataset.osmdZoomEntered   = String(attempt);
       outer.dataset.osmdZoomEnteredAt = String(Date.now());
-      void logStep(`[reflow] ENTER attempt#${attempt} • ${fmtFlags()}`);
+      void logStep(`[reflow] ENTER attempt#${attempt} cause=${reflowCause} • ${fmtFlags()}`);
 
       const ap = makeAfterPaint(outer);
 
       if (reflowRunningRef.current) {
         reflowAgainRef.current = "width";
+        reflowQueuedCauseRef.current = reflowCause;              // ← remember why we queued
         outer.dataset.osmdZoomQueued   = String(attempt);
         outer.dataset.osmdZoomQueueWhy = "reflowRunning";
+        outer.dataset.osmdReflowCauseQueued = reflowCause;       // ← stamp queued cause
         outer.dataset.osmdZoomQueuedAt = String(Date.now());
-        void logStep(`[reflow] QUEUED attempt#${attempt} • why=reflowRunning • ${fmtFlags()}`);
+        void logStep(`[reflow] QUEUED attempt#${attempt} cause=${reflowCause} • why=reflowRunning • ${fmtFlags()}`);
         return;
       }
       reflowRunningRef.current = true;
@@ -1160,19 +1184,16 @@ export default function ScoreOSMD({
       outer.dataset.osmdPhase = "start";
       const run = (Number(outer.dataset.osmdRun || "0") + 1);
       outer.dataset.osmdRun = String(run);
-      void logStep(`reflow:start#${run} reset=${resetToFirst} spin=${wantSpinner}`);
+      void logStep(`reflow:start#${run} reset=${resetToFirst}`);
 
       try {
         void logStep(
-          `reflow:start reset=${resetToFirst} spin=${wantSpinner} dpr=${window.devicePixelRatio} w=${outer.clientWidth} h=${outer.clientHeight}`
+          `reflow:start reset=${resetToFirst} dpr=${window.devicePixelRatio} w=${outer.clientWidth} h=${outer.clientHeight}`
         );
         outer.dataset.osmdPhase = "pre-spinner";
 
         // Spinner on (with unconditional fail-safe)
         {
-          const token = Symbol("spin");
-          spinnerOwnerRef.current = token;
-
           setBusyMsg(DEFAULT_BUSY);
           setBusy(true);
 
@@ -1203,8 +1224,7 @@ export default function ScoreOSMD({
           // Hard fail-safe (always clears even if ownership is stale)
           if (spinnerFailSafeRef.current) { window.clearTimeout(spinnerFailSafeRef.current); }
           spinnerFailSafeRef.current = window.setTimeout(() => {
-            spinnerOwnerRef.current = null;
-            hideBusy();
+           hideBusy();
             void logStep("spinner:failsafe-clear:unconditional");
           }, 9000);
         }
@@ -1223,7 +1243,6 @@ export default function ScoreOSMD({
         let renderWd: number | null = window.setTimeout(() => {
           outer.dataset.osmdPhase = "render:watchdog";
           void logStep("render:watchdog:force-finalize");
-          spinnerOwnerRef.current = null;
           hideBusy();
           reflowRunningRef.current = false;
           try { revealHost(); } catch {}
@@ -1358,20 +1377,21 @@ export default function ScoreOSMD({
 
         if (wd !== null) { window.clearInterval(wd); wd = null; }
 
-        spinnerOwnerRef.current = null;
         hideBusy();
         void logStep("reflow:finally:hid-spinner");
 
         reflowRunningRef.current = false;
 
         const queued = reflowAgainRef.current;
+        const cause  = reflowQueuedCauseRef.current || "drain:after-reflow";
         reflowAgainRef.current = "none";
-        void logStep(`reflow:finally:queued=${queued}`);
+        reflowQueuedCauseRef.current = "";
+        void logStep(`reflow:finally:queued=${queued} cause=${cause}`);
 
         if (queued === "width") {
           setTimeout(() => {
-            void logStep("reflow:finally:drain:width");
-            reflowFnRef.current(true);
+            void logStep(`reflow:finally:drain:width cause=${cause}`);
+            reflowFnRef.current(true, cause);
           }, 0);
         } else if (queued === "height") {
           setTimeout(() => {
@@ -1483,6 +1503,7 @@ export default function ScoreOSMD({
 
         // Queue only; let our normal drain paths run it when safe
         reflowAgainRef.current = "width";
+        reflowQueuedCauseRef.current = `zoom:${why}`;
 
         if (reflowRunningRef.current || repagRunningRef.current || busyRef.current) {
           void logStep("zoom: queued width reflow (guard busy)");
@@ -1498,7 +1519,7 @@ export default function ScoreOSMD({
             !busyRef.current
           ) {
             reflowAgainRef.current = "none";
-            reflowFnRef.current(true); // safe to start now
+            reflowFnRef.current(true, `zoom:${why}`); // safe to start now (propagate cause)
           }
         }, 0);
       }, 220);
@@ -1933,41 +1954,38 @@ export default function ScoreOSMD({
             handledHRef.current === -1 || Math.abs(currH - handledHRef.current) >= 1;
 
           // NEW: trace RO events and deltas
-          void logStep(
-            `resize:ro w=${currW} h=${currH} handled=${handledWRef.current}×${handledHRef.current} ΔW=${widthChangedSinceHandled} ΔH=${heightChangedSinceHandled}`
+          void logStep(`resize:ro w=${currW} h=${currH} handled=${handledWRef.current}×${handledHRef.current} ΔW=${widthChangedSinceHandled} ΔH=${heightChangedSinceHandled}`
           );
 
-          if (busyRef.current) {
-            if (widthChangedSinceHandled) {
-              reflowAgainRef.current = "width";
-            } else if (heightChangedSinceHandled) {
-              reflowAgainRef.current = "height";
-            }
+          // --- queue + return if not safe to run now (RO callback) ---
+          const kind =
+            widthChangedSinceHandled ? "width" :
+            (heightChangedSinceHandled ? "height" : "none");
+
+          if (kind === "none") {
             return;
           }
 
-          // Respect running guards: queue once and bail
+          if (busyRef.current) {
+            reflowAgainRef.current = kind;
+            reflowQueuedCauseRef.current = `ro:guard-busy:${kind}`;
+            return;
+          }
           if (reflowRunningRef.current) {
-            if (widthChangedSinceHandled) {
-              reflowAgainRef.current = "width";
-            } else if (heightChangedSinceHandled) {
-              reflowAgainRef.current = "height";
-            }
+            reflowAgainRef.current = kind;
+            reflowQueuedCauseRef.current = `ro:guard-reflow:${kind}`;
             return;
           }
           if (repagRunningRef.current) {
-            if (widthChangedSinceHandled) {
-              reflowAgainRef.current = "width";
-            } else if (heightChangedSinceHandled) {
-              reflowAgainRef.current = "height";
-            }
+            reflowAgainRef.current = kind;
+            reflowQueuedCauseRef.current = `ro:guard-repag:${kind}`;
             return;
           }
 
           (async () => {
             if (widthChangedSinceHandled) {
               // HORIZONTAL change → full OSMD reflow + reset to page 1
-              await reflowFnRef.current(true);
+              await reflowFnRef.current(true, "ro:width-change");
               handledWRef.current = currW;
               handledHRef.current = currH;
             } else if (heightChangedSinceHandled) {
@@ -1982,9 +2000,7 @@ export default function ScoreOSMD({
       });
 
       resizeObs.observe(outer);
-      //const hostE1 = hostRef.current;
-      //if (hostE1) { resizeObs.observe(hostE1); }
-
+ 
     })().catch((err: unknown) => {
       hideBusy();
 
@@ -2227,43 +2243,37 @@ export default function ScoreOSMD({
           handledHRef.current === -1 || Math.abs(currH - handledHRef.current) >= 1;
 
         // NEW: log what VV reported
-        void logStep(
-          `vv:change w=${currW} h=${currH} handled=${handledWRef.current}×${handledHRef.current} ΔW=${widthChanged} ΔH=${heightChanged}`
+        void logStep(`vv:change w=${currW} h=${currH} handled=${handledWRef.current}×${handledHRef.current} ΔW=${widthChanged} ΔH=${heightChanged}`
         );
 
-        // NEW: if we're busy, just queue the right follow-up and bail
+        // --- queue + return if not safe to run now (VV handler) ---
+        const kind =
+          widthChanged ? "width" :
+          (heightChanged ? "height" : "none");
+
+        if (kind === "none") {
+          return;
+        }
+
         if (busyRef.current) {
-          if (widthChanged) {
-            reflowAgainRef.current = "width";
-          } else if (heightChanged) {
-            reflowAgainRef.current = "height";
-          }
+          reflowAgainRef.current = kind;
+          reflowQueuedCauseRef.current = `vv:guard-busy:${kind}`;
           return;
         }
-
-        // If a width reflow is already running, queue one follow-up and bail.
         if (reflowRunningRef.current) {
-          if (widthChanged) {
-            reflowAgainRef.current = "width";
-          } else if (heightChanged) {
-            reflowAgainRef.current = "height";
-          }
+          reflowAgainRef.current = kind;
+          reflowQueuedCauseRef.current = `vv:guard-reflow:${kind}`;
           return;
         }
-
-        // If a repagination is already running, queue appropriately and bail.
         if (repagRunningRef.current) {
-          if (widthChanged) {
-            reflowAgainRef.current = "width";  // escalate if width changed
-          } else if (heightChanged) {
-            reflowAgainRef.current = "height";
-          }
+          reflowAgainRef.current = kind;
+          reflowQueuedCauseRef.current = `vv:guard-repag:${kind}`;
           return;
         }
 
         if (widthChanged) {
-          // HORIZONTAL change → full OSMD reflow (no spinner) + reset to page 1
-          await reflowFnRef.current(true);
+          // HORIZONTAL change → full OSMD reflow + reset to page 1
+          await reflowFnRef.current(true, "vv:width-change");
           handledWRef.current = currW;
           handledHRef.current = currH;
         } else if (heightChanged) {
@@ -2311,7 +2321,6 @@ export default function ScoreOSMD({
   useEffect(() => {
     if (!busy) { return; }
     const t = window.setTimeout(() => {
-      spinnerOwnerRef.current = null;
       hideBusy();
       void logStep("busy:auto-clear");
     }, 7000);
@@ -2326,9 +2335,11 @@ export default function ScoreOSMD({
     reflowAgainRef.current = "none";
 
     if (queued === "width") {
+      const cause = reflowQueuedCauseRef.current || "drain:post-busy";
+      reflowQueuedCauseRef.current = "";
       setTimeout(() => {
-        void logStep("queue:drain:width");
-        reflowFnRef.current(true);
+        void logStep(`queue:drain:width cause=${cause}`);
+        reflowFnRef.current(true, cause);
       }, 0);
     } else if (queued === "height") {
       setTimeout(() => {
