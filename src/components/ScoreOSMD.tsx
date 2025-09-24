@@ -2316,11 +2316,25 @@ export default function ScoreOSMD({
   // BUSY FAIL-SAFE: if the overlay lingers too long, force-clear and log once.
   // Light breadcrumb only — no need to block on paint here.
   useEffect(() => {
-    if (!busy) { return; }
+    if (!busy) return;
+
     const t = window.setTimeout(() => {
+      const outer = wrapRef.current;
+      const host  = hostRef.current;
+      const phase = outer?.dataset.osmdPhase ?? "";
+      const hostHidden = outer?.dataset.osmdHostHidden === "1" || host?.style.visibility === "hidden";
+
+      // Don’t auto-clear while we’re in heavy phases or the host is intentionally hidden.
+      const inHeavy = /^(render|post-render|measure)/.test(phase) || hostHidden;
+      if (inHeavy) {
+        void logStep(`busy:auto-clear:skipped phase=${phase} hostHidden=${hostHidden ? "1" : "0"}`);
+        return;
+      }
+
       hideBusy();
       void logStep("busy:auto-clear");
-    }, 7000);
+    }, 20000); // give long-running first renders time to finish
+
     return () => window.clearTimeout(t);
   }, [busy, hideBusy]);
 
