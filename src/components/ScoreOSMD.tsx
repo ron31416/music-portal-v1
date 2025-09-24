@@ -1866,13 +1866,13 @@ export default function ScoreOSMD({
       try {
         window.setTimeout(() => {
           const o = wrapRef.current;
-          if (!o) return;
+          if (!o) { return; }
           const ph = o.dataset.osmdPhase || "";
           if (!/^starts:/.test(ph) && !/^applied:/.test(ph)) {
             try {
               const hostForInitX = hostRef.current;
               const prevVis = (hostForInitX?.style.visibility ?? "") || "visible";
-              if (hostForInitX) hostForInitX.style.visibility = prevVis;
+              if (hostForInitX) { hostForInitX.style.visibility = prevVis; }
               o.dataset.osmdHostHidden = "0";
             } catch {}
             o.dataset.osmdPhase = "init:forced-finalize";
