@@ -550,8 +550,6 @@ export default function ScoreOSMD({
   const reflowQueuedCauseRef = useRef<string>("");   // ← remember why a reflow was queued
   const repagRunningRef = useRef(false);    // guards height-only repagination
 
-  const spinnerFailSafeRef = useRef<number | null>(null);
-
   // Track browser zoom relative to mount
   const baseScaleRef = useRef<number>(1);
   const zoomFactorRef = useRef<number>(1);
@@ -1220,13 +1218,6 @@ export default function ScoreOSMD({
               void logStep("host:hidden(before-render)");
             }
           } catch {}
-
-          // Hard fail-safe (always clears even if ownership is stale)
-          if (spinnerFailSafeRef.current) { window.clearTimeout(spinnerFailSafeRef.current); }
-          spinnerFailSafeRef.current = window.setTimeout(() => {
-           hideBusy();
-            void logStep("spinner:failsafe-clear:unconditional");
-          }, 9000);
         }
 
         // --------- HEAVY RENDER ---------
@@ -1260,13 +1251,23 @@ export default function ScoreOSMD({
 
         // --------- BLOCK BRIEFLY AFTER RENDER (but host still hidden) ---------
         outer.dataset.osmdPhase = "post-render-wait";
-        const tWait0 = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
+        const tPost0 = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
         let via: "ap" | "timeout" = "timeout";
-        await Promise.race([
+
+        const race = Promise.race([
           ap("post-render:block", 600).then(() => { via = "ap"; }),
           new Promise<void>((r) => setTimeout(r, 450)),
         ]);
-        void logStep(`post-render:block done via=${via} waited=${Math.round(((typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now()) - tWait0)}ms`);
+
+        // Backstop so we log even if rAF/timers are starved right after render
+        const guard = new Promise<void>((r) =>
+          setTimeout(() => { void logStep("post-render:guard fired (900ms)"); r(); }, 900)
+        );
+
+        await Promise.race([race, guard]);
+
+        const now = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
+        void logStep(`post-render:block done via=${via} waited=${Math.round(now - tPost0)}ms`);
 
         // --------- MEASURE ---------
         outer.dataset.osmdPhase = "measure";
@@ -1400,26 +1401,11 @@ export default function ScoreOSMD({
           }, 0);
         }
 
-        if (spinnerFailSafeRef.current) {
-          window.clearTimeout(spinnerFailSafeRef.current);
-          spinnerFailSafeRef.current = null;
-          void logStep("reflow:finally:cleared-failsafe");
-        }
-
         void logStep("reflow:finally:exit");
       }
     },
     [applyPage, getPAGE_H, hideBusy, renderWithEffectiveWidth, fmtFlags]
   );
-
-  useEffect(() => {
-    return () => {
-      if (spinnerFailSafeRef.current) {
-        window.clearTimeout(spinnerFailSafeRef.current);
-        spinnerFailSafeRef.current = null;
-      }
-    };
-  }, []);
 
   // keep ref pointing to latest width-reflow callback
   useEffect(() => {
@@ -1834,14 +1820,25 @@ export default function ScoreOSMD({
       void logStep(`render:finished ${renderMs}ms`);
       void logStep(`[render] finished attempt#${attemptForRender} (${renderMs}ms)`);
 
-      // Block briefly so the new SVG can paint/settle before measurement
-      outer.dataset.osmdPhase = "post-render-block";
-      let viaPost: "ap" | "timeout" = "timeout";
-      await Promise.race([
-        ap("post-render:block", 600).then(() => { viaPost = "ap"; }),
+      // --------- BLOCK BRIEFLY AFTER RENDER (but host still hidden) ---------
+      outer.dataset.osmdPhase = "post-render-wait";
+      const tPost0 = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
+      let via: "ap" | "timeout" = "timeout";
+
+      const race = Promise.race([
+        ap("post-render:block", 600).then(() => { via = "ap"; }),
         new Promise<void>((r) => setTimeout(r, 450)),
       ]);
-      void logStep(`post-render:block done via=${viaPost}`);
+
+      // Backstop so we log even if rAF/timers are starved right after render
+      const guard = new Promise<void>((r) =>
+        setTimeout(() => { void logStep("post-render:guard fired (900ms)"); r(); }, 900)
+      );
+
+      await Promise.race([race, guard]);
+
+      const now = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
+      void logStep(`post-render:block done via=${via} waited=${Math.round(now - tPost0)}ms`);
 
       try {
         const canvasCount = outer.querySelectorAll("canvas").length;
