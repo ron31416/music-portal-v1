@@ -1144,7 +1144,7 @@ export default function ScoreOSMD({
       // NEW: stamp the immediate cause of this reflow
       outer.dataset.osmdReflowCause = reflowCause;
 
-      // --- NEW: hide the host before render to prevent painting the full SVG ---
+      // --- hide the host before render to prevent painting the full SVG ---
       const hostForReflow = hostRef.current;
       const prevVisForReflow = hostForReflow?.style.visibility ?? "";
       const revealHost = () => {
@@ -1152,12 +1152,12 @@ export default function ScoreOSMD({
           if (hostForReflow) {
             hostForReflow.style.visibility = prevVisForReflow || "visible";
             outer.dataset.osmdHostHidden = "0";
-            // no logging here; callers log explicitly when needed
           }
         } catch {}
       };
 
-      void logStep(`reflow:enter reset=${resetToFirst} running=${reflowRunningRef.current} repag=${repagRunningRef.current} busy=${busyRef.current} cause=${reflowCause}`
+      void logStep(
+        `reflow:enter reset=${resetToFirst} running=${reflowRunningRef.current} repag=${repagRunningRef.current} busy=${busyRef.current} cause=${reflowCause}`
       );
 
       // Increment and stamp the zoom attempt ID
@@ -1173,10 +1173,10 @@ export default function ScoreOSMD({
 
       if (reflowRunningRef.current) {
         reflowAgainRef.current = "width";
-        reflowQueuedCauseRef.current = reflowCause;              // ← remember why we queued
+        reflowQueuedCauseRef.current = reflowCause;              // remember why we queued
         outer.dataset.osmdZoomQueued   = String(attempt);
         outer.dataset.osmdZoomQueueWhy = "reflowRunning";
-        outer.dataset.osmdReflowCauseQueued = reflowCause;       // ← stamp queued cause
+        outer.dataset.osmdReflowCauseQueued = reflowCause;
         outer.dataset.osmdZoomQueuedAt = String(Date.now());
         void logStep(`[reflow] QUEUED attempt#${attempt} cause=${reflowCause} • why=reflowRunning • ${fmtFlags()}`);
         return;
@@ -1220,7 +1220,7 @@ export default function ScoreOSMD({
           outer.dataset.osmdPhase = "spinner-on";
           void logStep("spinner-on");
 
-          // NEW: hide host only once spinner is visible (prevents flash)
+          // Hide host once spinner is visible (prevents flash)
           try {
             if (hostForReflow) {
               hostForReflow.style.visibility = "hidden";
@@ -1264,17 +1264,10 @@ export default function ScoreOSMD({
         void logStep(`[render] finished attempt#${attemptForRender} (${renderMs}ms)`);
 
         // --------- BLOCK BRIEFLY AFTER RENDER (starvation-proof + probe) ---------
-
-        // REVEAL THE HOST *NOW* so rAF/paint aren't throttled while we wait.
-        // (We used to keep it hidden until after applyPage on some paths.)
-        try {
-          revealHost();
-          outer.dataset.osmdHostHidden = "0";
-          await logStep("host:revealed(before-post-render-wait)");
-        } catch { /* no-op */ }
-
+        // IMPORTANT: keep host hidden until we have paginated/masked the first page.
+        // We'll reveal in the resetToFirst/nearest branches below.
         outer.dataset.osmdPhase = "post-render-wait";
-        outer.dataset.osmdPostWaitAt = String(Date.now());               // NEW stamp
+        outer.dataset.osmdPostWaitAt = String(Date.now());               // stamp
         await logStep("post-render:enter");
 
         // Safety: if we linger here, dump a snapshot once
@@ -1343,7 +1336,6 @@ export default function ScoreOSMD({
 
         outer.dataset.osmdPostWaitVia = via;
         postWaitDumpArmed = false;           // don't double-dump
-        outer.dataset.osmdPostWaitVia = via;
         outer.dataset.osmdPostWaitMs  = String(Math.round(tnow() - tPost0));
         await logStep(`post-render:block done via=${via} waited=${Math.round(tnow() - tPost0)}ms`);
 
@@ -1392,6 +1384,7 @@ export default function ScoreOSMD({
         if (newBands.length === 0) {
           outer.dataset.osmdPhase = "measure:0:reflow-abort";
           void logStep("reflow: measured 0 bands — abort");
+          // reveal host before returning so user isn't stuck
           revealHost();
           return;
         }
@@ -1432,7 +1425,11 @@ export default function ScoreOSMD({
           outer.dataset.osmdPhase = "reset:first:done";
           void logStep("reset:first:done");
           stampHandledDims(outer);
-          revealHost();
+          // Reveal now that first page is applied & masked
+          try {
+            revealHost();
+            await logStep("host:revealed(after-apply:first)");
+          } catch {}
           return;
         }
 
@@ -1459,14 +1456,23 @@ export default function ScoreOSMD({
         void logStep(`reflow:done page=${nearest + 1}/${newStarts.length} bands=${newBands.length}`);
         stampHandledDims(outer);
 
-        // Reveal (idempotent): if already revealed before post-render-wait, this is a no-op.
-        try { revealHost(); } catch {}
+        // Reveal (idempotent): now that page is applied & masked
+        try {
+          revealHost();
+          outer.dataset.osmdHostHidden = "0";
+          await logStep("host:revealed(after-apply:nearest)");
+        } catch {}
 
       } finally {
         await logStep("reflow:finally:enter", { paint: true });
 
         // Safety: ensure host is not left hidden on any path
-        try { revealHost(); } catch {}
+        try { 
+          const nowOuter = wrapRef.current;
+          if (nowOuter && nowOuter.dataset.osmdHostHidden !== "0") {
+            revealHost();
+          }
+        } catch {}
 
         outer.dataset.osmdZoomExited   = outer.dataset.osmdZoomEntered || "0";
         outer.dataset.osmdZoomExitedAt = String(Date.now());
@@ -1503,6 +1509,7 @@ export default function ScoreOSMD({
         void logStep("reflow:finally:exit");
       }
     },
+    // NOTE: include dumpDebug so ESLint stops warning
     [applyPage, getPAGE_H, hideBusy, renderWithEffectiveWidth, fmtFlags, dumpDebug]
   );
 
