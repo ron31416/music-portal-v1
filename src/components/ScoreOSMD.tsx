@@ -1860,10 +1860,22 @@ export default function ScoreOSMD({
         try { window.requestAnimationFrame(() => void logStep("beacon:raf")); } catch {}
       } catch {}
 
-      // Keep the event loop breathing, but never wedge here.
-      await new Promise<void>((r) => window.setTimeout(r, 0)); // macrotask
-      // Use our resilient after-paint helper (works even if rAF is throttled)
-      await ap("measure:await", 600);
+      // Never block here: try after-paint, but *always* fall through quickly.
+      let gate = "none";
+      await Promise.race([
+        ap("measure:await", 600).then(() => { gate = "afterpaint"; }),
+        new Promise<void>((r) => {
+          // MessageChannel often fires even if rAF is throttled
+          try {
+            const ch = new MessageChannel();
+            ch.port1.onmessage = () => r();
+            ch.port2.postMessage(1);
+          } catch {}
+          // Hard backstop in case everything is throttled
+          window.setTimeout(r, 500);
+        }).then(() => { if (gate === "none") gate = "fallback"; }),
+      ]);
+      void logStep(`measure:await:continue via=${gate}`);
 
       // --- Measure systems + first pagination ---
       // Force a layout flush so measurements are up-to-date
