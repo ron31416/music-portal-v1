@@ -499,6 +499,12 @@ function computePageStartIndices(bands: Band[], viewportH: number): number[] {
   return starts.length ? starts : [0];
 }
 
+// ---- helpers for starvation-proof waits ----
+declare global {
+  interface Window { __OSMD_LOG_SUSPEND?: boolean }
+}
+
+/** One-tick macrotask yield */
 function tick(): Promise<void> {
   return new Promise<void>((r) => setTimeout(r, 0));
 }
@@ -1257,24 +1263,34 @@ export default function ScoreOSMD({
         void logStep(`render:finished (${renderMs}ms)`);
         void logStep(`[render] finished attempt#${attemptForRender} (${renderMs}ms)`);
 
-        // --------- BLOCK BRIEFLY AFTER RENDER (parity with init) ---------
+        // --------- BLOCK BRIEFLY AFTER RENDER (starvation-proof) ---------
         outer.dataset.osmdPhase = "post-render-wait";
         const tPost0 = tnow();
-        let via: "ap" | "timeout" = "timeout";
+        let via: "ap" | "timeout" | "bail" | "paint" = "timeout";
 
-        const race = Promise.race([
-          ap("post-render:block", 600).then(() => { via = "ap"; }),
-          new Promise<void>((r) => setTimeout(r, 450)),
-        ]);
-        void logStep("post-render:race:armed (ap<=600 | timeout<=450)");
+        // Give the event loop a clean macrotask so timers/rAF can queue
+        await tick();
 
-        // Backstop so we log even if rAF/timers are starved right after render
-        const guard = new Promise<void>((r) =>
-          setTimeout(() => { void logStep("post-render:guard fired (900ms)"); r(); }, 900)
+        // Gates
+        const apGate = ap("post-render:block", 600).then(() => { via = "ap"; });
+
+        const timeoutGate = new Promise<void>((r) =>
+          setTimeout(() => { if (via === "timeout") via = "timeout"; r(); }, 450)
         );
-        void logStep("post-render:guard:armed (900ms)");
 
-        await Promise.race([race, guard]);
+        // A small “real paint” wait helps when rAF is available but timers are sluggish
+        const paintGate = (async () => {
+          try { await waitForPaint(350); if (via === "timeout") via = "paint"; } catch {}
+        })();
+
+        // Hard ceiling — always progress even if timers are clamped
+        const bailGate = new Promise<void>((r) =>
+          setTimeout(() => { via = "bail"; r(); }, 1800)
+        );
+
+        // Arm + wait (any win proceeds)
+        await Promise.race([apGate, timeoutGate, paintGate.then(() => undefined), bailGate]);
+
         void logStep(`post-render:block done via=${via} waited=${Math.round(tnow() - tPost0)}ms`);
 
         // --------- PURGE STRAY CANVASES (same as init; non-blocking) ---------
@@ -1903,16 +1919,15 @@ export default function ScoreOSMD({
       // Prefer a real paint if visible, but never wedge
       const paintGate = (async () => {
         try {
-          // Try your robust paint wait first (bounded)
           await waitForPaint(350);
-          viaMeasure = "paint";
+          if (viaMeasure === "timeout") viaMeasure = "paint"; // don't clobber ap/bail
         } catch {}
       })();
 
       const apGate = ap("measure:start", 350).then(() => { viaMeasure = "ap"; });
 
       const timeoutGate = new Promise<void>((r) =>
-        setTimeout(() => { viaMeasure = viaMeasure === "timeout" ? "timeout" : viaMeasure; r(); }, 900)
+        setTimeout(() => { if (viaMeasure === "timeout") viaMeasure = "timeout"; r(); }, 900)
       );
 
       // Hard ceiling — always progress, log that we bailed
