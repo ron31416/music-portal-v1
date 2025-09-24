@@ -503,6 +503,7 @@ function computePageStartIndices(bands: Band[], viewportH: number): number[] {
 declare global {
   interface Window { __OSMD_LOG_SUSPEND?: boolean }
 }
+/*
 function tick(timeoutMs = 600): Promise<void> {
   return new Promise((resolve) => {
     let done = false;
@@ -522,6 +523,7 @@ function tick(timeoutMs = 600): Promise<void> {
     try { setTimeout(finish, Math.max(300, timeoutMs)); } catch {}
   });
 }
+*/
 
 /* ---------- Component ---------- */
 
