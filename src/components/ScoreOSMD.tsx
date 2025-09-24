@@ -1316,6 +1316,7 @@ export default function ScoreOSMD({
           } catch {}
         }, 2500);
 
+        outer.dataset.osmdPhase = "measure:scan"
         void logStep("measure:scan:enter");
         const newBands =
           withUntransformedSvg(outer, (svg) =>
@@ -1852,15 +1853,34 @@ export default function ScoreOSMD({
 
         outer.dataset.osmdPhase = "measure";
         void logStep("measure:start");
-        void logStep("diag: entering measure:start await");
+        void logStep("diag: measure:start (no gate)");
       } catch (e) {
         void logStep(`MEASURE-ENTRY:exception:${(e as Error)?.message ?? e}`);
       }
       
-      // Do not gate here — just yield one macrotask so post-render microtasks settle,
-      // then move straight into measuring (OSMD render was synchronous).
-      await new Promise<void>((r) => window.setTimeout(r, 0));
-      void logStep("measure:gate:skipped");
+      // Measure immediately — no gate at all.
+      void logStep("measure:gate:none");
+
+      // Safety: if we don’t reach starts/applied quickly, reveal + clear busy anyway.
+      // Idempotent: real path will still run and win.
+      try {
+        window.setTimeout(() => {
+          const o = wrapRef.current;
+          if (!o) return;
+          const ph = o.dataset.osmdPhase || "";
+          if (!/^starts:/.test(ph) && !/^applied:/.test(ph)) {
+            try {
+              const hostForInitX = hostRef.current;
+              const prevVis = (hostForInitX?.style.visibility ?? "") || "visible";
+              if (hostForInitX) hostForInitX.style.visibility = prevVis;
+              o.dataset.osmdHostHidden = "0";
+            } catch {}
+            o.dataset.osmdPhase = "init:forced-finalize";
+            void logStep("init:forced-finalize");
+            hideBusy();
+          }
+        }, 1500);
+      } catch {}
 
       // --- Measure systems + first pagination ---
       void outer.getBoundingClientRect(); // layout flush
