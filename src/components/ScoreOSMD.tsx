@@ -1274,6 +1274,19 @@ export default function ScoreOSMD({
         } catch { /* no-op */ }
 
         outer.dataset.osmdPhase = "post-render-wait";
+        outer.dataset.osmdPostWaitAt = String(Date.now());               // NEW stamp
+        await logStep("post-render:enter");
+
+        // Safety: if we linger here, dump a snapshot once
+        let postWaitDumpArmed = true;
+        setTimeout(() => {
+          if (postWaitDumpArmed && outer.dataset.osmdPhase === "post-render-wait") {
+            const attempt = Number(outer.dataset.osmdZoomEntered || "0");
+            void logStep(`post-render:linger→dump attempt#${attempt}`);
+            dumpDebug();                                                 // snapshot bands/H/starts
+          }
+        }, 1400);
+
         const tPost0 = tnow();
         let via: "ap" | "timeout" | "bail" | "paint" | "force" = "timeout";
 
@@ -1281,7 +1294,7 @@ export default function ScoreOSMD({
         await tick();
 
         // Gates
-        const apGate = ap("post-render:block", 600).then(() => { via = "ap"; });
+        const apGate = ap("post-render:block:reflow", 600).then(() => { via = "ap"; });
         const timeoutGate = new Promise<void>((resolve) =>
           setTimeout(() => {
             if (via === "timeout") { via = "timeout"; }
@@ -1292,7 +1305,9 @@ export default function ScoreOSMD({
           try {
             await waitForPaint(350);
             if (via === "timeout") { via = "paint"; } // don't clobber ap/bail
-          } catch {}
+          } catch (err) {
+            await logStep(`post-render:paintGate:err ${(err as Error)?.message ?? err}`);
+          }
         })();
 
         // Hard ceiling — always progress even if timers are clamped
@@ -1300,8 +1315,7 @@ export default function ScoreOSMD({
           setTimeout(() => { via = "bail"; r(); }, 1800)
         );
 
-        // Extra “phase ceiling”: if somehow we’re *still* in post-render-wait after 2300ms,
-        // force-continue and *log* that fact. This is redundant with bailGate but gives us proof.
+        // Extra “phase ceiling”
         const phaseCeiling = new Promise<void>((r) =>
           setTimeout(() => {
             if (outer.dataset.osmdPhase === "post-render-wait") {
@@ -1312,7 +1326,11 @@ export default function ScoreOSMD({
         );
 
         // Arm + wait (any win proceeds)
-        await Promise.race([apGate, timeoutGate, paintGate.then(() => undefined), bailGate, phaseCeiling]);
+        try {
+          await Promise.race([apGate, timeoutGate, paintGate.then(() => undefined), bailGate, phaseCeiling]);
+        } catch (err) {
+          await logStep(`post-render:race:THREW ${(err as Error)?.message ?? err}`);
+        }
 
         // Probe: which gates actually settled? (non-blocking)
         void Promise.allSettled([apGate, timeoutGate, paintGate, bailGate, phaseCeiling]).then((res) => {
@@ -1323,9 +1341,13 @@ export default function ScoreOSMD({
           } catch {}
         });
 
-        void logStep(`post-render:block done via=${via} waited=${Math.round(tnow() - tPost0)}ms`);
+        outer.dataset.osmdPostWaitVia = via;
+        postWaitDumpArmed = false;           // don't double-dump
+        outer.dataset.osmdPostWaitVia = via;
+        outer.dataset.osmdPostWaitMs  = String(Math.round(tnow() - tPost0));
+        await logStep(`post-render:block done via=${via} waited=${Math.round(tnow() - tPost0)}ms`);
 
-        // ✅ NEW: mark the phase so the MutationObserver can react
+        // mark the phase so the MutationObserver can react
         outer.dataset.osmdPhase = "render:painted";
 
         // --------- PURGE STRAY CANVASES (same as init; non-blocking) ---------
@@ -1903,7 +1925,7 @@ export default function ScoreOSMD({
       let via: "ap" | "timeout" = "timeout";
 
       const race = Promise.race([
-        ap("post-render:block", 600).then(() => { via = "ap"; }),
+        ap("post-render:block:init", 600).then(() => { via = "ap"; }),
         new Promise<void>((r) => setTimeout(r, 450)),
       ]);
 
@@ -1915,9 +1937,11 @@ export default function ScoreOSMD({
       await Promise.race([race, guard]);
 
       const now = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
+      outer.dataset.osmdPostWaitVia = via;
+      outer.dataset.osmdPostWaitMs  = String(Math.round(now - tPost0));
       void logStep(`post-render:block done via=${via} waited=${Math.round(now - tPost0)}ms`);
 
-      // ✅ NEW: mark the phase so the MutationObserver can react
+      // mark the phase so the MutationObserver can react
       outer.dataset.osmdPhase = "render:painted";
 
       try {
@@ -2124,18 +2148,18 @@ export default function ScoreOSMD({
 
     // Cleanup
     const cleanupOuter = wrapRef.current;
-    const cleanupHost  = hostRef.current;
 
     return () => {
       if (resizeObs) {
         if (cleanupOuter) { resizeObs.unobserve(cleanupOuter); }
-        if (cleanupHost)  { resizeObs.unobserve(cleanupHost); }
         resizeObs.disconnect();
       }
+
       if (resizeTimerRef.current) {
         window.clearTimeout(resizeTimerRef.current);
         resizeTimerRef.current = null;
       }
+      
       if (osmdRef.current) {
         osmdRef.current?.clear();
         (osmdRef.current as { dispose?: () => void } | null)?.dispose?.();
@@ -2475,7 +2499,8 @@ export default function ScoreOSMD({
 
     const mo = new MutationObserver(() => {
       const now = wrapRef.current;
-      if (now && now.dataset.osmdPhase === "render:painted") {
+      const ph = now?.dataset.osmdPhase;
+      if (now && (ph === "render:painted" || ph === "post-render-wait")) {
         arm();
       } else {
         if (timer !== null) { window.clearTimeout(timer); timer = null; }
@@ -2484,8 +2509,8 @@ export default function ScoreOSMD({
 
     mo.observe(outer, { attributes: true, attributeFilter: ["data-osmd-phase"] });
 
-    // If we're already in render:painted when this mounts, arm immediately
-    if (outer.dataset.osmdPhase === "render:painted") {
+    // If we're already in one of the phases, arm immediately
+    if (outer.dataset.osmdPhase === "render:painted" || outer.dataset.osmdPhase === "post-render-wait") {
       arm();
     }
 
