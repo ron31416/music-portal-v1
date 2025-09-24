@@ -758,7 +758,7 @@ export default function ScoreOSMD({
   );
 
   // --- Unify pagination height (memoized so identity is stable) ---
-  const getPAGE_H = React.useCallback(
+  const getPAGE_H = useCallback(
     (outer: HTMLDivElement) => pageHeight(outer) + REFLOW.PAGE_FILL_SLOP_PX,
     [pageHeight]
   );
