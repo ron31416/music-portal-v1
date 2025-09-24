@@ -1263,32 +1263,27 @@ export default function ScoreOSMD({
         void logStep(`render:finished (${renderMs}ms)`);
         void logStep(`[render] finished attempt#${attemptForRender} (${renderMs}ms)`);
 
-        // --------- BLOCK BRIEFLY AFTER RENDER (starvation-proof) ---------
+        // --------- BLOCK BRIEFLY AFTER RENDER (starvation-proof + probe) ---------
         outer.dataset.osmdPhase = "post-render-wait";
         const tPost0 = tnow();
-        let via: "ap" | "timeout" | "bail" | "paint" = "timeout";
+        let via: "ap" | "timeout" | "bail" | "paint" | "force" = "timeout";
 
         // Give the event loop a clean macrotask so timers/rAF can queue
         await tick();
 
         // Gates
         const apGate = ap("post-render:block", 600).then(() => { via = "ap"; });
-
         const timeoutGate = new Promise<void>((resolve) =>
           setTimeout(() => {
             if (via === "timeout") { via = "timeout"; }
             resolve();
           }, 450)
         );
-
-        // A small “real paint” wait helps when rAF is available but timers are sluggish
         const paintGate = (async () => {
           try {
             await waitForPaint(350);
             if (via === "timeout") { via = "paint"; } // don't clobber ap/bail
-          } catch {
-            // intentionally ignore: paint waits can fail on hidden tabs / throttled timers
-          }
+          } catch {}
         })();
 
         // Hard ceiling — always progress even if timers are clamped
@@ -1296,10 +1291,33 @@ export default function ScoreOSMD({
           setTimeout(() => { via = "bail"; r(); }, 1800)
         );
 
+        // Extra “phase ceiling”: if somehow we’re *still* in post-render-wait after 2300ms,
+        // force-continue and *log* that fact. This is redundant with bailGate but gives us proof.
+        const phaseCeiling = new Promise<void>((r) =>
+          setTimeout(() => {
+            if (outer.dataset.osmdPhase === "post-render-wait") {
+              via = (via === "ap" || via === "paint" || via === "timeout" || via === "bail") ? via : "force";
+            }
+            r();
+          }, 2300)
+        );
+
         // Arm + wait (any win proceeds)
-        await Promise.race([apGate, timeoutGate, paintGate.then(() => undefined), bailGate]);
+        await Promise.race([apGate, timeoutGate, paintGate.then(() => undefined), bailGate, phaseCeiling]);
+
+        // Probe: which gates actually settled? (non-blocking)
+        void Promise.allSettled([apGate, timeoutGate, paintGate, bailGate, phaseCeiling]).then((res) => {
+          try {
+            const tags = ["ap","timeout","paint","bail","phaseCeiling"];
+            const states = res.map((r,i)=>`${tags[i]}=${r.status}`);
+            logStep(`post-render:gates ${states.join(" ")}`);
+          } catch {}
+        });
 
         void logStep(`post-render:block done via=${via} waited=${Math.round(tnow() - tPost0)}ms`);
+
+        // ✅ NEW: mark the phase so the MutationObserver can react
+        outer.dataset.osmdPhase = "render:painted";
 
         // --------- PURGE STRAY CANVASES (same as init; non-blocking) ---------
         try {
@@ -1890,6 +1908,9 @@ export default function ScoreOSMD({
       const now = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
       void logStep(`post-render:block done via=${via} waited=${Math.round(now - tPost0)}ms`);
 
+      // ✅ NEW: mark the phase so the MutationObserver can react
+      outer.dataset.osmdPhase = "render:painted";
+
       try {
         const canvasCount = outer.querySelectorAll("canvas").length;
         void logStep(`purge:probe canvas#=${canvasCount}`);
@@ -1959,6 +1980,13 @@ export default function ScoreOSMD({
       if (bands.length === 0) {
         outer.dataset.osmdPhase = "measure:0:init-abort";
         void logStep("measure:init:0 — aborting first pagination");
+        // restore host visibility before returning
+        try {
+          const hostForInit3 = hostRef.current;
+          if (hostForInit3) {
+            hostForInit3.style.visibility = prevVisForInit || "visible";
+          }
+        } catch {}
         hideBusy();
         return;
       }
