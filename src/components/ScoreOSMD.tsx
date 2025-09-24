@@ -1152,7 +1152,7 @@ export default function ScoreOSMD({
           if (hostForReflow) {
             hostForReflow.style.visibility = prevVisForReflow || "visible";
             outer.dataset.osmdHostHidden = "0";
-            void logStep("host:revealed(after-apply)");
+            // no logging here; callers log explicitly when needed
           }
         } catch {}
       };
@@ -1264,6 +1264,15 @@ export default function ScoreOSMD({
         void logStep(`[render] finished attempt#${attemptForRender} (${renderMs}ms)`);
 
         // --------- BLOCK BRIEFLY AFTER RENDER (starvation-proof + probe) ---------
+
+        // REVEAL THE HOST *NOW* so rAF/paint aren't throttled while we wait.
+        // (We used to keep it hidden until after applyPage on some paths.)
+        try {
+          revealHost();
+          outer.dataset.osmdHostHidden = "0";
+          await logStep("host:revealed(before-post-render-wait)");
+        } catch { /* no-op */ }
+
         outer.dataset.osmdPhase = "post-render-wait";
         const tPost0 = tnow();
         let via: "ap" | "timeout" | "bail" | "paint" | "force" = "timeout";
@@ -1428,8 +1437,8 @@ export default function ScoreOSMD({
         void logStep(`reflow:done page=${nearest + 1}/${newStarts.length} bands=${newBands.length}`);
         stampHandledDims(outer);
 
-        // Reveal after we’ve applied the page so the browser paints only one page
-        revealHost();
+        // Reveal (idempotent): if already revealed before post-render-wait, this is a no-op.
+        try { revealHost(); } catch {}
 
       } finally {
         await logStep("reflow:finally:enter", { paint: true });
