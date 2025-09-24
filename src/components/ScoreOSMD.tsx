@@ -89,17 +89,17 @@ function makeAfterPaint(outer: HTMLDivElement) {
       }
 
       if (document.visibilityState !== "visible") {
-        setTimeout(() => finish("hidden"), 0);
+        window.setTimeout(() => finish("hidden"), 0);
         return;
       }
 
       try {
-        requestAnimationFrame(() => {
-          requestAnimationFrame(() => finish("raf"));
+        window.requestAnimationFrame(() => {
+          window.requestAnimationFrame(() => finish("raf"));
         });
       } catch {}
 
-      setTimeout(() => finish("timeout"), timeoutMs);
+      window.setTimeout(() => finish("timeout"), timeoutMs);
 
       try {
         const ch = new MessageChannel();
@@ -111,9 +111,9 @@ function makeAfterPaint(outer: HTMLDivElement) {
       } catch {}
 
       // Never wedge even if rAF/message are throttled: resolve next macrotask.
-      setTimeout(() => finish("safety-tick"), 0);
+      window.setTimeout(() => finish("safety-tick"), 0);
 
-      setTimeout(() => finish("ceiling"), Math.max(timeoutMs * 4, 1200));
+      window.setTimeout(() => finish("ceiling"), Math.max(timeoutMs * 4, 1200));
     });
   };
 }
@@ -254,8 +254,10 @@ async function waitForPaint(timeoutMs = 450): Promise<void> {
     // double-rAF (or timeout) so the frame has a chance to paint
     if (document.visibilityState === 'visible') {
       await Promise.race([
-        new Promise<void>(r => requestAnimationFrame(() => requestAnimationFrame(() => r()))),
-        new Promise<void>(r => window.setTimeout(r, timeoutMs))
+        new Promise<void>(r => window.requestAnimationFrame(() =>
+          window.requestAnimationFrame(() => r())
+        )),
+        new Promise<void>(r => window.setTimeout(r, timeoutMs)),
       ]);
     }
   } catch {}
@@ -314,7 +316,7 @@ async function waitForFonts(): Promise<void> {
     if (fonts?.ready) {
       await Promise.race([
         fonts.ready,
-        new Promise<void>(resolve => setTimeout(resolve, 1500)),
+        new Promise<void>(resolve => window.setTimeout(resolve, 1500)),
       ]);
     }
   } catch {
@@ -505,21 +507,6 @@ function hasZoomProp(o: unknown): o is { Zoom: number } {
   return typeof maybe.Zoom === "number";
 }
 
-async function awaitStableFrame(label: string, ceilingMs = 500): Promise<void> {
-  let via: "raf" | "timeout" = "timeout";
-  await Promise.race([
-    new Promise<void>((res) => {
-      try {
-        requestAnimationFrame(() =>
-          requestAnimationFrame(() => { via = "raf"; res(); })
-        );
-      } catch { /* falls back to timeout */ }
-    }),
-    new Promise<void>((res) => setTimeout(res, ceilingMs)),
-  ]);
-  void logStep(`${label}:frame via=${via}`);
-}
-
 /* ---------- Component ---------- */
 
 export default function ScoreOSMD({
@@ -672,7 +659,7 @@ export default function ScoreOSMD({
 
         // Give the browser one macrotask tick to breathe before we return.
         // (If layout wants to flush, this lets timers/rAF queue up.)
-        await new Promise<void>((r) => setTimeout(r, 0));
+        await new Promise<void>((r) => window.setTimeout(r, 0));
       } catch (e) {
         void logStep(`render:error ${(e as Error)?.message ?? e}`);
         throw e;
@@ -724,7 +711,7 @@ export default function ScoreOSMD({
     ].join(" ");
   }, []);
 
-  // ---- callback ref proxies (used by queued setTimeouts) ----
+  // ---- callback ref proxies (used by queued window.setTimeouts) ----
   const reflowFnRef = useRef<
     (resetToFirst?: boolean, reflowCause?: string) => void | Promise<void>
   >(() => {});
@@ -1120,9 +1107,9 @@ export default function ScoreOSMD({
         reflowQueuedCauseRef.current = "";
 
         if (queued === "width") {
-          setTimeout(() => { reflowFnRef.current(true, cause); }, 0);
+          window.setTimeout(() => { reflowFnRef.current(true, cause); }, 0);
         } else if (queued === "height") {
-          setTimeout(() => { repagFnRef.current(true, false); }, 0);
+          window.setTimeout(() => { repagFnRef.current(true, false); }, 0);
         }
 
         handledHRef.current = outer.clientHeight || handledHRef.current;
@@ -1221,11 +1208,11 @@ export default function ScoreOSMD({
           void logStep("spinner-requested");
 
           // Commit overlay
-          await new Promise<void>((r) => setTimeout(r, 0));
+          await new Promise<void>((r) => window.setTimeout(r, 0));
           if (document.visibilityState === "visible") {
             await Promise.race([
-              new Promise<void>((r) => requestAnimationFrame(() => r())),
-              new Promise<void>((r) => setTimeout(r, 120)),
+              new Promise<void>((r) => window.requestAnimationFrame(() => r())),
+              new Promise<void>((r) => window.setTimeout(r, 120)),
             ]);
           }
 
@@ -1249,7 +1236,7 @@ export default function ScoreOSMD({
 
         outer.dataset.osmdPhase = "render";
         await logStep("render:start");
-        await new Promise<void>((r) => setTimeout(r, 0)); // macrotask
+        await new Promise<void>((r) => window.setTimeout(r, 0)); // macrotask
         await ap("render:yield");                         // one paint opportunity
 
         // Render watchdog
@@ -1284,8 +1271,8 @@ export default function ScoreOSMD({
 
         // Give the event loop two clean macrotasks, then move on regardless.
         // (We intentionally do NOT wait on rAF/message here to avoid throttling/wedges.)
-        await new Promise<void>((r) => setTimeout(r, 0));
-        await new Promise<void>((r) => setTimeout(r, 0));
+        await new Promise<void>((r) => window.setTimeout(r, 0));
+        await new Promise<void>((r) => window.setTimeout(r, 0));
 
         // Stamp deterministic “skip” so logs show we advanced intentionally.
         outer.dataset.osmdPostWaitVia = "skip";
@@ -1302,11 +1289,11 @@ export default function ScoreOSMD({
 
           if (canvasCount > 0) {
             void logStep("purge:queued");
-            setTimeout(() => {
+            window.setTimeout(() => {
               try { purgeWebGL(outer); void logStep("purge:done"); }
               catch (e) { void logStep(`purge:error:${(e as Error)?.message ?? e}`); }
             }, 0);
-          } else {
+         } else {
             void logStep("purge:skip(no-canvas)");
           }
         } catch (e) {
@@ -1379,7 +1366,7 @@ export default function ScoreOSMD({
           outer.dataset.osmdPhase = "reset:first";
           void logStep("reset:first");
           timeSection("apply:first", () => { applyPage(0); });
-          await Promise.race([ap("apply:first"), new Promise<void>((r)=>setTimeout(r,400))]);
+          await Promise.race([ap("apply:first"), new Promise<void>((r)=>window.setTimeout(r,400))]);
           timeSection("apply:first", () => { applyPage(0); });
           outer.dataset.osmdPhase = "reset:first:done";
           void logStep("reset:first:done");
@@ -1406,7 +1393,7 @@ export default function ScoreOSMD({
         timeSection("apply:nearest", () => { applyPage(nearest); });
         await Promise.race([
           ap("apply:nearest"),
-          new Promise<void>((res) => setTimeout(res, 700)),
+          new Promise<void>((res) => window.setTimeout(res, 700)),
         ]);
         timeSection("apply:nearest", () => { applyPage(nearest); });
 
@@ -1454,12 +1441,12 @@ export default function ScoreOSMD({
         void logStep(`reflow:finally:queued=${queued} cause=${cause}`);
 
         if (queued === "width") {
-          setTimeout(() => {
+          window.setTimeout(() => {
             void logStep(`reflow:finally:drain:width cause=${cause}`);
             reflowFnRef.current(true, cause);
           }, 0);
         } else if (queued === "height") {
-          setTimeout(() => {
+          window.setTimeout(() => {
             void logStep("reflow:finally:drain:height");
             repagFnRef.current(true, false);
           }, 0);
@@ -1561,7 +1548,7 @@ export default function ScoreOSMD({
         }
 
         // If we're idle, drain the queue ourselves on the next tick
-        setTimeout(() => {
+        window.setTimeout(() => {
           if (
             reflowAgainRef.current === "width" &&
             !reflowRunningRef.current &&
@@ -1808,7 +1795,7 @@ export default function ScoreOSMD({
 
       outer.dataset.osmdPhase = "render";
       await logStep("render:start");        // flush before heavy sync render
-      await new Promise<void>(r => setTimeout(r, 0)); // macrotask yield
+      await new Promise<void>(r => window.setTimeout(r, 0)); // macrotask yield
       await ap("render:yield");             // rAF/message tick
 
       const t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
@@ -1827,12 +1814,12 @@ export default function ScoreOSMD({
 
       const race = Promise.race([
         ap("post-render:block:init", 600).then(() => { via = "ap"; }),
-        new Promise<void>((r) => setTimeout(r, 450)),
+        new Promise<void>((r) => window.setTimeout(r, 450)),
       ]);
 
       // Backstop so we log even if rAF/timers are starved right after render
       const guard = new Promise<void>((r) =>
-        setTimeout(() => { void logStep("post-render:guard fired (900ms)"); r(); }, 900)
+        window.setTimeout(() => { void logStep("post-render:guard fired (900ms)"); r(); }, 900)
       );
 
       await Promise.race([race, guard]);
@@ -1851,7 +1838,7 @@ export default function ScoreOSMD({
 
         if (canvasCount > 0) {
           void logStep("purge:queued");
-          setTimeout(() => {
+          window.setTimeout(() => {
             try { purgeWebGL(outer); void logStep("purge:done"); }
             catch (e) { void logStep(`purge:error:${(e as Error)?.message ?? e}`); }
           }, 0);
@@ -1868,9 +1855,9 @@ export default function ScoreOSMD({
       // Beacons: prove event loop is alive
       try {
         Promise.resolve().then(() => void logStep("beacon:microtask"));
-        setTimeout(() => void logStep("beacon:setTimeout:100ms"), 100);
-        setTimeout(() => void logStep("beacon:setTimeout:1000ms"), 1000);
-        try { requestAnimationFrame(() => void logStep("beacon:raf")); } catch {}
+        window.setTimeout(() => void logStep("beacon:setTimeout:100ms"), 100);
+        window.setTimeout(() => void logStep("beacon:setTimeout:1000ms"), 1000);
+        try { window.requestAnimationFrame(() => void logStep("beacon:raf")); } catch {}
       } catch {}
 
       // Keep the event loop breathing, but never wedge here.
@@ -2072,7 +2059,7 @@ export default function ScoreOSMD({
       applyPage(targetPage);
 
       // If we didn't actually move, rebuild page starts and retry *toward* desiredStart.
-      requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
         if (pageIdxRef.current !== beforePage) { return; } // we moved – all good
 
         const outer = wrapRef.current;
@@ -2347,12 +2334,12 @@ export default function ScoreOSMD({
     if (queued === "width") {
       const cause = reflowQueuedCauseRef.current || "drain:post-busy";
       reflowQueuedCauseRef.current = "";
-      setTimeout(() => {
+      window.setTimeout(() => {
         void logStep(`queue:drain:width cause=${cause}`);
         reflowFnRef.current(true, cause);
       }, 0);
     } else if (queued === "height") {
-      setTimeout(() => {
+      window.setTimeout(() => {
         void logStep("queue:drain:height");
         repagFnRef.current(true, false);
       }, 0);
