@@ -524,6 +524,12 @@ function tick(timeoutMs = 600): Promise<void> {
   });
 }
 
+function hasZoomProp(o: unknown): o is { Zoom: number } {
+  if (typeof o !== "object" || o === null) return false;
+  const maybe = o as { Zoom?: unknown };
+  return typeof maybe.Zoom === "number";
+}
+
 /* ---------- Component ---------- */
 
 export default function ScoreOSMD({
@@ -590,18 +596,20 @@ export default function ScoreOSMD({
   }, []);
 
   const applyZoomFromRef = useCallback((): void => {
-    const osmd: any = osmdRef.current;
-    if (!osmd) { return; }
+    const inst = osmdRef.current;
+    if (!inst) return;
 
     const z = zoomFactorRef.current;
-    if (typeof z !== "number" || !Number.isFinite(z)) { return; }
+    if (typeof z !== "number" || !Number.isFinite(z)) return;
 
     const clamped = Math.max(0.5, Math.min(3, z));
 
-    // Be permissive: some builds may not have Zoom typed
-    const curr = (typeof osmd.Zoom === "number") ? osmd.Zoom : undefined;
-    if (curr === undefined || Math.abs(curr - clamped) > 0.001) {
-      try { osmd.Zoom = clamped; } catch {}
+    // Only touch Zoom if the instance actually exposes it
+    if (hasZoomProp(inst)) {
+      const curr = inst.Zoom;
+      if (!Number.isFinite(curr) || Math.abs(curr - clamped) > 0.001) {
+        try { inst.Zoom = clamped; } catch {}
+      }
     }
   }, []);
 
@@ -1599,7 +1607,7 @@ export default function ScoreOSMD({
     };
   }, [computeZoomFactor]);
 
-  
+
   /** Init OSMD */
   useEffect(function initOSMDEffect() {
     let resizeObs: ResizeObserver | null = null;
