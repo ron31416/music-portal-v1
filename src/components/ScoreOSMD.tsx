@@ -40,7 +40,7 @@ const REFLOW = {
 async function withTimeout<T>(p: Promise<T>, ms: number, tag: string): Promise<T> {
   return Promise.race([
     p,
-    new Promise<never>((_, rej) => setTimeout(() => rej(new Error(tag)), ms)),
+    new Promise<never>((_, rej) => window.setTimeout(() => rej(new Error(tag)), ms)),
   ]);
 }
 
@@ -250,12 +250,12 @@ function getConsoleTop(): HTMLPreElement {
 async function waitForPaint(timeoutMs = 450): Promise<void> {
   try {
     // macrotask so React commit happens
-    await new Promise<void>(r => setTimeout(r, 0));
+    await new Promise<void>(r => window.setTimeout(r, 0));
     // double-rAF (or timeout) so the frame has a chance to paint
     if (document.visibilityState === 'visible') {
       await Promise.race([
         new Promise<void>(r => requestAnimationFrame(() => requestAnimationFrame(() => r()))),
-        new Promise<void>(r => setTimeout(r, timeoutMs)),
+        new Promise<void>(r => window.setTimeout(r, timeoutMs))
       ]);
     }
   } catch {}
@@ -1874,14 +1874,18 @@ export default function ScoreOSMD({
       } catch {}
 
       // Keep the event loop breathing, but never wedge here.
-      await Promise.resolve();            // macrotask boundary after render
-      await awaitStableFrame("measure");  // double rAF or <=500ms timeout
+      await new Promise<void>((r) => window.setTimeout(r, 0)); // macrotask
+      // Use our resilient after-paint helper (works even if rAF is throttled)
+      await ap("measure:await", 600);
 
       // --- Measure systems + first pagination ---
+      // Force a layout flush so measurements are up-to-date
+      void outer.getBoundingClientRect();
+
       const bands =
         withUntransformedSvg(outer, (svg) =>
           timeSection("measure:scan", () => measureSystemsPx(outer, svg))
-        ) ?? [];
+      ) ?? [];
 
       if (bands.length === 0) {
         outer.dataset.osmdPhase = "measure:0:init-abort";
