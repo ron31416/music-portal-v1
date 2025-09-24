@@ -1275,24 +1275,23 @@ export default function ScoreOSMD({
         void logStep(`render:finished (${renderMs}ms)`);
         void logStep(`[render] finished attempt#${attemptForRender} (${renderMs}ms)`);
 
-        // --------- BLOCK BRIEFLY AFTER RENDER (zero-wedge version) ---------
-        // IMPORTANT: keep host hidden until we have paginated/masked the first page.
-        // We'll reveal in the resetToFirst/nearest branches below.
-        outer.dataset.osmdPhase = "post-render-wait";
-        outer.dataset.osmdPostWaitAt = String(Date.now());
-        await logStep("post-render:enter");
+        // ---- Make subtree layoutable but still not visible (no flash), then force layout ----
+        outer.dataset.osmdPhase = "post-render-prepare";
+        try {
+          const hostX = hostRef.current;
+          if (hostX) {
+            hostX.style.setProperty("content-visibility", "auto"); // was 'hidden'
+            hostX.style.visibility = "hidden";                     // keep hidden for now
+            // Force a synchronous layout so the <svg> has real geometry for measurement:
+            void hostX.getBoundingClientRect().width;
+            void hostX.scrollWidth;
+          }
+        } catch {}
 
-        // Give the event loop two clean macrotasks, then move on regardless.
-        // (We intentionally do NOT wait on rAF/message here to avoid throttling/wedges.)
-        await new Promise<void>((r) => window.setTimeout(r, 0));
-        await new Promise<void>((r) => window.setTimeout(r, 0));
+        // Two macrotask yields (do NOT wait for a paint)
+        await new Promise<void>(r => setTimeout(r, 0));
+        await new Promise<void>(r => setTimeout(r, 0));
 
-        // Stamp deterministic “skip” so logs show we advanced intentionally.
-        outer.dataset.osmdPostWaitVia = "skip";
-        outer.dataset.osmdPostWaitMs  = "0";
-        await logStep("post-render:block done via=skip");
-
-        // mark the phase so the MutationObserver can react
         outer.dataset.osmdPhase = "render:painted";
 
         // --------- PURGE STRAY CANVASES (same as init; non-blocking) ---------
