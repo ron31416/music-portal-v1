@@ -1926,7 +1926,12 @@ export default function ScoreOSMD({
         try {
           const hostForInit3 = hostRef.current;
           if (hostForInit3) {
-            hostForInit3.style.visibility = prevVisForInit || "visible";
+            // restore CV first
+            if (prevCvValueForInit) {
+              hostForInit3.style.setProperty("content-visibility", prevCvValueForInit);
+            } else {
+              hostForInit3.style.removeProperty("content-visibility");
+            }
           }
         } catch {}
         hideBusy();
