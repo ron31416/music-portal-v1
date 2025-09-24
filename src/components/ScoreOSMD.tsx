@@ -503,7 +503,7 @@ function computePageStartIndices(bands: Band[], viewportH: number): number[] {
 declare global {
   interface Window { __OSMD_LOG_SUSPEND?: boolean }
 }
-/*
+
 function tick(timeoutMs = 600): Promise<void> {
   return new Promise((resolve) => {
     let done = false;
@@ -523,7 +523,6 @@ function tick(timeoutMs = 600): Promise<void> {
     try { setTimeout(finish, Math.max(300, timeoutMs)); } catch {}
   });
 }
-*/
 
 /* ---------- Component ---------- */
 
@@ -590,9 +589,8 @@ export default function ScoreOSMD({
     return Math.max(0.5, Math.min(3, raw));
   }, []);
 
-  // Apply current browser-derived zoom to OSMD (used right before render)
   const applyZoomFromRef = useCallback((): void => {
-    const osmd = osmdRef.current;
+    const osmd: any = osmdRef.current;
     if (!osmd) { return; }
 
     const z = zoomFactorRef.current;
@@ -600,10 +598,10 @@ export default function ScoreOSMD({
 
     const clamped = Math.max(0.5, Math.min(3, z));
 
-    // Thanks to the module augmentation, this is fully typed.
-    const current = osmd.Zoom;
-    if (current === undefined || Math.abs(current - clamped) > 0.001) {
-      osmd.Zoom = clamped;
+    // Be permissive: some builds may not have Zoom typed
+    const curr = (typeof osmd.Zoom === "number") ? osmd.Zoom : undefined;
+    if (curr === undefined || Math.abs(curr - clamped) > 0.001) {
+      try { osmd.Zoom = clamped; } catch {}
     }
   }, []);
 
@@ -1600,72 +1598,8 @@ export default function ScoreOSMD({
       if (kick !== null) { window.clearTimeout(kick); }
     };
   }, [computeZoomFactor]);
-/*
-  // Window resize fallback (debounced): ensure width/height changes trigger reflow
-  useEffect(() => {
-    let timer: number | null = null;
 
-    const onWinResize = () => {
-      if (!readyRef.current) { return; }
-      const outer = wrapRef.current;
-      if (!outer) { return; }
-
-      // Optional: log the event; non-blocking
-      void logStep("resize:fallback:event");
-
-      if (timer !== null) {
-        window.clearTimeout(timer);
-      }
-      timer = window.setTimeout(() => {
-        timer = null;
-        const wrap = wrapRef.current;
-        if (!wrap) { return; }
-
-        const currW = wrap.clientWidth;
-        const currH = wrap.clientHeight;
-
-        const widthChanged  = Math.abs(currW - handledWRef.current) >= 1;
-        const heightChanged = Math.abs(currH - handledHRef.current) >= 1;
-
-        // Trace what we saw
-        void logStep(`resize:fallback:tick w=${currW} h=${currH} ΔW=${widthChanged} ΔH=${heightChanged}`);
-
-        // If something is already running, queue exactly one follow-up and bail
-        if (reflowRunningRef.current || repagRunningRef.current || busyRef.current) {
-          if (widthChanged) {
-            reflowAgainRef.current = "width";
-            void logStep("resize:fallback:queued width (guard busy)");
-          } else if (heightChanged) {
-            reflowAgainRef.current = "height";
-            void logStep("resize:fallback:queued height (guard busy)");
-          }
-          return;
-        }
-
-        if (widthChanged) {
-          void logStep("resize:fallback:reflow(width)");
-          reflowFnRef.current(true);
-          handledWRef.current = currW;
-          handledHRef.current = currH;
-        } else if (heightChanged) {
-          void logStep("resize:fallback:repag(height)");
-          repagFnRef.current(true, false);
-          handledHRef.current = currH;
-        }
-      }, 150);
-    };
-
-    window.addEventListener("resize", onWinResize);
-    return () => {
-      window.removeEventListener("resize", onWinResize);
-      if (timer !== null) {
-        window.clearTimeout(timer);
-        timer = null;
-      }
-    };
-  }, []); 
-*/
-
+  
   /** Init OSMD */
   useEffect(function initOSMDEffect() {
     let resizeObs: ResizeObserver | null = null;
@@ -1675,7 +1609,7 @@ export default function ScoreOSMD({
       const outer = wrapRef.current;
       if (!host || !outer) { return; }
 
-      await logStep("BUILD: ScoreOSMD v10 @ reflow-skip-ap");
+      await logStep("BUILD: ScoreOSMD v10 @ tick+ap-gate");
 
       // Phase breadcrumb + first log
       outer.dataset.osmdPhase = "initOSMD";
@@ -1936,7 +1870,7 @@ export default function ScoreOSMD({
       } catch {}
 
       // --- STARVATION-PROOF MEASURE GATE ---
-      //await tick(); // macrotask — make room for timers/rAF
+      await tick(600); // yield one macrotask so rAF/timeouts can schedule reliably
 
       let viaMeasure: "ap" | "paint" | "timeout" | "bail" = "timeout";
       const waitStart = tnow();
@@ -2001,7 +1935,7 @@ export default function ScoreOSMD({
 
       pageIdxRef.current = 0;
       timeSection("apply:first", () => { applyPage(0); });
-      await logStep("apply:first");  // let first page paint before repagination
+      await ap("apply:first", 450);
 
       // Reveal host now that first page is applied
       try {
@@ -2024,74 +1958,78 @@ export default function ScoreOSMD({
       hideBusy();
 
       // --- ResizeObserver to trigger reflow/repag on size changes ---
-      resizeObs = new ResizeObserver(() => {
-        if (!readyRef.current) { return; }
+      if (typeof ResizeObserver !== "undefined") {
+        resizeObs = new ResizeObserver(() => {
+          if (!readyRef.current) { return; }
 
-        // debounce bursts
-        if (resizeTimerRef.current) {
-          window.clearTimeout(resizeTimerRef.current);
-        }
-        resizeTimerRef.current = window.setTimeout(() => {
-          resizeTimerRef.current = null;
-
-          const outerNow = wrapRef.current;
-          if (!outerNow) { return; }
-
-          const currW = outerNow.clientWidth;
-          const currH = outerNow.clientHeight;
-
-          const widthChangedSinceHandled =
-            handledWRef.current === -1 || Math.abs(currW - handledWRef.current) >= 1;
-          const heightChangedSinceHandled =
-            handledHRef.current === -1 || Math.abs(currH - handledHRef.current) >= 1;
-
-          // NEW: trace RO events and deltas
-          void logStep(`resize:ro w=${currW} h=${currH} handled=${handledWRef.current}×${handledHRef.current} ΔW=${widthChangedSinceHandled} ΔH=${heightChangedSinceHandled}`
-          );
-
-          // --- queue + return if not safe to run now (RO callback) ---
-          const kind =
-            widthChangedSinceHandled ? "width" :
-            (heightChangedSinceHandled ? "height" : "none");
-
-          if (kind === "none") {
-            return;
+          // debounce bursts
+          if (resizeTimerRef.current) {
+            window.clearTimeout(resizeTimerRef.current);
           }
+          resizeTimerRef.current = window.setTimeout(() => {
+            resizeTimerRef.current = null;
 
-          if (busyRef.current) {
-            reflowAgainRef.current = kind;
-            reflowQueuedCauseRef.current = `ro:guard-busy:${kind}`;
-            return;
-          }
-          if (reflowRunningRef.current) {
-            reflowAgainRef.current = kind;
-            reflowQueuedCauseRef.current = `ro:guard-reflow:${kind}`;
-            return;
-          }
-          if (repagRunningRef.current) {
-            reflowAgainRef.current = kind;
-            reflowQueuedCauseRef.current = `ro:guard-repag:${kind}`;
-            return;
-          }
+            const outerNow = wrapRef.current;
+            if (!outerNow) { return; }
 
-          (async () => {
-            if (widthChangedSinceHandled) {
-              // HORIZONTAL change → full OSMD reflow + reset to page 1
-              await reflowFnRef.current(true, "ro:width-change");
-              handledWRef.current = currW;
-              handledHRef.current = currH;
-            } else if (heightChangedSinceHandled) {
-              // VERTICAL-only change → cheap repagination (no spinner) + reset to page 1
-              repagFnRef.current(true /* resetToFirst */, false /* no spinner */);
-              handledHRef.current = currH;
-            } else {
+            const currW = outerNow.clientWidth;
+            const currH = outerNow.clientHeight;
+
+            const widthChangedSinceHandled =
+              handledWRef.current === -1 || Math.abs(currW - handledWRef.current) >= 1;
+            const heightChangedSinceHandled =
+              handledHRef.current === -1 || Math.abs(currH - handledHRef.current) >= 1;
+
+            // NEW: trace RO events and deltas
+            void logStep(`resize:ro w=${currW} h=${currH} handled=${handledWRef.current}×${handledHRef.current} ΔW=${widthChangedSinceHandled} ΔH=${heightChangedSinceHandled}`
+            );
+
+            // --- queue + return if not safe to run now (RO callback) ---
+            const kind =
+              widthChangedSinceHandled ? "width" :
+              (heightChangedSinceHandled ? "height" : "none");
+
+            if (kind === "none") {
               return;
             }
-          })();
-        }, 200);
-      });
 
-      resizeObs.observe(outer);
+            if (busyRef.current) {
+              reflowAgainRef.current = kind;
+              reflowQueuedCauseRef.current = `ro:guard-busy:${kind}`;
+              return;
+            }
+            if (reflowRunningRef.current) {
+              reflowAgainRef.current = kind;
+              reflowQueuedCauseRef.current = `ro:guard-reflow:${kind}`;
+              return;
+            }
+            if (repagRunningRef.current) {
+              reflowAgainRef.current = kind;
+              reflowQueuedCauseRef.current = `ro:guard-repag:${kind}`;
+              return;
+            }
+
+            (async () => {
+              if (widthChangedSinceHandled) {
+                // HORIZONTAL change → full OSMD reflow + reset to page 1
+                await reflowFnRef.current(true, "ro:width-change");
+                handledWRef.current = currW;
+                handledHRef.current = currH;
+              } else if (heightChangedSinceHandled) {
+                // VERTICAL-only change → cheap repagination (no spinner) + reset to page 1
+                repagFnRef.current(true /* resetToFirst */, false /* no spinner */);
+                handledHRef.current = currH;
+              } else {
+                return;
+              }
+            })();
+          }, 200);
+        });
+
+        try { resizeObs.observe(outer); } catch {}
+      } else {
+        void logStep("resize:observer-unavailable (skipping)");
+      }
  
     })().catch((err: unknown) => {
       hideBusy();
