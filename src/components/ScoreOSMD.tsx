@@ -503,10 +503,24 @@ function computePageStartIndices(bands: Band[], viewportH: number): number[] {
 declare global {
   interface Window { __OSMD_LOG_SUSPEND?: boolean }
 }
+function tick(timeoutMs = 600): Promise<void> {
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = () => { if (!done) { done = true; resolve(); } };
 
-/** One-tick macrotask yield */
-function tick(): Promise<void> {
-  return new Promise<void>((r) => setTimeout(r, 0));
+    // rAF path (works even when timers are throttled)
+    try { requestAnimationFrame(() => finish()); } catch {}
+
+    // MessageChannel path (microtask-ish, very reliable)
+    try {
+      const ch = new MessageChannel();
+      ch.port1.onmessage = finish;
+      ch.port2.postMessage(1);
+    } catch {}
+
+    // Ceiling so we *always* progress even if rAF/message misbehave
+    try { setTimeout(finish, Math.max(300, timeoutMs)); } catch {}
+  });
 }
 
 /* ---------- Component ---------- */
@@ -1920,7 +1934,7 @@ export default function ScoreOSMD({
       } catch {}
 
       // --- STARVATION-PROOF MEASURE GATE ---
-      await tick(); // macrotask — make room for timers/rAF
+      //await tick(); // macrotask — make room for timers/rAF
 
       let viaMeasure: "ap" | "paint" | "timeout" | "bail" = "timeout";
       const waitStart = tnow();
