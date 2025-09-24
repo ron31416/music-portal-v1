@@ -249,14 +249,14 @@ function getConsoleTop(): HTMLPreElement {
 /** Best-effort "wait until the browser can paint" (bounded) */
 async function waitForPaint(timeoutMs = 450): Promise<void> {
   try {
-    // macrotask so React commit happens
-    await new Promise<void>(r => window.setTimeout(r, 0));
-    // double-rAF (or timeout) so the frame has a chance to paint
+    await new Promise<void>(r => window.setTimeout(r, 0)); // macrotask
     if (document.visibilityState === 'visible') {
       await Promise.race([
-        new Promise<void>(r => window.requestAnimationFrame(() =>
-          window.requestAnimationFrame(() => r())
-        )),
+        new Promise<void>(r =>
+          window.requestAnimationFrame(() =>
+            window.requestAnimationFrame(() => r())
+          )
+        ),
         new Promise<void>(r => window.setTimeout(r, timeoutMs)),
       ]);
     }
@@ -1316,12 +1316,16 @@ export default function ScoreOSMD({
           } catch {}
         }, 2500);
 
+        void logStep("measure:scan:enter");
         const newBands =
           withUntransformedSvg(outer, (svg) =>
             timeSection("measure:scan", () => measureSystemsPx(outer, svg))
           ) ?? [];
+        void logStep(`measure:scan:exit bands=${newBands.length}`);
+
         outer.dataset.osmdPhase = `measure:${newBands.length}`;
         void logStep(`measured:${newBands.length}`);
+
         if (measureWatchdog !== null) {
           window.clearTimeout(measureWatchdog);
           measureWatchdog = null;
@@ -1852,39 +1856,21 @@ export default function ScoreOSMD({
       } catch (e) {
         void logStep(`MEASURE-ENTRY:exception:${(e as Error)?.message ?? e}`);
       }
-      // Beacons: prove event loop is alive
-      try {
-        Promise.resolve().then(() => void logStep("beacon:microtask"));
-        window.setTimeout(() => void logStep("beacon:setTimeout:100ms"), 100);
-        window.setTimeout(() => void logStep("beacon:setTimeout:1000ms"), 1000);
-        try { window.requestAnimationFrame(() => void logStep("beacon:raf")); } catch {}
-      } catch {}
-
-      // Never block here: try after-paint, but *always* fall through quickly.
-      let gate = "none";
-      await Promise.race([
-        ap("measure:await", 600).then(() => { gate = "afterpaint"; }),
-        new Promise<void>((r) => {
-          // MessageChannel often fires even if rAF is throttled
-          try {
-            const ch = new MessageChannel();
-            ch.port1.onmessage = () => r();
-            ch.port2.postMessage(1);
-          } catch {}
-          // Hard backstop in case everything is throttled
-          window.setTimeout(r, 500);
-        }).then(() => { if (gate === "none") { gate = "fallback"; } }),
-      ]);
-      void logStep(`measure:await:continue via=${gate}`);
+      
+      // Do not gate here — just yield one macrotask so post-render microtasks settle,
+      // then move straight into measuring (OSMD render was synchronous).
+      await new Promise<void>((r) => window.setTimeout(r, 0));
+      void logStep("measure:gate:skipped");
 
       // --- Measure systems + first pagination ---
-      // Force a layout flush so measurements are up-to-date
-      void outer.getBoundingClientRect();
+      void outer.getBoundingClientRect(); // layout flush
 
+      void logStep("measure:scan:enter");
       const bands =
         withUntransformedSvg(outer, (svg) =>
           timeSection("measure:scan", () => measureSystemsPx(outer, svg))
-      ) ?? [];
+        ) ?? [];
+      void logStep(`measure:scan:exit bands=${bands.length}`);
 
       if (bands.length === 0) {
         outer.dataset.osmdPhase = "measure:0:init-abort";
