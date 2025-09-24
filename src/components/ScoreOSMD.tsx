@@ -530,6 +530,21 @@ function hasZoomProp(o: unknown): o is { Zoom: number } {
   return typeof maybe.Zoom === "number";
 }
 
+async function awaitStableFrame(label: string, ceilingMs = 500): Promise<void> {
+  let via: "raf" | "timeout" = "timeout";
+  await Promise.race([
+    new Promise<void>((res) => {
+      try {
+        requestAnimationFrame(() =>
+          requestAnimationFrame(() => { via = "raf"; res(); })
+        );
+      } catch { /* falls back to timeout */ }
+    }),
+    new Promise<void>((res) => setTimeout(res, ceilingMs)),
+  ]);
+  void logStep(`${label}:frame via=${via}`);
+}
+
 /* ---------- Component ---------- */
 
 export default function ScoreOSMD({
@@ -1877,37 +1892,9 @@ export default function ScoreOSMD({
         try { requestAnimationFrame(() => void logStep("beacon:raf")); } catch {}
       } catch {}
 
-      // --- STARVATION-PROOF MEASURE GATE ---
-      await tick(600); // yield one macrotask so rAF/timeouts can schedule reliably
-
-      let viaMeasure: "ap" | "paint" | "timeout" | "bail" = "timeout";
-      const waitStart = tnow();
-
-      // Prefer a real paint if visible, but never wedge
-      const paintGate = (async () => {
-        try {
-          await waitForPaint(350);
-          if (viaMeasure === "timeout") { viaMeasure = "paint"; } // don't clobber ap/bail
-        } catch {}
-      })();
-
-      const apGate = ap("measure:start", 350).then(() => { viaMeasure = "ap"; });
-
-      const timeoutGate = new Promise<void>((r) => {
-        setTimeout(() => {
-          if (viaMeasure === "timeout") { viaMeasure = "timeout"; }
-          r();
-        }, 900);
-      });
-
-      // Hard ceiling — always progress, log that we bailed
-      const bailGate = new Promise<void>((r) =>
-        setTimeout(() => { viaMeasure = "bail"; r(); }, 1800)
-      );
-
-      await Promise.race([apGate, paintGate.then(() => undefined), timeoutGate, bailGate]);
-
-      void logStep(`measure:gate passed via=${viaMeasure} waited=${Math.round(tnow() - waitStart)}ms`);
+      // Keep the event loop breathing, but never wedge here.
+      await Promise.resolve();            // macrotask boundary after render
+      await awaitStableFrame("measure");  // double rAF or <=500ms timeout
 
       // --- Measure systems + first pagination ---
       const bands =
