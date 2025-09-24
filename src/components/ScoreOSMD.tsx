@@ -499,31 +499,6 @@ function computePageStartIndices(bands: Band[], viewportH: number): number[] {
   return starts.length ? starts : [0];
 }
 
-// ---- helpers for starvation-proof waits ----
-declare global {
-  interface Window { __OSMD_LOG_SUSPEND?: boolean }
-}
-
-function tick(timeoutMs = 600): Promise<void> {
-  return new Promise((resolve) => {
-    let done = false;
-    const finish = () => { if (!done) { done = true; resolve(); } };
-
-    // rAF path (works even when timers are throttled)
-    try { requestAnimationFrame(() => finish()); } catch {}
-
-    // MessageChannel path (microtask-ish, very reliable)
-    try {
-      const ch = new MessageChannel();
-      ch.port1.onmessage = finish;
-      ch.port2.postMessage(1);
-    } catch {}
-
-    // Ceiling so we *always* progress even if rAF/message misbehave
-    try { setTimeout(finish, Math.max(300, timeoutMs)); } catch {}
-  });
-}
-
 function hasZoomProp(o: unknown): o is { Zoom: number } {
   if (typeof o !== "object" || o === null) { return false; }
   const maybe = o as { Zoom?: unknown };
@@ -726,7 +701,7 @@ export default function ScoreOSMD({
     setBusy(false);
     setBusyMsg(DEFAULT_BUSY);
     await logStep("busy:off"); // or { paint: true } if you want it blocking
-  }, [DEFAULT_BUSY]);
+  }, []);
 
   // --- LOG SNAPSHOT (used by zoom/reflow debug logs) ---
   const fmtFlags = useCallback((): string => {
