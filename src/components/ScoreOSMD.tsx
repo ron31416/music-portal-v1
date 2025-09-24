@@ -1263,81 +1263,22 @@ export default function ScoreOSMD({
         void logStep(`render:finished (${renderMs}ms)`);
         void logStep(`[render] finished attempt#${attemptForRender} (${renderMs}ms)`);
 
-        // --------- BLOCK BRIEFLY AFTER RENDER (starvation-proof + probe) ---------
+        // --------- BLOCK BRIEFLY AFTER RENDER (zero-wedge version) ---------
         // IMPORTANT: keep host hidden until we have paginated/masked the first page.
         // We'll reveal in the resetToFirst/nearest branches below.
         outer.dataset.osmdPhase = "post-render-wait";
-        outer.dataset.osmdPostWaitAt = String(Date.now());               // stamp
+        outer.dataset.osmdPostWaitAt = String(Date.now());
         await logStep("post-render:enter");
 
-        // Safety: if we linger here, dump a snapshot once
-        let postWaitDumpArmed = true;
-        setTimeout(() => {
-          if (postWaitDumpArmed && outer.dataset.osmdPhase === "post-render-wait") {
-            const attempt = Number(outer.dataset.osmdZoomEntered || "0");
-            void logStep(`post-render:linger→dump attempt#${attempt}`);
-            dumpDebug();                                                 // snapshot bands/H/starts
-          }
-        }, 1400);
+        // Give the event loop two clean macrotasks, then move on regardless.
+        // (We intentionally do NOT wait on rAF/message here to avoid throttling/wedges.)
+        await new Promise<void>((r) => setTimeout(r, 0));
+        await new Promise<void>((r) => setTimeout(r, 0));
 
-        const tPost0 = tnow();
-        let via: "ap" | "timeout" | "bail" | "paint" | "force" = "timeout";
-
-        // Give the event loop a clean macrotask so timers/rAF can queue
-        await tick();
-
-        // Gates
-        const apGate = ap("post-render:block:reflow", 600).then(() => { via = "ap"; });
-        const timeoutGate = new Promise<void>((resolve) =>
-          setTimeout(() => {
-            if (via === "timeout") { via = "timeout"; }
-            resolve();
-          }, 450)
-        );
-        const paintGate = (async () => {
-          try {
-            await waitForPaint(350);
-            if (via === "timeout") { via = "paint"; } // don't clobber ap/bail
-          } catch (err) {
-            await logStep(`post-render:paintGate:err ${(err as Error)?.message ?? err}`);
-          }
-        })();
-
-        // Hard ceiling — always progress even if timers are clamped
-        const bailGate = new Promise<void>((r) =>
-          setTimeout(() => { via = "bail"; r(); }, 1800)
-        );
-
-        // Extra “phase ceiling”
-        const phaseCeiling = new Promise<void>((r) =>
-          setTimeout(() => {
-            if (outer.dataset.osmdPhase === "post-render-wait") {
-              via = (via === "ap" || via === "paint" || via === "timeout" || via === "bail") ? via : "force";
-            }
-            r();
-          }, 2300)
-        );
-
-        // Arm + wait (any win proceeds)
-        try {
-          await Promise.race([apGate, timeoutGate, paintGate.then(() => undefined), bailGate, phaseCeiling]);
-        } catch (err) {
-          await logStep(`post-render:race:THREW ${(err as Error)?.message ?? err}`);
-        }
-
-        // Probe: which gates actually settled? (non-blocking)
-        void Promise.allSettled([apGate, timeoutGate, paintGate, bailGate, phaseCeiling]).then((res) => {
-          try {
-            const tags = ["ap","timeout","paint","bail","phaseCeiling"];
-            const states = res.map((r,i)=>`${tags[i]}=${r.status}`);
-            logStep(`post-render:gates ${states.join(" ")}`);
-          } catch {}
-        });
-
-        outer.dataset.osmdPostWaitVia = via;
-        postWaitDumpArmed = false;           // don't double-dump
-        outer.dataset.osmdPostWaitMs  = String(Math.round(tnow() - tPost0));
-        await logStep(`post-render:block done via=${via} waited=${Math.round(tnow() - tPost0)}ms`);
+        // Stamp deterministic “skip” so logs show we advanced intentionally.
+        outer.dataset.osmdPostWaitVia = "skip";
+        outer.dataset.osmdPostWaitMs  = "0";
+        await logStep("post-render:block done via=skip");
 
         // mark the phase so the MutationObserver can react
         outer.dataset.osmdPhase = "render:painted";
