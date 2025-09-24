@@ -525,7 +525,7 @@ function tick(timeoutMs = 600): Promise<void> {
 }
 
 function hasZoomProp(o: unknown): o is { Zoom: number } {
-  if (typeof o !== "object" || o === null) return false;
+  if (typeof o !== "object" || o === null) { return false; }
   const maybe = o as { Zoom?: unknown };
   return typeof maybe.Zoom === "number";
 }
@@ -597,10 +597,10 @@ export default function ScoreOSMD({
 
   const applyZoomFromRef = useCallback((): void => {
     const inst = osmdRef.current;
-    if (!inst) return;
+    if (!inst) { return; }
 
     const z = zoomFactorRef.current;
-    if (typeof z !== "number" || !Number.isFinite(z)) return;
+    if (typeof z !== "number" || !Number.isFinite(z)) { return; }
 
     const clamped = Math.max(0.5, Math.min(3, z));
 
