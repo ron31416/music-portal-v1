@@ -2316,7 +2316,7 @@ export default function ScoreOSMD({
   // BUSY FAIL-SAFE: if the overlay lingers too long, force-clear and log once.
   // Light breadcrumb only — no need to block on paint here.
   useEffect(() => {
-    if (!busy) return;
+    if (!busy) { return; }
 
     const t = window.setTimeout(() => {
       const outer = wrapRef.current;
