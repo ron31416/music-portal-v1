@@ -1219,7 +1219,7 @@ export default function ScoreOSMD({
             }
           } catch {}
         }
-        
+
         // --------- HEAVY RENDER ---------
         const attemptForRender = Number(outer.dataset.osmdZoomEntered || "0");
         outer.dataset.osmdRenderAttempt = String(attemptForRender);
@@ -1253,25 +1253,53 @@ export default function ScoreOSMD({
         void logStep(`render:finished (${renderMs}ms)`);
         void logStep(`[render] finished attempt#${attemptForRender} (${renderMs}ms)`);
 
-        // --------- BLOCK BRIEFLY AFTER RENDER (but host still hidden) ---------
-        outer.dataset.osmdPhase = "post-render-wait";
-        const tPost0 = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
+        // --------- POST-RENDER DIAGNOSTICS (instrumented) ---------
+        outer.dataset.osmdPhase = "post-render:enter";
+        void logStep("post-render:enter");             // ➊ did we get here at all?
+
+        const tPost0 = tnow();
+
+        // Backstop: if literally nothing runs for 4s, shout once.
+        setTimeout(() => { void logStep("post-render:backstop:4s"); }, 4000);
+
+        // Beacons to prove the event loop is alive
+        setTimeout(() => { void logStep("post-render:tick:50ms"); }, 50);
+        setTimeout(() => { void logStep("post-render:tick:250ms"); }, 250);
+        setTimeout(() => { void logStep("post-render:tick:900ms"); }, 900);
+        try { requestAnimationFrame(() => void logStep("post-render:raf")); } catch {}
+        try {
+          const ch = new MessageChannel();
+          ch.port1.onmessage = () => void logStep("post-render:message");
+          ch.port2.postMessage(1);
+        } catch {}
+
+        // We’ll keep the original semantics: wait briefly for a paint, but *log every step*.
+        outer.dataset.osmdPhase = "post-render:arm";
+        void logStep("post-render:arm");
+
+        // Yield once so any pending layout/paint can queue rAF/timers
+        await new Promise<void>((r) => setTimeout(r, 0));
+        void logStep("post-render:yielded-macrotask");
+
         let via: "ap" | "timeout" = "timeout";
+        try {
+          void logStep("post-render:ap:arm");
+          const race = Promise.race([
+            ap("post-render:block", 600).then(() => { via = "ap"; }),
+            new Promise<void>((r) => setTimeout(r, 450)),        // timeout side
+          ]);
 
-        const race = Promise.race([
-          ap("post-render:block", 600).then(() => { via = "ap"; }),
-          new Promise<void>((r) => setTimeout(r, 450)),
-        ]);
+          const guard = new Promise<void>((r) =>
+            setTimeout(() => { void logStep("post-render:guard fired (900ms)"); r(); }, 900)
+          );
 
-        // Backstop so we log even if rAF/timers are starved right after render
-        const guard = new Promise<void>((r) =>
-          setTimeout(() => { void logStep("post-render:guard fired (900ms)"); r(); }, 900)
-        );
-
-        await Promise.race([race, guard]);
-
-        const now = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
-        void logStep(`post-render:block done via=${via} waited=${Math.round(now - tPost0)}ms`);
+          void logStep("post-render:awaiting");
+          await Promise.race([race, guard]);
+          void logStep(`post-render:done via=${via} waited=${Math.round(tnow() - tPost0)}ms`);
+        } catch (e) {
+          // If anything *synchronous* above throws, we’ll see it.
+          void logStep(`post-render:EXC ${(e as Error)?.message ?? String(e)}`);
+        }
 
         // --------- MEASURE ---------
         outer.dataset.osmdPhase = "measure";
