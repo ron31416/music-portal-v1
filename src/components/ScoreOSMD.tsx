@@ -1219,7 +1219,7 @@ export default function ScoreOSMD({
             }
           } catch {}
         }
-
+        
         // --------- HEAVY RENDER ---------
         const attemptForRender = Number(outer.dataset.osmdZoomEntered || "0");
         outer.dataset.osmdRenderAttempt = String(attemptForRender);
@@ -1239,12 +1239,16 @@ export default function ScoreOSMD({
           try { revealHost(); } catch {}
         }, 20000);
 
-        const t0 = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
-        await renderWithEffectiveWidth(outer, osmd);
-        const t1 = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
-        if (renderWd !== null) { window.clearTimeout(renderWd); renderWd = null; }
+        // HEAVY RENDER (timed) + guaranteed watchdog cleanup
+        const tRenderStart = tnow();
+        try {
+          await renderWithEffectiveWidth(outer, osmd);
+        } finally {
+          if (renderWd !== null) { window.clearTimeout(renderWd); renderWd = null; }
+        }
+        const tRenderEnd = tnow();
 
-        const renderMs = Math.round(t1 - t0);
+        const renderMs = Math.round(tRenderEnd - tRenderStart);
         outer.dataset.osmdRenderMs = String(renderMs);
         void logStep(`render:finished (${renderMs}ms)`);
         void logStep(`[render] finished attempt#${attemptForRender} (${renderMs}ms)`);
