@@ -499,6 +499,10 @@ function computePageStartIndices(bands: Band[], viewportH: number): number[] {
   return starts.length ? starts : [0];
 }
 
+function tick(): Promise<void> {
+  return new Promise<void>((r) => setTimeout(r, 0));
+}
+
 /* ---------- Component ---------- */
 
 export default function ScoreOSMD({
@@ -1890,16 +1894,35 @@ export default function ScoreOSMD({
         try { requestAnimationFrame(() => void logStep("beacon:raf")); } catch {}
       } catch {}
 
-      // Yield one macrotask so logs can paint before we await AP
-      await new Promise<void>((r) => setTimeout(r, 0));
+      // --- STARVATION-PROOF MEASURE GATE ---
+      await tick(); // macrotask — make room for timers/rAF
 
-      const tWait0 = tnow();
-      let viaMeasure: "ap" | "timeout" = "timeout";
-      await Promise.race([
-        ap("measure:start").then(() => { viaMeasure = "ap"; }),
-        new Promise<void>((r) => setTimeout(r, 2000)),
-      ]);
-      void logStep(`ap:measure:start:done via=${viaMeasure} waited=${Math.round(tnow() - tWait0)}ms`);
+      let viaMeasure: "ap" | "paint" | "timeout" | "bail" = "timeout";
+      const waitStart = tnow();
+
+      // Prefer a real paint if visible, but never wedge
+      const paintGate = (async () => {
+        try {
+          // Try your robust paint wait first (bounded)
+          await waitForPaint(350);
+          viaMeasure = "paint";
+        } catch {}
+      })();
+
+      const apGate = ap("measure:start", 350).then(() => { viaMeasure = "ap"; });
+
+      const timeoutGate = new Promise<void>((r) =>
+        setTimeout(() => { viaMeasure = viaMeasure === "timeout" ? "timeout" : viaMeasure; r(); }, 900)
+      );
+
+      // Hard ceiling — always progress, log that we bailed
+      const bailGate = new Promise<void>((r) =>
+        setTimeout(() => { viaMeasure = "bail"; r(); }, 1800)
+      );
+
+      await Promise.race([apGate, paintGate.then(() => undefined), timeoutGate, bailGate]);
+
+      void logStep(`measure:gate passed via=${viaMeasure} waited=${Math.round(tnow() - waitStart)}ms`);
 
       // --- Measure systems + first pagination ---
       const bands =
