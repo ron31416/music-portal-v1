@@ -1143,7 +1143,7 @@ export default function ScoreOSMD({
       const outer = wrapRef.current;
       const osmd  = osmdRef.current;
 
-      let measureWatchdog: ReturnType<typeof setTimeout> | null = null;
+      let measureWatchdog: number | null = null;
 
       if (outer) { void logStep("phase:reflowOnWidthChange"); }
       if (!outer || !osmd) {
@@ -1318,8 +1318,11 @@ export default function ScoreOSMD({
         void logStep("measure:start");
 
         // (light watchdog so logs continue even if something stalls)
-        if (measureWatchdog) { clearTimeout(measureWatchdog); measureWatchdog = null; }
-        measureWatchdog = setTimeout(() => {
+        if (measureWatchdog !== null) {
+          window.clearTimeout(measureWatchdog);
+          measureWatchdog = null;
+        }
+        measureWatchdog = window.setTimeout(() => {
           try {
             outer.dataset.osmdPhase = "measure:watchdog";
             void logStep("measure:watchdog:force-continue");
@@ -1332,7 +1335,10 @@ export default function ScoreOSMD({
           ) ?? [];
         outer.dataset.osmdPhase = `measure:${newBands.length}`;
         void logStep(`measured:${newBands.length}`);
-        if (measureWatchdog) { clearTimeout(measureWatchdog); measureWatchdog = null; }
+        if (measureWatchdog !== null) {
+          window.clearTimeout(measureWatchdog);
+          measureWatchdog = null;
+        }
 
         if (newBands.length === 0) {
           outer.dataset.osmdPhase = "measure:0:reflow-abort";
