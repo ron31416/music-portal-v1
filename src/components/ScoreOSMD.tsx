@@ -1503,7 +1503,7 @@ export default function ScoreOSMD({
         void logStep("reflow:finally:exit");
       }
     },
-    [applyPage, getPAGE_H, hideBusy, renderWithEffectiveWidth, fmtFlags]
+    [applyPage, getPAGE_H, hideBusy, renderWithEffectiveWidth, fmtFlags, dumpDebug]
   );
 
   // keep ref pointing to latest width-reflow callback
@@ -2159,7 +2159,7 @@ export default function ScoreOSMD({
         window.clearTimeout(resizeTimerRef.current);
         resizeTimerRef.current = null;
       }
-      
+
       if (osmdRef.current) {
         osmdRef.current?.clear();
         (osmdRef.current as { dispose?: () => void } | null)?.dispose?.();
