@@ -1450,8 +1450,7 @@ export default function ScoreOSMD({
         void logStep("reflow:finally:exit");
       }
     },
-    // NOTE: include dumpDebug so ESLint stops warning
-    [applyPage, getPAGE_H, hideBusy, renderWithEffectiveWidth, fmtFlags, dumpDebug]
+    [applyPage, getPAGE_H, hideBusy, renderWithEffectiveWidth, fmtFlags]
   );
 
   // keep ref pointing to latest width-reflow callback
