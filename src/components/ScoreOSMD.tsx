@@ -1274,13 +1274,21 @@ export default function ScoreOSMD({
         // Gates
         const apGate = ap("post-render:block", 600).then(() => { via = "ap"; });
 
-        const timeoutGate = new Promise<void>((r) =>
-          setTimeout(() => { if (via === "timeout") via = "timeout"; r(); }, 450)
+        const timeoutGate = new Promise<void>((resolve) =>
+          setTimeout(() => {
+            if (via === "timeout") { via = "timeout"; }
+            resolve();
+          }, 450)
         );
 
         // A small “real paint” wait helps when rAF is available but timers are sluggish
         const paintGate = (async () => {
-          try { await waitForPaint(350); if (via === "timeout") via = "paint"; } catch {}
+          try {
+            await waitForPaint(350);
+            if (via === "timeout") { via = "paint"; } // don't clobber ap/bail
+          } catch {
+            // intentionally ignore: paint waits can fail on hidden tabs / throttled timers
+          }
         })();
 
         // Hard ceiling — always progress even if timers are clamped
@@ -1920,15 +1928,18 @@ export default function ScoreOSMD({
       const paintGate = (async () => {
         try {
           await waitForPaint(350);
-          if (viaMeasure === "timeout") viaMeasure = "paint"; // don't clobber ap/bail
+          if (viaMeasure === "timeout") { viaMeasure = "paint"; } // don't clobber ap/bail
         } catch {}
       })();
 
       const apGate = ap("measure:start", 350).then(() => { viaMeasure = "ap"; });
 
-      const timeoutGate = new Promise<void>((r) =>
-        setTimeout(() => { if (viaMeasure === "timeout") viaMeasure = "timeout"; r(); }, 900)
-      );
+      const timeoutGate = new Promise<void>((r) => {
+        setTimeout(() => {
+          if (viaMeasure === "timeout") { viaMeasure = "timeout"; }
+          r();
+        }, 900);
+      });
 
       // Hard ceiling — always progress, log that we bailed
       const bailGate = new Promise<void>((r) =>
