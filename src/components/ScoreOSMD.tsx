@@ -717,6 +717,38 @@ export default function ScoreOSMD({
     ].join(" ");
   }, []);
 
+  // --- MINIMAL TELEMETRY (host/CV/visibility + SVG presence) ---
+  const dumpTelemetry = useCallback((label: string): void => {
+    const outer = wrapRef.current;
+    const host  = hostRef.current;
+    const svg   = outer ? getSvg(outer) : null;
+
+    const phase = outer?.dataset.osmdPhase ?? "(none)";
+    const hostHiddenAttr = outer?.dataset.osmdHostHidden ?? "(unset)";
+    const busyAttr = outer?.dataset.osmdBusy ?? "(unset)";
+    const overlayShown = !!overlayRef.current && overlayRef.current.style.display !== "none";
+
+    let cvInline = "(unset)", cvComputed = "(n/a)", visInline = "(unset)", visComputed = "(n/a)";
+    try {
+      if (host) {
+        const cs = getComputedStyle(host);
+        cvInline = host.style.getPropertyValue("content-visibility") || "(unset)";
+        cvComputed = cs.getPropertyValue("content-visibility") || "(n/a)";
+        visInline = host.style.visibility || "(unset)";
+        visComputed = cs.visibility || "(n/a)";
+      }
+    } catch {}
+
+    const gCount = svg ? svg.querySelectorAll("g").length : 0;
+
+    void logStep(
+      `[telemetry] ${label} ` +
+      `phase=${phase} host=${Boolean(host)} svg=${Boolean(svg)} g#=${gCount} ` +
+      `busy=${busyRef.current} busyAttr=${busyAttr} overlayShown=${overlayShown} hostHidden=${hostHiddenAttr} ` +
+      `cv:inline=${cvInline} cv:computed=${cvComputed} vis:inline=${visInline} vis:computed=${visComputed}`
+    );
+  }, []);
+
   // ---- callback ref proxies (used by queued window.setTimeouts) ----
   const reflowFnRef = useRef<
     (resetToFirst?: boolean, reflowCause?: string) => void | Promise<void>
@@ -1831,6 +1863,7 @@ export default function ScoreOSMD({
       outer.dataset.osmdRenderEndedAt = String(Date.now());
       void logStep(`render:finished ${renderMs}ms`);
       void logStep(`[render] finished attempt#${attemptForRender} (${renderMs}ms)`);
+      dumpTelemetry("post-render:init");
 
       // --------- BLOCK BRIEFLY AFTER RENDER (but host still hidden) ---------
       outer.dataset.osmdPhase = "post-render-wait";
@@ -1911,12 +1944,16 @@ export default function ScoreOSMD({
       // --- Measure systems + first pagination ---
       void outer.getBoundingClientRect(); // layout flush
 
+      dumpTelemetry("pre-measure:init");
       void logStep("measure:scan:enter");
+
       const bands =
         withUntransformedSvg(outer, (svg) =>
           timeSection("measure:scan", () => measureSystemsPx(outer, svg))
         ) ?? [];
+        
       void logStep(`measure:scan:exit bands=${bands.length}`);
+      dumpTelemetry(`post-measure:init bands=${bands.length}`);
 
       if (bands.length === 0) {
         outer.dataset.osmdPhase = "measure:0:init-abort";
