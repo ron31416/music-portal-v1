@@ -410,18 +410,25 @@ function measureSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[]
   interface Box { top: number; bottom: number; height: number; width: number }
   const boxes: Box[] = [];
 
+  let totalG = 0, skippedSmallH = 0, skippedSmallW = 0, badGeom = 0;
+    
   for (const root of roots) {
     for (const g of Array.from(root.querySelectorAll<SVGGElement>("g"))) {
+      totalG++;  // ← ADD: count every <g> we inspect
+
       const r = g.getBoundingClientRect();
       if (!Number.isFinite(r.top) || !Number.isFinite(r.height) || !Number.isFinite(r.width)) {
+        badGeom++;
         continue;
       }
+
       // Looser thresholds so very narrow measures on phones are still captured
       const MIN_H = 2;   // was 8 → 4 → 2 (capture ultra-thin groups)
       const MIN_W = 8;   // was 40 → 16 → 8
-      if (r.height < MIN_H || r.width < MIN_W) {
-        continue;
-      }
+
+      if (r.height < MIN_H) { skippedSmallH++; continue; }
+      if (r.width  < MIN_W) { skippedSmallW++; continue; }
+
       boxes.push({
         top: r.top - hostTop,
         bottom: r.bottom - hostTop,
@@ -445,6 +452,13 @@ function measureSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[]
       last.height = last.bottom - last.top;
     }
   }
+
+  void logStep(
+  `measure:scan:stats totalG=${totalG} boxes=${boxes.length} ` +
+  `skippedH=${skippedSmallH} skippedW=${skippedSmallW} badGeom=${badGeom} ` +
+  `bands=${bands.length}`
+  );
+
   return bands;
 }
 
@@ -747,6 +761,42 @@ export default function ScoreOSMD({
       `busy=${busyRef.current} busyAttr=${busyAttr} overlayShown=${overlayShown} hostHidden=${hostHiddenAttr} ` +
       `cv:inline=${cvInline} cv:computed=${cvComputed} vis:inline=${visInline} vis:computed=${visComputed}`
     );
+  }, []);
+
+  // --- GEOMETRY SNAPSHOT (outer/host/svg sizes, viewBox, layoutW, zf) ---
+  const dumpGeom = useCallback((label: string): void => {
+    const outer = wrapRef.current;
+    const host  = hostRef.current;
+    const svg   = outer ? getSvg(outer) : null;
+
+    const ow = outer?.clientWidth ?? 0;
+    const oh = outer?.clientHeight ?? 0;
+
+    const hb = host ? host.getBoundingClientRect() : null;
+    const sb = svg ? svg.getBoundingClientRect() : null;
+
+    const viewBox = svg?.getAttribute("viewBox") || "(none)";
+    const layoutW = outer?.dataset.osmdLayoutW ?? "(unset)";
+    const zf      = outer?.dataset.osmdZf ?? String(zoomFactorRef.current ?? 1);
+
+    void logStep(
+      `[geom] ${label} ` +
+      `outer=${ow}x${oh} ` +
+      `host=${hb ? `${Math.round(hb.width)}x${Math.round(hb.height)}` : "(none)"} ` +
+      `svgRect=${sb ? `${Math.round(sb.width)}x${Math.round(sb.height)}` : "(none)"} ` +
+      `viewBox=${viewBox} layoutW=${layoutW} zf=${zf}`
+    );
+  }, []);
+
+  // --- BAND SNAPSHOT (count + a few heights to spot odd clustering) ---
+  const dumpBands = useCallback((label: string, bands: Band[]): void => {
+    const n = bands.length;
+    const sample = bands.slice(0, Math.min(5, n))
+                        .map(b => Math.round(b.height))
+                        .join(",");
+    const firstTop = n ? Math.round(bands[0]!.top) : -1;
+    const lastBot  = n ? Math.round(bands[n - 1]!.bottom) : -1;
+    void logStep(`[bands] ${label} n=${n} sampleH=[${sample}] firstTop=${firstTop} lastBottom=${lastBot}`);
   }, []);
 
   // ---- callback ref proxies (used by queued window.setTimeouts) ----
@@ -1081,6 +1131,7 @@ export default function ScoreOSMD({
     },
     [pageHeight, topGutterPx, bottomPeekPad, getPAGE_H]
   );
+  
   // --- HEIGHT-ONLY REPAGINATION (no OSMD re-init) ---
   const recomputePaginationHeightOnly = useCallback(
     (resetToFirst: boolean = false, withSpinner: boolean = false): void => {
@@ -1307,6 +1358,9 @@ export default function ScoreOSMD({
         void logStep(`render:finished (${renderMs}ms)`);
         void logStep(`[render] finished attempt#${attemptForRender} (${renderMs}ms)`);
 
+        dumpTelemetry("post-render:init");
+        dumpGeom("post-render:init");
+
         // ---- Make subtree layoutable but still not visible (no flash), then force layout ----
         outer.dataset.osmdPhase = "post-render-prepare";
         try {
@@ -1348,6 +1402,9 @@ export default function ScoreOSMD({
         outer.dataset.osmdPhase = "measure";
         void logStep("measure:start");
 
+        dumpTelemetry("pre-measure:reflow");
+        dumpGeom("pre-measure:reflow");
+
         // (light watchdog so logs continue even if something stalls)
         if (measureWatchdog !== null) {
           window.clearTimeout(measureWatchdog);
@@ -1362,11 +1419,27 @@ export default function ScoreOSMD({
 
         outer.dataset.osmdPhase = "measure:scan"
         void logStep("measure:scan:enter");
+
+        // PROBE A (reflow)
+        try {
+          const host = hostRef.current!;
+          const cs = getComputedStyle(host);
+          void logStep(
+            `pre-measure(reflow): outerH=${outer.clientHeight} pageH=${getPAGE_H(outer)} ` +
+            `host.vis=${cs.visibility} host.cv=${cs.getPropertyValue('content-visibility')} ` +
+            `host.contain=${cs.getPropertyValue('contain')}`
+          );
+        } catch {}
+
         const newBands =
           withUntransformedSvg(outer, (svg) =>
             timeSection("measure:scan", () => measureSystemsPx(outer, svg))
           ) ?? [];
         void logStep(`measure:scan:exit bands=${newBands.length}`);
+
+        dumpTelemetry(`post-measure:reflow bands=${newBands.length}`);
+        dumpGeom("post-measure:reflow");
+        dumpBands("reflow", newBands);
 
         outer.dataset.osmdPhase = `measure:${newBands.length}`;
         void logStep(`measured:${newBands.length}`);
@@ -1379,6 +1452,26 @@ export default function ScoreOSMD({
         if (newBands.length === 0) {
           outer.dataset.osmdPhase = "measure:0:reflow-abort";
           void logStep("reflow: measured 0 bands — abort");
+
+          try {
+            const svg = getSvg(outer);
+            if (svg) {
+              const vb = svg.getAttribute('viewBox') || '(none)';
+              const sr = svg.getBoundingClientRect();
+              const gs = Array.from(svg.querySelectorAll('g'))
+                .slice(0, 10)
+                .map((g, i) => {
+                  const r = (g as SVGGElement).getBoundingClientRect();
+                  return `g${i}:{w:${Math.round(r.width)},h:${Math.round(r.height)}}`;
+                }).join(' ');
+              void logStep(`bands==0: svgRect=${Math.round(sr.width)}x${Math.round(sr.height)} viewBox=${vb} sample=[${gs}]`);
+            } else {
+              void logStep('bands==0: svg missing');
+            }
+          } catch (e) {
+            void logStep(`bands==0: probe EXC ${(e as Error)?.message ?? e}`);
+          }
+
           // reveal host before returning so user isn't stuck
           revealHost();
           return;
@@ -1399,6 +1492,9 @@ export default function ScoreOSMD({
         pageStartsRef.current = newStarts;
         outer.dataset.osmdPhase = `starts:${newStarts.length}`;
         void logStep(`starts:${newStarts.length}`);
+        void logStep(`starts:vals ${newStarts.slice(0, 12).join(",")}`);
+
+        dumpTelemetry(`post-starts:reflow pages=${newStarts.length}`);
 
         if (newStarts.length === 0) {
           outer.dataset.osmdPhase = "reset:first:empty-starts";
@@ -1945,7 +2041,19 @@ export default function ScoreOSMD({
       void outer.getBoundingClientRect(); // layout flush
 
       dumpTelemetry("pre-measure:init");
+      dumpGeom("pre-measure:init");
       void logStep("measure:scan:enter");
+
+      // PROBE A (init)
+      try {
+        const host = hostRef.current!;
+        const cs = getComputedStyle(host);
+        void logStep(
+          `pre-measure(init): outerH=${outer.clientHeight} pageH=${getPAGE_H(outer)} ` +
+          `host.vis=${cs.visibility} host.cv=${cs.getPropertyValue('content-visibility')} ` +
+          `host.contain=${cs.getPropertyValue('contain')}`
+        );
+      } catch {}
 
       const bands =
         withUntransformedSvg(outer, (svg) =>
@@ -1954,10 +2062,34 @@ export default function ScoreOSMD({
         
       void logStep(`measure:scan:exit bands=${bands.length}`);
       dumpTelemetry(`post-measure:init bands=${bands.length}`);
+      dumpBands("init", bands);
 
       if (bands.length === 0) {
+        dumpTelemetry("bands==0 before-abort:init");
+        dumpGeom("bands==0 before-abort:init");
+
         outer.dataset.osmdPhase = "measure:0:init-abort";
         void logStep("measure:init:0 — aborting first pagination");
+
+        try {
+          const svg = getSvg(outer);
+          if (svg) {
+            const vb = svg.getAttribute('viewBox') || '(none)';
+            const sr = svg.getBoundingClientRect();
+            const gs = Array.from(svg.querySelectorAll('g'))
+              .slice(0, 10)
+              .map((g, i) => {
+                const r = (g as SVGGElement).getBoundingClientRect();
+                return `g${i}:{w:${Math.round(r.width)},h:${Math.round(r.height)}}`;
+              }).join(' ');
+            void logStep(`bands==0: svgRect=${Math.round(sr.width)}x${Math.round(sr.height)} viewBox=${vb} sample=[${gs}]`);
+          } else {
+            void logStep('bands==0: svg missing');
+          }
+        } catch (e) {
+          void logStep(`bands==0: probe EXC ${(e as Error)?.message ?? e}`);
+        }
+
         // restore host visibility before returning
         try {
           const hostForInit3 = hostRef.current;
