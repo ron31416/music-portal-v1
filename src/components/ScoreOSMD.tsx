@@ -1961,31 +1961,12 @@ export default function ScoreOSMD({
       void logStep(`[render] finished attempt#${attemptForRender} (${renderMs}ms)`);
       dumpTelemetry("post-render:init");
 
-      // --------- BLOCK BRIEFLY AFTER RENDER (but host still hidden) ---------
-      outer.dataset.osmdPhase = "post-render-wait";
-      const tPost0 = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
-      let via: "ap" | "timeout" = "timeout";
-
-      const race = Promise.race([
-        ap("post-render:block:init", 600).then(() => { via = "ap"; }),
-        new Promise<void>((r) => window.setTimeout(r, 450)),
-      ]);
-
-      // Backstop so we log even if rAF/timers are starved right after render
-      const guard = new Promise<void>((r) =>
-        window.setTimeout(() => { void logStep("post-render:guard fired (900ms)"); r(); }, 900)
-      );
-
-      await Promise.race([race, guard]);
-
-      const now = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
-      outer.dataset.osmdPostWaitVia = via;
-      outer.dataset.osmdPostWaitMs  = String(Math.round(now - tPost0));
-      void logStep(`post-render:block done via=${via} waited=${Math.round(now - tPost0)}ms`);
-
-      // mark the phase so the MutationObserver can react
+      // --------- SKIP POST-RENDER WAIT (large scores can throttle timers) ---------
       outer.dataset.osmdPhase = "render:painted";
+      void logStep("post-render:skip-wait");
 
+      // Tiny macrotask yield so the UI can breathe before we measure
+      await new Promise<void>((r) => window.setTimeout(r, 0));
       try {
         const canvasCount = outer.querySelectorAll("canvas").length;
         void logStep(`purge:probe canvas#=${canvasCount}`);
