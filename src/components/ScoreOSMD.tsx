@@ -1958,15 +1958,23 @@ export default function ScoreOSMD({
       outer.dataset.osmdRenderMs = String(renderMs);
       outer.dataset.osmdRenderEndedAt = String(Date.now());
       void logStep(`render:finished ${renderMs}ms`);
+
       void logStep(`[render] finished attempt#${attemptForRender} (${renderMs}ms)`);
       dumpTelemetry("post-render:init");
 
       // --------- SKIP POST-RENDER WAIT (large scores can throttle timers) ---------
       outer.dataset.osmdPhase = "render:painted";
-      void logStep("post-render:skip-wait");
+      void logStep("post-render:skip-wait (no-yield)");
 
-      // Tiny macrotask yield so the UI can breathe before we measure
-      await new Promise<void>((r) => window.setTimeout(r, 0));
+      // Force a synchronous layout flush so SVG geometry is available immediately
+      try {
+        const hostX = hostRef.current;
+        void hostX?.getBoundingClientRect();
+        // Touch scrollWidth too, just to be sure we trigger a layout read
+        // (safe on all browsers; no-op if null)
+        void (hostX as HTMLElement | null)?.scrollWidth;
+      } catch {}
+
       try {
         const canvasCount = outer.querySelectorAll("canvas").length;
         void logStep(`purge:probe canvas#=${canvasCount}`);
