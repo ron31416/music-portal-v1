@@ -1600,7 +1600,7 @@ export default function ScoreOSMD({
         void logStep("reflow:finally:exit");
       }
     },
-    [applyPage, getPAGE_H, hideBusy, renderWithEffectiveWidth, fmtFlags]
+    [applyPage, getPAGE_H, hideBusy, renderWithEffectiveWidth, fmtFlags, dumpTelemetry, dumpGeom, dumpBands]
   );
 
   // keep ref pointing to latest width-reflow callback
