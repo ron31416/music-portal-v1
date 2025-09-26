@@ -709,9 +709,11 @@ export default function ScoreOSMD({
           } catch {}
         }
 
-// Give the browser one macrotask tick to breathe before we return.
-        // (If layout wants to flush, this lets timers/rAF queue up.)
-        await new Promise<void>((r) => window.setTimeout(r, 0));
+        // Do NOT await a macrotask here — timers can be throttled offscreen.
+        // If anything needs a tick, we still get a microtask.
+        queueMicrotask(() => probeLine("[probe] rWEW: microtask tick (post-render)", outer));
+        // no await here
+
       } catch (e) {
         void logStep(`render:error ${(e as Error)?.message ?? e}`);
         throw e;
@@ -734,6 +736,16 @@ export default function ScoreOSMD({
           svg.style.willChange = "auto"
         }
       }
+
+      // PROBE: confirm function exit and event-loop liveness (do NOT await)
+      probeLine("[probe] rWEW: exit()", outer);
+      try {
+        setTimeout(
+          () => probeLine("[probe] rWEW: setTimeout(0) fired (post-exit)", outer),
+          0
+        );
+      } catch {}
+
       // --- END ---
     },
     [applyZoomFromRef]
