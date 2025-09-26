@@ -1901,6 +1901,7 @@ export default function ScoreOSMD({
         outer.dataset.osmdHostHidden = "1"
       }
 
+/*
       // ⬇️ IMPORTANT: remove rAF/setTimeout gating; call render immediately.
       outer.dataset.osmdPhase = "render"
       await logStep("render:start")
@@ -1929,6 +1930,29 @@ export default function ScoreOSMD({
       // --------- SKIP POST-RENDER WAIT (large scores can throttle timers) ---------
       outer.dataset.osmdPhase = "render:painted"
       void logStep("post-render:skip-wait (no-yield)")
+*/
+
+outer.dataset.osmdPhase = "render";
+await logStep("render:start");
+
+// Use current browser zoom -> OSMD.Zoom
+zoomFactorRef.current = computeZoomFactor();
+applyZoomFromRef();
+
+// Render synchronously into the visible host at effective width
+renderWithEffectiveWidth(outer, osmd);
+await logStep("render:finished");
+
+// Allow one bounded paint, then continue
+const apLocal = makeAfterPaint(outer); // safe local helper
+outer.dataset.osmdPhase = "post-render-await";
+await Promise.race([
+  apLocal("post-render", 450),
+  new Promise<void>(r => window.setTimeout(r, 450)),
+]);
+
+outer.dataset.osmdPhase = "render:painted";
+await logStep("render:painted");
 
       // --------- Make subtree layoutable (same idea as reflow path) ---------
       outer.dataset.osmdPhase = "post-render-prepare"
