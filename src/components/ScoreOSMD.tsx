@@ -1989,81 +1989,83 @@ export default function ScoreOSMD({
       await logStep("fonts:ready");
 
       // --- First render ---
-      const attemptForRender = Number(outer.dataset.osmdZoomEntered || "0");
-      outer.dataset.osmdRenderAttempt = String(attemptForRender);
-      void logStep(`[render] starting attempt#${attemptForRender}`);
+      const attemptForRender = Number(outer.dataset.osmdZoomEntered || "0")
+      outer.dataset.osmdRenderAttempt = String(attemptForRender)
+      void logStep(`[render] starting attempt#${attemptForRender}`)
 
       // Prevent giant paint during render: hide host, keep layout available
-      const hostForInit = hostRef.current;
-      const prevVisForInit = hostForInit?.style.visibility ?? "";
-
+      const hostForInit = hostRef.current
+      const prevVisForInit = hostForInit?.style.visibility ?? ""
       const prevCvValueForInit: string =
-        hostForInit ? hostForInit.style.getPropertyValue("content-visibility") : "";
+        hostForInit ? hostForInit.style.getPropertyValue("content-visibility") : ""
 
       if (hostForInit) {
-        hostForInit.style.setProperty("content-visibility", "hidden");
-        hostForInit.style.visibility = "hidden";
-        outer.dataset.osmdHostHidden = "1";
+        hostForInit.style.setProperty("content-visibility", "hidden")
+        hostForInit.style.visibility = "hidden"
+        outer.dataset.osmdHostHidden = "1"
       }
-      
-      outer.dataset.osmdPhase = "render";
-      await logStep("render:start");        // flush before heavy sync render
-      await new Promise<void>(r => window.setTimeout(r, 0)); // macrotask yield
-      await ap("render:yield");             // rAF/message tick
 
-      const t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
-      await renderWithEffectiveWidth(outer, osmd);
-     
-      outer.dataset.osmdPhase = "render:return";      // shows up in Elements tab immediately
-      probeLine("[probe] render returned", wrapRef.current);        // bypasses our log queue entirely
+      // ⬇️ IMPORTANT: remove rAF/setTimeout gating; call render immediately.
+      outer.dataset.osmdPhase = "render"
+      await logStep("render:start")
 
-      const t1 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
-      const renderMs = Math.round(t1 - t0);
-      outer.dataset.osmdRenderMs = String(renderMs);
-      outer.dataset.osmdRenderEndedAt = String(Date.now());
-      void logStep(`render:finished ${renderMs}ms`);
+      // prove the loop is alive before we call into OSMD (no awaits)
+      try { queueMicrotask(() => probeLine("[probe] init:microtask before render", outer)) } catch {}
+      try {
+        const ch = new MessageChannel()
+        ch.port1.onmessage = () => probeLine("[probe] init:MessageChannel before render", outer)
+        ch.port2.postMessage(1)
+      } catch {}
 
-      void logStep(`[render] finished attempt#${attemptForRender} (${renderMs}ms)`);
-      dumpTelemetry("post-render:init");
+      // time the call; renderWithEffectiveWidth writes its own probes inside
+      const t0 = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now()
+      await renderWithEffectiveWidth(outer, osmd)
+      outer.dataset.osmdPhase = "render:return"
+      probeLine("[probe] render returned", outer)
+      const t1 = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now()
+      const renderMs = Math.round(t1 - t0)
+      outer.dataset.osmdRenderMs = String(renderMs)
+      outer.dataset.osmdRenderEndedAt = String(Date.now())
+      void logStep(`render:finished ${renderMs}ms`)
+      void logStep(`[render] finished attempt#${attemptForRender} (${renderMs}ms)`)
+      dumpTelemetry("post-render:init")
 
       // --------- SKIP POST-RENDER WAIT (large scores can throttle timers) ---------
-      outer.dataset.osmdPhase = "render:painted";
-      void logStep("post-render:skip-wait (no-yield)");
+      outer.dataset.osmdPhase = "render:painted"
+      void logStep("post-render:skip-wait (no-yield)")
 
       // --------- Make subtree layoutable (same idea as reflow path) ---------
-      outer.dataset.osmdPhase = "post-render-prepare";
+      outer.dataset.osmdPhase = "post-render-prepare"
       try {
-        const hostX = hostRef.current;
+        const hostX = hostRef.current
         if (hostX) {
-          // allow layout/geometry while still preventing any flash
-          hostX.style.setProperty("content-visibility", "auto"); // was 'hidden'
-          hostX.style.visibility = "hidden";
-
-          // Force a synchronous layout so the <svg> has real geometry now
-          void hostX.getBoundingClientRect().width;
-          void hostX.scrollWidth;
+          hostX.style.setProperty("content-visibility", "auto") // was 'hidden'
+          hostX.style.visibility = "hidden"                      // keep hidden for now
+          void hostX.getBoundingClientRect().width              // force layout
+          void hostX.scrollWidth
         }
       } catch {}
 
       try {
-        const canvasCount = outer.querySelectorAll("canvas").length;
-        void logStep(`purge:probe canvas#=${canvasCount}`);
-
+        const canvasCount = outer.querySelectorAll("canvas").length
+        void logStep(`purge:probe canvas#=${canvasCount}`)
         if (canvasCount > 0) {
-          void logStep("purge:queued");
+          void logStep("purge:queued")
           window.setTimeout(() => {
-            try { purgeWebGL(outer); void logStep("purge:done"); }
-            catch (e) { void logStep(`purge:error:${(e as Error)?.message ?? e}`); }
-          }, 0);
-        } else {
-          void logStep("purge:skip(no-canvas)");
-        }
+            try { purgeWebGL(outer); void logStep("purge:done") }
+            catch (e) {
+              const err: Error = e instanceof Error ? e : new Error(String(e))
+              void logStep(`purge:error:${err.message}`)
+            }
+          }, 0)
+        } else void logStep("purge:skip(no-canvas)")
 
-        outer.dataset.osmdPhase = "measure";
-        void logStep("measure:start");
-        void logStep("diag: measure:start (no gate)");
+        outer.dataset.osmdPhase = "measure"
+        void logStep("measure:start")
+        void logStep("diag: measure:start (no gate)")
       } catch (e) {
-        void logStep(`MEASURE-ENTRY:exception:${(e as Error)?.message ?? e}`);
+        const err: Error = e instanceof Error ? e : new Error(String(e))
+        void logStep(`MEASURE-ENTRY:exception:${err.message}`)
       }
       
       // Measure immediately — no gate at all.
