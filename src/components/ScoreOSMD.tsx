@@ -659,11 +659,20 @@ export default function ScoreOSMD({
         host.style.width = `${layoutW}px`;
         void host.getBoundingClientRect(); // ensure style applies this frame
 
+        // NEW: let the spinner/host actually paint before we block the main thread
+        await waitForPaint(300);
+
         await logStep(
           `render:call w=${layoutW} hostW=${hostW} zf=${zf.toFixed(3)} osmd.Zoom=${osmd.Zoom ?? "n/a"}`
         );
 
+        // NEW: mark + measure the synchronous render
+        try { performance.mark("osmd-render:start"); } catch {}
         osmd.render(); // synchronous & heavy
+        try {
+          performance.mark("osmd-render:end");
+          performance.measure("osmd-render", "osmd-render:start", "osmd-render:end");
+        } catch {}
       } catch (e) {
         void logStep(`render:error ${(e as Error)?.message ?? e}`);
         throw e;
