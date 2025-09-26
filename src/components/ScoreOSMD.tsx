@@ -617,7 +617,7 @@ export default function ScoreOSMD({
   const renderWithEffectiveWidth = useCallback(
     async (outer: HTMLDivElement, osmd: OpenSheetMusicDisplay): Promise<void> => {
       const host = hostRef.current
-      if (!host || !outer) return
+      if (!host || !outer) { return }
 
       // Use our zoom source of truth
       applyZoomFromRef()
@@ -691,7 +691,7 @@ export default function ScoreOSMD({
             (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now()
           probeLine("[probe] BEGIN osmd.render()", outer)
 
-          if (!DEFER_RENDER) osmd.render()
+          if (!DEFER_RENDER) { osmd.render() }
           else {
             // timer-based debug path to *prove* the event loop runs
             probeLine("[probe] DEFERRING osmd.render() via setTimeout(0)", outer)
