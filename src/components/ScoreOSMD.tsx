@@ -614,51 +614,67 @@ export default function ScoreOSMD({
     }
   }, []);
 
-  const renderWithEffectiveWidth = useCallback((
+// --- WIDTH-SANDBOXED RENDER (safe) ---
+const renderWithEffectiveWidth = useCallback(
+  async (
     outer: HTMLDivElement,
     osmd: OpenSheetMusicDisplay
-  ): void => {
+  ): Promise<void> => {
     const host = hostRef.current;
-    if (!host || !outer) { return; }
+    if (!host || !outer) return;
 
-    // Recalculate zoom and push it into OSMD so glyph sizes change.
-    let zf = computeZoomFactor();
-    if (!Number.isFinite(zf) || zf <= 0) { zf = 1; }
-    zf = Math.min(3, Math.max(0.5, zf));
-    zoomFactorRef.current = zf;
+    // Use our zoom source of truth
     applyZoomFromRef();
+    const zf = Math.min(3, Math.max(0.5, zoomFactorRef.current || 1));
 
-    // Compute the layout width in *unzoomed* CSS px.
     const hostW = Math.max(1, Math.floor(outer.clientWidth));
-    const layoutW = Math.max(1, Math.floor(hostW / zf));
+    const rawLayoutW = Math.max(1, Math.floor(hostW / zf));
 
-    // Breadcrumbs for debugging/HUD (optional)
+    // Tiny nudge helps avoid width-specific edge cases
+    const widthNudge = -1;
+    const MAX_LAYOUT_W = 1600;
+    const MIN_LAYOUT_W = 320;
+    const layoutW = Math.max(MIN_LAYOUT_W, Math.min(rawLayoutW + widthNudge, MAX_LAYOUT_W));
+
     outer.dataset.osmdZf = String(zf);
     outer.dataset.osmdLayoutW = String(layoutW);
 
-    // Temporarily control width during render, then restore.
-    const prevLeft  = host.style.left;
-    const prevRight = host.style.right;
-    const prevWidth = host.style.width;
-
-    host.style.left = "0";
-    host.style.right = "auto";
-    host.style.width = `${layoutW}px`;
-
-    // Ensure the new width is observed this frame.
-    void host.getBoundingClientRect();
+    // Heartbeat so you can see progress even if render is slow
+    const startedAt = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
+    const beat = window.setInterval(() => {
+      const now = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
+      const secs = Math.round((now - startedAt) / 1000);
+      void logStep(`render:heartbeat +${secs}s`);
+    }, 1000);
 
     try {
-      osmd.render(); // synchronous & heavy, but proven stable here
-    } finally {
-      host.style.left  = prevLeft;
-      host.style.right = prevRight;
-      host.style.width = prevWidth;
-    }
+      // Style sandbox: let width drive layout just for this call
+      host.style.left = "0";
+      host.style.right = "auto";
+      host.style.width = `${layoutW}px`;
+      void host.getBoundingClientRect(); // ensure style applies this frame
 
-    const svg = getSvg(outer);
-    if (svg) { svg.style.transformOrigin = "top left"; }
-  }, [computeZoomFactor, applyZoomFromRef]);
+      await logStep(
+        `render:call w=${layoutW} hostW=${hostW} zf=${zf.toFixed(3)} osmd.Zoom=${osmd.Zoom ?? "n/a"}`
+      );
+
+      osmd.render(); // synchronous & heavy
+    } catch (e) {
+      void logStep(`render:error ${(e as Error)?.message ?? e}`);
+      throw e;
+    } finally {
+      try { window.clearInterval(beat); } catch {}
+      // Always restore styles
+      host.style.left  = "";
+      host.style.right = "";
+      host.style.width = "";
+      const svg = getSvg(outer);
+      if (svg) svg.style.transformOrigin = "top left";
+    }
+  },
+  [applyZoomFromRef]
+);
+
 
   const hideBusy = useCallback(async () => {
     setBusy(false);
@@ -1282,77 +1298,42 @@ export default function ScoreOSMD({
         }
 
         // --------- HEAVY RENDER ---------
-        const attemptForRender = Number(outer.dataset.osmdZoomEntered || "0");
-        outer.dataset.osmdRenderAttempt = String(attemptForRender);
-        await logStep(`[render] starting attempt#${attemptForRender}`);
 
-        outer.dataset.osmdPhase = "render";
-        await logStep("render:start");
-        await new Promise<void>((r) => window.setTimeout(r, 0)); // macrotask
-        await ap("render:yield");                         // one paint opportunity
+// --- First render (v50 gating) ---
+const attemptForRender = Number(outer.dataset.osmdZoomEntered || "0");
+outer.dataset.osmdRenderAttempt = String(attemptForRender);
+await logStep(`[render] starting attempt#${attemptForRender}`);
 
-        // Render watchdog
-        let renderWd: number | null = window.setTimeout(() => {
-          outer.dataset.osmdPhase = "render:watchdog";
-          void logStep("render:watchdog:force-finalize");
-          hideBusy();
-          reflowRunningRef.current = false;
-          try { revealHost(); } catch {}
-        }, 20000);
+outer.dataset.osmdPhase = "render";
+await logStep("render:start");                        // flush log before heavy render
+await new Promise<void>(r => setTimeout(r, 0));       // macrotask yield
+await ap("render:yield");                              // rAF/message paint opportunity
 
-        // HEAVY RENDER (timed) + guaranteed watchdog cleanup
-        const tRenderStart = tnow();
-        try {
-          await renderWithEffectiveWidth(outer, osmd);
-        } finally {
-          if (renderWd !== null) { window.clearTimeout(renderWd); renderWd = null; }
-        }
-        const tRenderEnd = tnow();
+const t0 = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
+await renderWithEffectiveWidth(outer, osmd);          // <- must be the v50 wrapper
+const t1 = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
+const renderMs = Math.round(t1 - t0);
+outer.dataset.osmdRenderMs = String(renderMs);
+await logStep(`render:finished ${renderMs}ms`);
+await logStep(`[render] finished attempt#${attemptForRender} (${renderMs}ms)`);
 
-        const renderMs = Math.round(tRenderEnd - tRenderStart);
-        outer.dataset.osmdRenderMs = String(renderMs);
-        void logStep(`render:finished (${renderMs}ms)`);
-        void logStep(`[render] finished attempt#${attemptForRender} (${renderMs}ms)`);
+// Post-render: mark when first paint happens (non-blocking), then gate measure
+outer.dataset.osmdPhase = "post-render-continue";
+void logStep("afterPaint:nonblocking");
+ap("post-render").then(() => {
+  if (wrapRef.current !== outer) return;
+  outer.dataset.osmdPhase = "render:painted";
+  void logStep("render:painted");
+});
 
-        dumpTelemetry("post-render:init");
-        dumpGeom("post-render:init");
-
-        // ---- Make subtree layoutable but still not visible (no flash), then force layout ----
-        outer.dataset.osmdPhase = "post-render-prepare";
-        try {
-          const hostX = hostRef.current;
-          if (hostX) {
-            hostX.style.removeProperty("content-visibility");
-            hostX.style.visibility = "hidden";                     // keep hidden for now
-            // Force a synchronous layout so the <svg> has real geometry for measurement:
-            void hostX.getBoundingClientRect().width;
-            void hostX.scrollWidth;
-          }
-        } catch {}
-
-        // Two macrotask yields (do NOT wait for a paint)
-        await new Promise<void>(r => setTimeout(r, 0));
-        await new Promise<void>(r => setTimeout(r, 0));
-
-        outer.dataset.osmdPhase = "render:painted";
-
-        // --------- PURGE STRAY CANVASES (same as init; non-blocking) ---------
-        try {
-          const canvasCount = outer.querySelectorAll("canvas").length;
-          void logStep(`purge:probe canvas#=${canvasCount}`);
-
-          if (canvasCount > 0) {
-            void logStep("purge:queued");
-            window.setTimeout(() => {
-              try { purgeWebGL(outer); void logStep("purge:done"); }
-              catch (e) { void logStep(`purge:error:${(e as Error)?.message ?? e}`); }
-            }, 0);
-         } else {
-            void logStep("purge:skip(no-canvas)");
-          }
-        } catch (e) {
-          void logStep(`purge:probe:EXC ${(e as Error)?.message ?? String(e)}`);
-        }
+// Yield once, then wait briefly for a paint signal before measuring
+await new Promise<void>(r => setTimeout(r, 0));
+let via: "ap" | "timeout" = "timeout";
+await Promise.race([
+  ap("measure:start").then(() => { via = "ap"; }),
+  new Promise<void>(r => setTimeout(r, 2000)),
+]);
+await logStep(`ap:measure:start:done via=${via}`);
         
         // --------- MEASURE ---------
         outer.dataset.osmdPhase = "measure";
