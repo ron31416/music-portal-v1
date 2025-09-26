@@ -540,6 +540,15 @@ function perfLastMs(name: string) {
   return Math.round(e[e.length - 1]?.duration || 0);
 }
 
+function shouldPauseAfterRender(): boolean {
+  try {
+    return new URLSearchParams(window.location.search).has("pauseAfterRender");
+  } catch {
+    return false;
+  }
+}
+
+
 /* ---------- Component ---------- */
 
 export default function ScoreOSMD({
@@ -1317,6 +1326,11 @@ const reflowOnWidthChange = useCallback(
       perfMeasure('zoom-render','zoom-render:start','zoom-render:end');
       await logStep(`[perf] zoom-render ms=${perfLastMs('zoom-render')}`);
 
+      if (shouldPauseAfterRender()) {
+        await logStep("DBG: pause after zoom-render");
+        debugger;
+      }
+
       const t1 = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
       if (renderWd !== null) { window.clearTimeout(renderWd); renderWd = null; }
 
@@ -1847,6 +1861,12 @@ const reflowOnWidthChange = useCallback(
       outer.dataset.osmdRenderEndedAt = String(Date.now())
       void logStep(`render:finished ${renderMs}ms`)
       void logStep(`[render] finished attempt#${attemptForRender} (${renderMs}ms)`)
+      
+      if (shouldPauseAfterRender()) {
+        await logStep("DBG: pause after init-render");
+        debugger;
+      }
+
       dumpTelemetry("post-render:init")
 
       // --------- SKIP POST-RENDER WAIT (large scores can throttle timers) ---------
