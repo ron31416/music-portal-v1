@@ -1966,13 +1966,19 @@ export default function ScoreOSMD({
       outer.dataset.osmdPhase = "render:painted";
       void logStep("post-render:skip-wait (no-yield)");
 
-      // Force a synchronous layout flush so SVG geometry is available immediately
+      // --------- Make subtree layoutable (same idea as reflow path) ---------
+      outer.dataset.osmdPhase = "post-render-prepare";
       try {
         const hostX = hostRef.current;
-        void hostX?.getBoundingClientRect();
-        // Touch scrollWidth too, just to be sure we trigger a layout read
-        // (safe on all browsers; no-op if null)
-        void (hostX as HTMLElement | null)?.scrollWidth;
+        if (hostX) {
+          // allow layout/geometry while still preventing any flash
+          hostX.style.setProperty("content-visibility", "auto"); // was 'hidden'
+          hostX.style.visibility = "hidden";
+
+          // Force a synchronous layout so the <svg> has real geometry now
+          void hostX.getBoundingClientRect().width;
+          void hostX.scrollWidth;
+        }
       } catch {}
 
       try {
