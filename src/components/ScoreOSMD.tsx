@@ -1309,22 +1309,33 @@ const reflowOnWidthChange = useCallback(
         await new Promise<void>((r) => setTimeout(r, 0));
       } catch {}
 
-      // --------- MEASURE ---------
+      // --------- MEASURE (non-blocking log + immediate probe) ---------
       outer.dataset.osmdPhase = "measure";
-      await logStep("measure:start");
 
+      // Arm the watchdog **before** any awaits, so it fires even if logs stall
       if (measureWatchdog) { clearTimeout(measureWatchdog); measureWatchdog = null; }
       measureWatchdog = setTimeout(() => {
         try {
           outer.dataset.osmdPhase = "measure:watchdog";
+          probeLine("[probe] measure:watchdog fired", outer);
           void logStep("measure:watchdog:force-continue");
         } catch {}
       }, 2500);
 
+      // Bypass the queued logger so we always see *something* immediately
+      probeLine("[probe] measure:start", outer);
+
+      // Do not await the logger here (avoid blocking on the queue)
+      void logStep("measure:start");
+
+      // (optional breadcrumb before the heavy scan)
+      void logStep("measure:scan:enter");
+
       const newBands =
         withUntransformedSvg(outer, (svg) => measureSystemsPx(outer, svg)) ?? [];
       outer.dataset.osmdPhase = `measure:${newBands.length}`;
-      await logStep(`measured:${newBands.length}`);
+      void logStep(`measured:${newBands.length}`);
+
       if (measureWatchdog) { clearTimeout(measureWatchdog); measureWatchdog = null; }
 
       if (newBands.length === 0) {
