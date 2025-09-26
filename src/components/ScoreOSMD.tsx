@@ -558,6 +558,10 @@ export default function ScoreOSMD({
   const overlayRef = useRef<HTMLDivElement | null>(null);
   const [busyMsg, setBusyMsg] = useState<string>(DEFAULT_BUSY);
 
+  // Spinner ownership + fail-safe timer (used by zoom reflow)
+  const spinnerOwnerRef = useRef<symbol | null>(null);
+  const spinnerFailSafeRef = useRef<number | null>(null);
+
   // Debounce + reentry guards for resize/viewport changes
   const busyRef = useRef(false);
   useEffect(() => { busyRef.current = busy; }, [busy]);
@@ -1188,355 +1192,261 @@ export default function ScoreOSMD({
   }, [recomputePaginationHeightOnly]);
 
 
-  const reflowOnWidthChange = useCallback(
-    async function reflowOnWidthChange(resetToFirst = false, reflowCause: string = "unknown") {
-      const outer = wrapRef.current;
-      const osmd  = osmdRef.current;
+// --- WIDTH REFLOW (OSMD render at new width) ---
+const reflowOnWidthChange = useCallback(
+  async function reflowOnWidthChange(resetToFirst = false) {
+    const outer = wrapRef.current;
+    const osmd  = osmdRef.current;
 
-      let measureWatchdog: number | null = null;
+    let measureWatchdog: ReturnType<typeof setTimeout> | null = null;
 
-      if (outer) { void logStep("phase:reflowOnWidthChange"); }
-      if (!outer || !osmd) {
-        const o = outer ? "1" : "0";
-        const m = osmd ? "1" : "0";
-        if (outer) { void logStep(`reflow:early-bail outer=${o} osmd=${m} cause=${reflowCause}`); }
-        return;
+    if (outer) { void logStep("phase:reflowOnWidthChange"); }
+    if (!outer || !osmd) {
+      const o = outer ? "1" : "0";
+      const m = osmd ? "1" : "0";
+      if (outer) { void logStep(`reflow:early-bail outer=${o} osmd=${m}`); }
+      return;
+    }
+
+    // Always show spinner for width reflow
+    const wantSpinner = true;
+    void logStep(
+      `reflow:enter reset=${resetToFirst} spin=${wantSpinner} running=${reflowRunningRef.current} repag=${repagRunningRef.current} busy=${busyRef.current}`
+    );
+
+    const attempt = Number(outer.dataset.osmdZoomAttempt || "0");
+    outer.dataset.osmdZoomEntered   = String(attempt);
+    outer.dataset.osmdZoomEnteredAt = String(Date.now());
+    void logStep(`[reflow] ENTER attempt#${attempt} • ${fmtFlags()}`);
+
+    const ap = makeAfterPaint(outer);
+
+    if (reflowRunningRef.current) {
+      reflowAgainRef.current = "width";
+      outer.dataset.osmdZoomQueued   = String(attempt);
+      outer.dataset.osmdZoomQueueWhy = "reflowRunning";
+      outer.dataset.osmdZoomQueuedAt = String(Date.now());
+      void logStep(`[reflow] QUEUED attempt#${attempt} • why=reflowRunning • ${fmtFlags()}`);
+      return;
+    }
+    reflowRunningRef.current = true;
+
+    let wd: number | null = null;
+    wd = window.setInterval(() => {
+      const el = wrapRef.current;
+      void logStep(`watchdog: phase=${el?.dataset.osmdPhase ?? "unset"}`);
+    }, 2000);
+
+    outer.dataset.osmdPhase = "start";
+    const run = (Number(outer.dataset.osmdRun || "0") + 1);
+    outer.dataset.osmdRun = String(run);
+    void logStep(`reflow:start#${run} reset=${resetToFirst} spin=${wantSpinner}`);
+
+    try {
+      void logStep(
+        `reflow:start reset=${resetToFirst} spin=${wantSpinner} dpr=${window.devicePixelRatio} w=${outer.clientWidth} h=${outer.clientHeight}`
+      );
+      outer.dataset.osmdPhase = "pre-spinner";
+
+      // Spinner on (with unconditional fail-safe)
+      {
+        const token = Symbol("spin");
+        spinnerOwnerRef.current = token;
+
+        setBusyMsg(DEFAULT_BUSY);
+        setBusy(true);
+
+        outer.dataset.osmdPhase = "spinner-requested";
+        void logStep("spinner-requested");
+
+        // Commit overlay
+        await new Promise<void>((r) => setTimeout(r, 0));
+        if (document.visibilityState === "visible") {
+          await Promise.race([
+            new Promise<void>((r) => requestAnimationFrame(() => r())),
+            new Promise<void>((r) => setTimeout(r, 120)),
+          ]);
+        }
+
+        outer.dataset.osmdPhase = "spinner-on";
+        void logStep("spinner-on");
+
+        // Hard fail-safe (always clears even if ownership is stale)
+        if (spinnerFailSafeRef.current) { window.clearTimeout(spinnerFailSafeRef.current); }
+        spinnerFailSafeRef.current = window.setTimeout(() => {
+          spinnerOwnerRef.current = null;
+          hideBusy();
+          void logStep("spinner:failsafe-clear:unconditional");
+        }, 9000);
       }
 
-      outer.dataset.osmdReflowCause = reflowCause;
+      // --------- HEAVY RENDER ---------
+      const attemptForRender = Number(outer.dataset.osmdZoomEntered || "0");
+      outer.dataset.osmdRenderAttempt = String(attemptForRender);
+      await logStep(`[render] starting attempt#${attemptForRender}`);
 
-      const hostForReflow = hostRef.current;
-      const prevVisForReflow = hostForReflow?.style.visibility ?? "";
-      // Track previous content-visibility too (value + priority, no `any`)
-      const prevCvValueForReflow: string =
-        hostForReflow ? hostForReflow.style.getPropertyValue("content-visibility") : "";
+      outer.dataset.osmdPhase = "render";
+      await logStep("render:start");
+      await new Promise<void>((r) => setTimeout(r, 0)); // macrotask
+      await ap("render:yield");                         // one paint opportunity
 
-      const revealHost = () => {
-        try {
-          if (hostForReflow) {
-            if (prevCvValueForReflow) {
-              hostForReflow.style.setProperty("content-visibility", prevCvValueForReflow || "");
-            } else {
-              hostForReflow.style.removeProperty("content-visibility");
-            }
-            hostForReflow.style.visibility = prevVisForReflow || "visible";
-            outer.dataset.osmdHostHidden = "0";
-          }
-        } catch {}
-      };
-      void logStep(`reflow:enter reset=${resetToFirst} running=${reflowRunningRef.current} repag=${repagRunningRef.current} busy=${busyRef.current} cause=${reflowCause}`);
-
-      // Increment and stamp the zoom attempt ID
-      const nextAttempt = (Number(outer.dataset.osmdZoomAttempt || "0") + 1);
-      outer.dataset.osmdZoomAttempt = String(nextAttempt);
-
-      const attempt = nextAttempt;
-      outer.dataset.osmdZoomEntered   = String(attempt);
-      outer.dataset.osmdZoomEnteredAt = String(Date.now());
-      void logStep(`[reflow] ENTER attempt#${attempt} cause=${reflowCause} • ${fmtFlags()}`);
-
-      const ap = makeAfterPaint(outer);
-
-      if (reflowRunningRef.current) {
-        reflowAgainRef.current = "width";
-        reflowQueuedCauseRef.current = reflowCause;              // remember why we queued
-        outer.dataset.osmdZoomQueued   = String(attempt);
-        outer.dataset.osmdZoomQueueWhy = "reflowRunning";
-        outer.dataset.osmdReflowCauseQueued = reflowCause;
-        outer.dataset.osmdZoomQueuedAt = String(Date.now());
-        void logStep(`[reflow] QUEUED attempt#${attempt} cause=${reflowCause} • why=reflowRunning • ${fmtFlags()}`);
-        return;
-      }
-      reflowRunningRef.current = true;
-
-      let wd: number | null = null;
-      wd = window.setInterval(() => {
-        const el = wrapRef.current;
-        void logStep(`watchdog: phase=${el?.dataset.osmdPhase ?? "unset"}`);
-      }, 2000);
-
-      outer.dataset.osmdPhase = "start";
-      const run = (Number(outer.dataset.osmdRun || "0") + 1);
-      outer.dataset.osmdRun = String(run);
-      void logStep(`reflow:start#${run} reset=${resetToFirst}`);
-
-      try {
-        void logStep(
-          `reflow:start reset=${resetToFirst} dpr=${window.devicePixelRatio} w=${outer.clientWidth} h=${outer.clientHeight}`
-        );
-        outer.dataset.osmdPhase = "pre-spinner";
-
-        // Spinner on (with unconditional fail-safe)
-        {
-          setBusyMsg(DEFAULT_BUSY);
-          setBusy(true);
-
-          outer.dataset.osmdPhase = "spinner-requested";
-          void logStep("spinner-requested");
-
-          // Commit overlay
-          await new Promise<void>((r) => window.setTimeout(r, 0));
-          if (document.visibilityState === "visible") {
-            await Promise.race([
-              new Promise<void>((r) => window.requestAnimationFrame(() => r())),
-              new Promise<void>((r) => window.setTimeout(r, 120)),
-            ]);
-          }
-
-          outer.dataset.osmdPhase = "spinner-on";
-          void logStep("spinner-on");
-
-          // Hide host once spinner is visible (prevents flash) — no content-visibility here
-          try {
-            if (hostForReflow) {
-              hostForReflow.style.removeProperty("content-visibility");
-              hostForReflow.style.visibility = "hidden";
-              outer.dataset.osmdHostHidden = "1";
-              void logStep("host:hidden(before-render)");
-            }
-          } catch {}
-        }
-
-        // --------- HEAVY RENDER ---------
-        const attemptForRender = Number(outer.dataset.osmdZoomEntered || "0");
-        outer.dataset.osmdRenderAttempt = String(attemptForRender);
-        await logStep(`[render] starting attempt#${attemptForRender}`);
-
-        outer.dataset.osmdPhase = "render";
-        await logStep("render:start");                        // flush log before heavy render
-        await new Promise<void>(r => setTimeout(r, 0));       // macrotask yield
-        await ap("render:yield");                              // rAF/message paint opportunity
-
-        const t0 = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
-        await renderWithEffectiveWidth(outer, osmd);          // <- must be the v50 wrapper
-        const t1 = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
-        const renderMs = Math.round(t1 - t0);
-        outer.dataset.osmdRenderMs = String(renderMs);
-        await logStep(`render:finished ${renderMs}ms`);
-        await logStep(`[render] finished attempt#${attemptForRender} (${renderMs}ms)`);
-
-        // Post-render: mark when first paint happens (non-blocking), then gate measure
-        outer.dataset.osmdPhase = "post-render-continue";
-        void logStep("afterPaint:nonblocking");
-        ap("post-render").then(() => {
-          if (wrapRef.current !== outer) { return; }
-          outer.dataset.osmdPhase = "render:painted";
-          void logStep("render:painted");
-        });
-
-        // Yield once, then wait briefly for a paint signal before measuring
-        await new Promise<void>(r => setTimeout(r, 0));
-        let via: "ap" | "timeout" = "timeout";
-        await Promise.race([
-          ap("measure:start").then(() => { via = "ap"; }),
-          new Promise<void>(r => setTimeout(r, 2000)),
-        ]);
-        await logStep(`ap:measure:start:done via=${via}`);
-        
-        // --------- MEASURE ---------
-        outer.dataset.osmdPhase = "measure";
-        void logStep("measure:start");
-
-        dumpTelemetry("pre-measure:reflow");
-        dumpGeom("pre-measure:reflow");
-
-        // (light watchdog so logs continue even if something stalls)
-        if (measureWatchdog !== null) {
-          window.clearTimeout(measureWatchdog);
-          measureWatchdog = null;
-        }
-        measureWatchdog = window.setTimeout(() => {
-          try {
-            outer.dataset.osmdPhase = "measure:watchdog";
-            void logStep("measure:watchdog:force-continue");
-          } catch {}
-        }, 2500);
-
-        outer.dataset.osmdPhase = "measure:scan"
-        void logStep("measure:scan:enter");
-
-        // PROBE A (reflow)
-        try {
-          const host = hostRef.current!;
-          const cs = getComputedStyle(host);
-          void logStep(
-            `pre-measure(reflow): outerH=${outer.clientHeight} pageH=${getPAGE_H(outer)} ` +
-            `host.vis=${cs.visibility} host.cv=${cs.getPropertyValue('content-visibility')} ` +
-            `host.contain=${cs.getPropertyValue('contain')}`
-          );
-        } catch {}
-
-        const newBands =
-          withUntransformedSvg(outer, (svg) =>
-            timeSection("measure:scan", () => measureSystemsPx(outer, svg))
-          ) ?? [];
-        void logStep(`measure:scan:exit bands=${newBands.length}`);
-
-        dumpTelemetry(`post-measure:reflow bands=${newBands.length}`);
-        dumpGeom("post-measure:reflow");
-        dumpBands("reflow", newBands);
-
-        outer.dataset.osmdPhase = `measure:${newBands.length}`;
-        void logStep(`measured:${newBands.length}`);
-
-        if (measureWatchdog !== null) {
-          window.clearTimeout(measureWatchdog);
-          measureWatchdog = null;
-        }
-
-        if (newBands.length === 0) {
-          outer.dataset.osmdPhase = "measure:0:reflow-abort";
-          void logStep("reflow: measured 0 bands — abort");
-
-          try {
-            const svg = getSvg(outer);
-            if (svg) {
-              const vb = svg.getAttribute('viewBox') || '(none)';
-              const sr = svg.getBoundingClientRect();
-              const gs = Array.from(svg.querySelectorAll('g'))
-                .slice(0, 10)
-                .map((g, i) => {
-                  const r = (g as SVGGElement).getBoundingClientRect();
-                  return `g${i}:{w:${Math.round(r.width)},h:${Math.round(r.height)}}`;
-                }).join(' ');
-              void logStep(`bands==0: svgRect=${Math.round(sr.width)}x${Math.round(sr.height)} viewBox=${vb} sample=[${gs}]`);
-            } else {
-              void logStep('bands==0: svg missing');
-            }
-          } catch (e) {
-            void logStep(`bands==0: probe EXC ${(e as Error)?.message ?? e}`);
-          }
-
-          // reveal host before returning so user isn't stuck
-          revealHost();
-          return;
-        }
-
-        const prevStarts = pageStartsRef.current.slice();
-        const prevPage   = pageIdxRef.current;
-        const oldTopIdx  = prevStarts.length
-          ? (prevStarts[Math.max(0, Math.min(prevPage, prevStarts.length - 1))] ?? 0)
-          : 0;
-
-        bandsRef.current = newBands;
-
-        const newStarts = timeSection(
-          "starts:compute",
-          () => computePageStartIndices(newBands, getPAGE_H(outer))
-        );
-        pageStartsRef.current = newStarts;
-        outer.dataset.osmdPhase = `starts:${newStarts.length}`;
-        void logStep(`starts:${newStarts.length}`);
-        void logStep(`starts:vals ${newStarts.slice(0, 12).join(",")}`);
-
-        dumpTelemetry(`post-starts:reflow pages=${newStarts.length}`);
-
-        if (newStarts.length === 0) {
-          outer.dataset.osmdPhase = "reset:first:empty-starts";
-          applyPage(0);
-          await ap("apply:first-empty");
-          applyPage(0);
-          outer.dataset.osmdPhase = "reset:first:done";
-          void logStep("reset:first:done");
-          revealHost();
-          return;
-        }
-
-        if (resetToFirst) {
-          outer.dataset.osmdPhase = "reset:first";
-          void logStep("reset:first");
-          timeSection("apply:first", () => { applyPage(0); });
-          await Promise.race([ap("apply:first"), new Promise<void>((r)=>window.setTimeout(r,400))]);
-          timeSection("apply:first", () => { applyPage(0); });
-          outer.dataset.osmdPhase = "reset:first:done";
-          void logStep("reset:first:done");
-          stampHandledDims(outer);
-          // Reveal now that first page is applied & masked
-          try {
-            revealHost();
-            await logStep("host:revealed(after-apply:first)");
-          } catch {}
-          return;
-        }
-
-        let nearest = 0, best = Number.POSITIVE_INFINITY;
-        for (let i = 0; i < newStarts.length; i++) {
-          const s = newStarts[i];
-          if (s === undefined) { continue; }
-          const d = Math.abs(s - oldTopIdx);
-          if (d < best) { best = d; nearest = i; }
-        }
-
-        outer.dataset.osmdPhase = `apply-page:${nearest}`;
-        void logStep(`apply-page:${nearest}`);
-
-        timeSection("apply:nearest", () => { applyPage(nearest); });
-        await Promise.race([
-          ap("apply:nearest"),
-          new Promise<void>((res) => window.setTimeout(res, 700)),
-        ]);
-        timeSection("apply:nearest", () => { applyPage(nearest); });
-
-        outer.dataset.osmdPhase = `applied:${nearest}`;
-        void logStep(`applied:${nearest}`);
-        void logStep(`reflow:done page=${nearest + 1}/${newStarts.length} bands=${newBands.length}`);
-        stampHandledDims(outer);
-
-        // Reveal (idempotent): now that page is applied & masked
-        try {
-          revealHost();
-          outer.dataset.osmdHostHidden = "0";
-          await logStep("host:revealed(after-apply:nearest)");
-        } catch {}
-
-      } finally {
-        await logStep("reflow:finally:enter", { paint: true });
-
-        // Safety: ensure host is not left hidden on any path
-        try { 
-          const nowOuter = wrapRef.current;
-          if (nowOuter && nowOuter.dataset.osmdHostHidden !== "0") {
-            revealHost();
-          }
-        } catch {}
-
-        outer.dataset.osmdZoomExited   = outer.dataset.osmdZoomEntered || "0";
-        outer.dataset.osmdZoomExitedAt = String(Date.now());
-        void logStep(`[reflow] EXIT attempt#${outer.dataset.osmdZoomExited} • ${fmtFlags()}`);
-
-        outer.dataset.osmdPhase = "finally";
-        void logStep("finally");
-
-        if (wd !== null) { window.clearInterval(wd); wd = null; }
-
+      // Render watchdog
+      let renderWd: number | null = window.setTimeout(() => {
+        outer.dataset.osmdPhase = "render:watchdog";
+        void logStep("render:watchdog:force-finalize");
+        spinnerOwnerRef.current = null;
         hideBusy();
-        void logStep("reflow:finally:hid-spinner");
-
         reflowRunningRef.current = false;
+      }, 20000);
 
-        const queued = reflowAgainRef.current;
-        const cause  = reflowQueuedCauseRef.current || "drain:after-reflow";
-        reflowAgainRef.current = "none";
-        reflowQueuedCauseRef.current = "";
-        void logStep(`reflow:finally:queued=${queued} cause=${cause}`);
+      const t0 = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
+      await renderWithEffectiveWidth(outer, osmd);
+      const t1 = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
+      if (renderWd !== null) { window.clearTimeout(renderWd); renderWd = null; }
 
-        if (queued === "width") {
-          window.setTimeout(() => {
-            void logStep(`reflow:finally:drain:width cause=${cause}`);
-            reflowFnRef.current(true, cause);
-          }, 0);
-        } else if (queued === "height") {
-          window.setTimeout(() => {
-            void logStep("reflow:finally:drain:height");
-            repagFnRef.current(true, false);
-          }, 0);
-        }
+      const renderMs = Math.round(t1 - t0);
+      outer.dataset.osmdRenderMs = String(renderMs);
+      await logStep(`render:finished (${renderMs}ms)`);
+      await logStep(`[render] finished attempt#${attemptForRender} (${renderMs}ms)`);
 
-        void logStep("reflow:finally:exit");
+      // --------- CRUCIAL: BLOCKING “TWO BEATS” AFTER RENDER ---------
+      outer.dataset.osmdPhase = "post-render-wait";
+      const tWait0 = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
+      let via: "ap" | "timeout" = "timeout";
+      await Promise.race([
+        ap("post-render:block", 600).then(() => { via = "ap"; }),
+        new Promise<void>((r) => setTimeout(r, 450)),
+      ]);
+      await logStep(
+        `post-render:block done via=${via} waited=${Math.round(((typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now()) - tWait0)}ms`
+      );
+
+      // --------- MEASURE ---------
+      outer.dataset.osmdPhase = "measure";
+      await logStep("measure:start");
+
+      if (measureWatchdog) { clearTimeout(measureWatchdog); measureWatchdog = null; }
+      measureWatchdog = setTimeout(() => {
+        try {
+          outer.dataset.osmdPhase = "measure:watchdog";
+          void logStep("measure:watchdog:force-continue");
+        } catch {}
+      }, 2500);
+
+      const newBands =
+        withUntransformedSvg(outer, (svg) => measureSystemsPx(outer, svg)) ?? [];
+      outer.dataset.osmdPhase = `measure:${newBands.length}`;
+      await logStep(`measured:${newBands.length}`);
+      if (measureWatchdog) { clearTimeout(measureWatchdog); measureWatchdog = null; }
+
+      if (newBands.length === 0) {
+        outer.dataset.osmdPhase = "measure:0:reflow-abort";
+        await logStep("reflow: measured 0 bands — abort");
+        return;
       }
-    },
-    [applyPage, getPAGE_H, hideBusy, renderWithEffectiveWidth, fmtFlags, dumpTelemetry, dumpGeom, dumpBands]
-  );
+
+      const prevStarts = pageStartsRef.current.slice();
+      const prevPage   = pageIdxRef.current;
+      const oldTopIdx  = prevStarts.length
+        ? (prevStarts[Math.max(0, Math.min(prevPage, prevStarts.length - 1))] ?? 0)
+        : 0;
+
+      bandsRef.current = newBands;
+
+      const newStarts = computePageStartIndices(newBands, getPAGE_H(outer));
+      pageStartsRef.current = newStarts;
+      outer.dataset.osmdPhase = `starts:${newStarts.length}`;
+      await logStep(`starts:${newStarts.length}`);
+
+      if (newStarts.length === 0) {
+        outer.dataset.osmdPhase = "reset:first:empty-starts";
+        applyPage(0);
+        await ap("apply:first-empty");
+        applyPage(0);
+        outer.dataset.osmdPhase = "reset:first:done";
+        await logStep("reset:first:done");
+        return;
+      }
+
+      if (resetToFirst) {
+        outer.dataset.osmdPhase = "reset:first";
+        await logStep("reset:first");
+        applyPage(0);
+        await Promise.race([ap("apply:first"), new Promise<void>((r)=>setTimeout(r,400))]);
+        applyPage(0);
+        outer.dataset.osmdPhase = "reset:first:done";
+        await logStep("reset:first:done");
+        return;
+      }
+
+      let nearest = 0, best = Number.POSITIVE_INFINITY;
+      for (let i = 0; i < newStarts.length; i++) {
+        const s = newStarts[i];
+        if (s === undefined) { continue; }
+        const d = Math.abs(s - oldTopIdx);
+        if (d < best) { best = d; nearest = i; }
+      }
+
+      outer.dataset.osmdPhase = `apply-page:${nearest}`;
+      await logStep(`apply-page:${nearest}`);
+
+      applyPage(nearest);
+      await Promise.race([
+        ap("apply:nearest"),
+        new Promise<void>((res) => setTimeout(res, 700)),
+      ]);
+      applyPage(nearest);
+
+      outer.dataset.osmdPhase = `applied:${nearest}`;
+      await logStep(`applied:${nearest}`);
+      await logStep(`reflow:done page=${nearest + 1}/${newStarts.length} bands=${newBands.length}`);
+      handledWRef.current = outer.clientWidth;
+      handledHRef.current = outer.clientHeight;
+    } finally {
+      await logStep("reflow:finally:enter", { paint: true });
+
+      outer.dataset.osmdZoomExited   = outer.dataset.osmdZoomEntered || "0";
+      outer.dataset.osmdZoomExitedAt = String(Date.now());
+      await logStep(`[reflow] EXIT attempt#${outer.dataset.osmdZoomExited} • ${fmtFlags()}`);
+
+      outer.dataset.osmdPhase = "finally";
+      await logStep("finally");
+
+      if (wd !== null) { window.clearInterval(wd); wd = null; }
+
+      spinnerOwnerRef.current = null;
+      hideBusy();
+      await logStep("reflow:finally:hid-spinner");
+
+      reflowRunningRef.current = false;
+
+      const queued = reflowAgainRef.current;
+      reflowAgainRef.current = "none";
+      await logStep(`reflow:finally:queued=${queued}`);
+
+      if (queued === "width") {
+        setTimeout(() => {
+          void logStep("reflow:finally:drain:width");
+          reflowFnRef.current(true);
+        }, 0);
+      } else if (queued === "height") {
+        setTimeout(() => {
+          void logStep("reflow:finally:drain:height");
+          repagFnRef.current(true, false);
+        }, 0);
+      }
+
+      if (spinnerFailSafeRef.current) {
+        window.clearTimeout(spinnerFailSafeRef.current);
+        spinnerFailSafeRef.current = null;
+        void logStep("reflow:finally:cleared-failsafe");
+      }
+
+      await logStep("reflow:finally:exit");
+    }
+  },
+  [applyPage, getPAGE_H, hideBusy, renderWithEffectiveWidth, fmtFlags]
+);
 
   // keep ref pointing to latest width-reflow callback
   useEffect(() => {
