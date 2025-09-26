@@ -264,7 +264,7 @@ async function waitForPaint(timeoutMs = 450): Promise<void> {
 }
 
 // Flip this to disable all on-page logging in one place.
-const DEBUG_LOG = false;
+const DEBUG_LOG = true;
 
 let __logQueue: Promise<void> = Promise.resolve();
 
@@ -668,7 +668,7 @@ export default function ScoreOSMD({
         host.style.pointerEvents = "none"
         host.style.contain = "layout style paint"
         host.style.width = `${layoutW}px`
-        host.style.setProperty("content-visibility", "hidden")
+        host.style.removeProperty("content-visibility");
 
         // Ensure styles take effect this task
         void host.getBoundingClientRect()
@@ -1374,13 +1374,13 @@ export default function ScoreOSMD({
           outer.dataset.osmdPhase = "spinner-on";
           void logStep("spinner-on");
 
-          // Hide host once spinner is visible (prevents flash)
+          // Hide host once spinner is visible (prevents flash) — no content-visibility here
           try {
             if (hostForReflow) {
-              hostForReflow.style.setProperty("content-visibility", "hidden");
+              hostForReflow.style.removeProperty("content-visibility");
               hostForReflow.style.visibility = "hidden";
               outer.dataset.osmdHostHidden = "1";
-              void logStep("host:hidden+cv(before-render)");
+              void logStep("host:hidden(before-render)");
             }
           } catch {}
         }
@@ -1426,7 +1426,7 @@ export default function ScoreOSMD({
         try {
           const hostX = hostRef.current;
           if (hostX) {
-            hostX.style.setProperty("content-visibility", "auto"); // was 'hidden'
+            hostX.style.removeProperty("content-visibility");
             hostX.style.visibility = "hidden";                     // keep hidden for now
             // Force a synchronous layout so the <svg> has real geometry for measurement:
             void hostX.getBoundingClientRect().width;
@@ -2000,7 +2000,7 @@ export default function ScoreOSMD({
         hostForInit ? hostForInit.style.getPropertyValue("content-visibility") : ""
 
       if (hostForInit) {
-        hostForInit.style.setProperty("content-visibility", "hidden")
+        hostForInit.style.removeProperty("content-visibility");
         hostForInit.style.visibility = "hidden"
         outer.dataset.osmdHostHidden = "1"
       }
@@ -2039,7 +2039,7 @@ export default function ScoreOSMD({
       try {
         const hostX = hostRef.current
         if (hostX) {
-          hostX.style.setProperty("content-visibility", "auto") // was 'hidden'
+          hostX.style.removeProperty("content-visibility");
           hostX.style.visibility = "hidden"                      // keep hidden for now
           void hostX.getBoundingClientRect().width              // force layout
           void hostX.scrollWidth
