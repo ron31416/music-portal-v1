@@ -614,155 +614,51 @@ export default function ScoreOSMD({
     }
   }, []);
 
-  const renderWithEffectiveWidth = useCallback(
-    async (outer: HTMLDivElement, osmd: OpenSheetMusicDisplay): Promise<void> => {
-      const host = hostRef.current
-      if (!host || !outer) { return }
+  const renderWithEffectiveWidth = useCallback((
+    outer: HTMLDivElement,
+    osmd: OpenSheetMusicDisplay
+  ): void => {
+    const host = hostRef.current;
+    if (!host || !outer) return;
 
-      // Use our zoom source of truth
-      applyZoomFromRef()
-      const zf = Math.min(3, Math.max(0.5, zoomFactorRef.current || 1))
+    // Recalculate zoom and push it into OSMD so glyph sizes change.
+    let zf = computeZoomFactor();
+    if (!Number.isFinite(zf) || zf <= 0) zf = 1;
+    zf = Math.min(3, Math.max(0.5, zf));
+    zoomFactorRef.current = zf;
+    applyZoomFromRef();
 
-      const hostW = Math.max(1, Math.floor(outer.clientWidth))
-      const rawLayoutW = Math.max(1, Math.floor(hostW / zf))
-      const layoutW = Math.max(
-        REFLOW.MIN_LAYOUT_W,
-        Math.min(rawLayoutW + REFLOW.WIDTH_NUDGE, REFLOW.MAX_LAYOUT_W)
-      )
+    // Compute the layout width in *unzoomed* CSS px.
+    const hostW = Math.max(1, Math.floor(outer.clientWidth));
+    const layoutW = Math.max(1, Math.floor(hostW / zf));
 
-      outer.dataset.osmdZf = String(zf)
-      outer.dataset.osmdLayoutW = String(layoutW)
+    // Breadcrumbs for debugging/HUD (optional)
+    outer.dataset.osmdZf = String(zf);
+    outer.dataset.osmdLayoutW = String(layoutW);
 
-      // --- START: render heartbeat + strong containment/offscreen render ---
-      const startedAt =
-        (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now()
+    // Temporarily control width during render, then restore.
+    const prevLeft  = host.style.left;
+    const prevRight = host.style.right;
+    const prevWidth = host.style.width;
 
-      const beat = window.setInterval(() => {
-        const now =
-          (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now()
-        const secs = Math.round((now - startedAt) / 1000)
-        void logStep(`render:heartbeat +${secs}s`)
-      }, 1000)
+    host.style.left = "0";
+    host.style.right = "auto";
+    host.style.width = `${layoutW}px`;
 
-      // Snapshot styles we’re going to touch
-      const prev = {
-        position: host.style.position,
-        left: host.style.left,
-        right: host.style.right,
-        top: host.style.top,
-        bottom: host.style.bottom,
-        width: host.style.width,
-        visibility: host.style.visibility,
-        pointerEvents: host.style.pointerEvents,
-        contain: host.style.contain,
-      }
+    // Ensure the new width is observed this frame.
+    void host.getBoundingClientRect();
 
-      try {
-        // Render the giant SVG offscreen with strong containment
-        host.style.position = "fixed"
-        host.style.top = "-100000px"
-        host.style.left = "-100000px"
-        host.style.right = "auto"
-        host.style.bottom = "auto"
-        host.style.visibility = "hidden"
-        host.style.pointerEvents = "none"
-        host.style.contain = "layout style paint"
-        host.style.width = `${layoutW}px`
-        host.style.removeProperty("content-visibility");
+    try {
+      osmd.render(); // synchronous & heavy, but proven stable here
+    } finally {
+      host.style.left  = prevLeft;
+      host.style.right = prevRight;
+      host.style.width = prevWidth;
+    }
 
-        // Ensure styles take effect this task
-        void host.getBoundingClientRect()
-
-        // Do NOT await paint here; just enqueue the log and continue synchronously.
-        void logStep(
-          `render:call w=${layoutW} hostW=${hostW} zf=${zf.toFixed(3)} osmd.Zoom=${osmd.Zoom ?? "n/a"}`,
-          { outer }
-        )
-
-        // Prove we resumed right after the log
-        probeLine("[probe] rWEW: after render:call log (no await)", outer)
-
-        // ---- call into osmd.render() (optionally deferred; see flag below) ----
-        const DEFER_RENDER = false // flip to true to run render in setTimeout(0)
-
-        try {
-          outer.dataset.osmdPhase = "render:in"
-          const t0 =
-            (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now()
-          probeLine("[probe] BEGIN osmd.render()", outer)
-
-          if (!DEFER_RENDER) { osmd.render() }
-          else {
-            // timer-based debug path to *prove* the event loop runs
-            probeLine("[probe] DEFERRING osmd.render() via setTimeout(0)", outer)
-            await new Promise<void>((resolve, reject) => {
-              window.setTimeout(() => {
-                try {
-                  probeLine("[probe] (timer) calling osmd.render()", outer)
-                  osmd.render()
-                  probeLine("[probe] (timer) returned from osmd.render()", outer)
-                  resolve()
-                } catch (e) {
-                  const err: Error = e instanceof Error ? e : new Error(String(e))
-                  probeLine(`[probe] (timer) THROW osmd.render(): ${err.message}`, outer)
-                  reject(err)
-                }
-              }, 0)
-            })
-          }
-
-          const t1 =
-            (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now()
-          const dt = Math.round(t1 - t0)
-          outer.dataset.osmdPhase = "render:return"
-          probeLine(`[probe] END osmd.render() dt=${dt}ms`, outer)
-        } catch (e) {
-          outer.dataset.osmdPhase = "render:throw"
-          probeLine(`[probe] THROW osmd.render(): ${(e as Error)?.message ?? String(e)}`, outer)
-          throw e
-        } finally {
-          // prove event loop liveness after render (or after a throw)
-          Promise.resolve().then(() => probeLine("[probe] microtask after render", outer))
-          window.setTimeout(() => probeLine("[probe] setTimeout(0) after render", outer), 0)
-          try {
-            const ch = new MessageChannel()
-            ch.port1.onmessage = () => probeLine("[probe] MessageChannel after render", outer)
-            ch.port2.postMessage(1)
-          } catch {}
-        }
-
-        // Do not await a macrotask here; just a microtask breadcrumb
-        queueMicrotask(() => probeLine("[probe] rWEW: microtask tick (post-render)", outer))
-      } catch (e) {
-        void logStep(`render:error ${(e as Error)?.message ?? e}`)
-        throw e
-      } finally {
-        try { window.clearInterval(beat) } catch {}
-
-        // Always restore styles even if another render started
-        host.style.position = prev.position
-        host.style.top = prev.top
-        host.style.left = prev.left
-        host.style.right = prev.right
-        host.style.bottom = prev.bottom
-        host.style.width = prev.width
-        host.style.visibility = prev.visibility
-        host.style.pointerEvents = prev.pointerEvents
-        host.style.contain = prev.contain
-
-        const svg = getSvg(outer)
-        if (svg) {
-          svg.style.transformOrigin = "top left"
-          svg.style.willChange = "auto"
-        }
-      }
-
-      // PROBE: confirm function exit and event-loop liveness (do NOT await)
-      probeLine("[probe] rWEW: exit()", outer)
-      try { window.setTimeout(() => probeLine("[probe] rWEW: setTimeout(0) fired (post-exit)", outer), 0) } catch {}
-    },
-    [applyZoomFromRef]
-  )
+    const svg = getSvg(outer);
+    if (svg) svg.style.transformOrigin = "top left";
+  }, [computeZoomFactor, applyZoomFromRef]);
 
   const hideBusy = useCallback(async () => {
     setBusy(false);
