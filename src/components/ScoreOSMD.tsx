@@ -2643,7 +2643,6 @@ await logStep("render:painted");
     inset: 0,
     overflow: "hidden",
     minWidth: 0,
-    contain: "layout style paint",   // ← add this line
   };
 
   /* ---------- Busy overlay ---------- */
