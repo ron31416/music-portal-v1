@@ -264,7 +264,7 @@ async function waitForPaint(timeoutMs = 450): Promise<void> {
 }
 
 // Flip this to disable all on-page logging in one place.
-const DEBUG_LOG = true;
+const DEBUG_LOG = false;
 
 let __logQueue: Promise<void> = Promise.resolve();
 
