@@ -621,7 +621,7 @@ const renderWithEffectiveWidth = useCallback(
     osmd: OpenSheetMusicDisplay
   ): Promise<void> => {
     const host = hostRef.current;
-    if (!host || !outer) return;
+    if (!host || !outer) { return; }
 
     // Use our zoom source of truth
     applyZoomFromRef();
@@ -669,7 +669,7 @@ const renderWithEffectiveWidth = useCallback(
       host.style.right = "";
       host.style.width = "";
       const svg = getSvg(outer);
-      if (svg) svg.style.transformOrigin = "top left";
+      if (svg) { svg.style.transformOrigin = "top left"; }
     }
   },
   [applyZoomFromRef]
@@ -1321,7 +1321,7 @@ await logStep(`[render] finished attempt#${attemptForRender} (${renderMs}ms)`);
 outer.dataset.osmdPhase = "post-render-continue";
 void logStep("afterPaint:nonblocking");
 ap("post-render").then(() => {
-  if (wrapRef.current !== outer) return;
+  if (wrapRef.current !== outer) { return; }
   outer.dataset.osmdPhase = "render:painted";
   void logStep("render:painted");
 });
