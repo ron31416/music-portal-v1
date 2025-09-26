@@ -2058,7 +2058,9 @@ export default function ScoreOSMD({
               void logStep(`purge:error:${err.message}`)
             }
           }, 0)
-        } else void logStep("purge:skip(no-canvas)")
+        } else {
+            void logStep("purge:skip(no-canvas)")
+        }
 
         outer.dataset.osmdPhase = "measure"
         void logStep("measure:start")
