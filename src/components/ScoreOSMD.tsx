@@ -531,6 +531,15 @@ function probeLine(msg: string, outer?: HTMLDivElement | null) {
   } catch {}
 }
 
+function perfMark(n: string) { try { performance.mark(n); } catch {} }
+function perfMeasure(n: string, a: string, b: string) {
+  try { performance.measure(n, { start: a, end: b }); } catch {}
+}
+function perfLastMs(name: string) {
+  const e = performance.getEntriesByName(name);
+  return Math.round(e[e.length - 1]?.duration || 0);
+}
+
 /* ---------- Component ---------- */
 
 export default function ScoreOSMD({
@@ -1292,7 +1301,13 @@ const reflowOnWidthChange = useCallback(
       }, 20000);
 
       const t0 = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
+
+      perfMark('zoom-render:start');
       await renderWithEffectiveWidth(outer, osmd);
+      perfMark('zoom-render:end');
+      perfMeasure('zoom-render','zoom-render:start','zoom-render:end');
+      await logStep(`[perf] zoom-render ms=${perfLastMs('zoom-render')}`);
+
       const t1 = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
       if (renderWd !== null) { window.clearTimeout(renderWd); renderWd = null; }
 
@@ -1331,8 +1346,13 @@ const reflowOnWidthChange = useCallback(
       // (optional breadcrumb before the heavy scan)
       void logStep("measure:scan:enter");
 
+      perfMark('zoom-measure:start');
       const newBands =
         withUntransformedSvg(outer, (svg) => measureSystemsPx(outer, svg)) ?? [];
+      perfMark('zoom-measure:end');
+      perfMeasure('zoom-measure','zoom-measure:start','zoom-measure:end');
+      await logStep(`[perf] zoom-measure ms=${perfLastMs('zoom-measure')}`);
+
       outer.dataset.osmdPhase = `measure:${newBands.length}`;
       void logStep(`measured:${newBands.length}`);
 
@@ -1352,7 +1372,12 @@ const reflowOnWidthChange = useCallback(
 
       bandsRef.current = newBands;
 
+      perfMark('starts:compute:start');
       const newStarts = computePageStartIndices(newBands, getPAGE_H(outer));
+      perfMark('starts:compute:end');
+      perfMeasure('starts:compute','starts:compute:start','starts:compute:end');
+      await logStep(`[perf] starts:compute ms=${perfLastMs('starts:compute')}`);
+    
       pageStartsRef.current = newStarts;
       outer.dataset.osmdPhase = `starts:${newStarts.length}`;
       await logStep(`starts:${newStarts.length}`);
@@ -1389,12 +1414,13 @@ const reflowOnWidthChange = useCallback(
       outer.dataset.osmdPhase = `apply-page:${nearest}`;
       await logStep(`apply-page:${nearest}`);
 
+      perfMark('applyPage:start');
       applyPage(nearest);
-      await Promise.race([
-        ap("apply:nearest"),
-        new Promise<void>((res) => setTimeout(res, 700)),
-      ]);
+      await Promise.race([ ap("apply:nearest"), new Promise<void>(r => setTimeout(r, 700)) ]);
       applyPage(nearest);
+      perfMark('applyPage:end');
+      perfMeasure('applyPage','applyPage:start','applyPage:end');
+      await logStep(`[perf] applyPage ms=${perfLastMs('applyPage')}`);
 
       outer.dataset.osmdPhase = `applied:${nearest}`;
       await logStep(`applied:${nearest}`);
