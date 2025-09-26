@@ -669,10 +669,35 @@ export default function ScoreOSMD({
         void host.getBoundingClientRect();
 
         await logStep(
-          `render:call w=${layoutW} hostW=${hostW} zf=${zf.toFixed(3)} osmd.Zoom=${osmd.Zoom ?? "n/a"}`
+          `render:call w=${layoutW} hostW=${hostW} zf=${zf.toFixed(3)} osmd.Zoom=${osmd.Zoom ?? "n/a"}`,
+          { paint: true, outer } // <-- add this
         );
-
+        
         osmd.render(); // synchronous & heavy
+
+        try {
+          outer.dataset.osmdPhase = "render:in";
+          const t0 = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
+          console.log("[probe] BEGIN osmd.render()");
+          osmd.render(); // synchronous & heavy
+          const t1 = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
+          const dt = Math.round(t1 - t0);
+          outer.dataset.osmdPhase = "render:return";
+          console.log(`[probe] END osmd.render() dt=${dt}ms`);
+        } catch (e) {
+          outer.dataset.osmdPhase = "render:throw";
+          console.error("[probe] osmd.render() threw:", e);
+        } finally {
+          // These prove the event loop is alive after render (or after a throw)
+          console.log("[probe] FINALLY after render (sync)");
+          Promise.resolve().then(() => console.log("[probe] microtask after render"));
+          setTimeout(() => console.log("[probe] setTimeout(0) after render"), 0);
+          try {
+            const ch = new MessageChannel();
+            ch.port1.onmessage = () => console.log("[probe] MessageChannel after render");
+            ch.port2.postMessage(1);
+          } catch {}
+        }
 
         // Give the browser one macrotask tick to breathe before we return.
         // (If layout wants to flush, this lets timers/rAF queue up.)
@@ -1953,6 +1978,10 @@ export default function ScoreOSMD({
 
       const t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
       await renderWithEffectiveWidth(outer, osmd);
+     
+      outer.dataset.osmdPhase = "render:return";      // shows up in Elements tab immediately
+      console.log("[probe] render returned");         // bypasses our log queue entirely
+
       const t1 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
       const renderMs = Math.round(t1 - t0);
       outer.dataset.osmdRenderMs = String(renderMs);
