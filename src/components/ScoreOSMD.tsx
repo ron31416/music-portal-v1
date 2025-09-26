@@ -614,66 +614,66 @@ export default function ScoreOSMD({
     }
   }, []);
 
-// --- WIDTH-SANDBOXED RENDER (safe) ---
-const renderWithEffectiveWidth = useCallback(
-  async (
-    outer: HTMLDivElement,
-    osmd: OpenSheetMusicDisplay
-  ): Promise<void> => {
-    const host = hostRef.current;
-    if (!host || !outer) { return; }
+  // --- WIDTH-SANDBOXED RENDER (safe) ---
+  const renderWithEffectiveWidth = useCallback(
+    async (
+      outer: HTMLDivElement,
+      osmd: OpenSheetMusicDisplay
+    ): Promise<void> => {
+      const host = hostRef.current;
+      if (!host || !outer) { return; }
 
-    // Use our zoom source of truth
-    applyZoomFromRef();
-    const zf = Math.min(3, Math.max(0.5, zoomFactorRef.current || 1));
+      // Use our zoom source of truth
+      applyZoomFromRef();
+      const zf = Math.min(3, Math.max(0.5, zoomFactorRef.current || 1));
 
-    const hostW = Math.max(1, Math.floor(outer.clientWidth));
-    const rawLayoutW = Math.max(1, Math.floor(hostW / zf));
+      const hostW = Math.max(1, Math.floor(outer.clientWidth));
+      const rawLayoutW = Math.max(1, Math.floor(hostW / zf));
 
-    // Tiny nudge helps avoid width-specific edge cases
-    const widthNudge = -1;
-    const MAX_LAYOUT_W = 1600;
-    const MIN_LAYOUT_W = 320;
-    const layoutW = Math.max(MIN_LAYOUT_W, Math.min(rawLayoutW + widthNudge, MAX_LAYOUT_W));
+      // Tiny nudge helps avoid width-specific edge cases
+      const widthNudge = -1;
+      const MAX_LAYOUT_W = 1600;
+      const MIN_LAYOUT_W = 320;
+      const layoutW = Math.max(MIN_LAYOUT_W, Math.min(rawLayoutW + widthNudge, MAX_LAYOUT_W));
 
-    outer.dataset.osmdZf = String(zf);
-    outer.dataset.osmdLayoutW = String(layoutW);
+      outer.dataset.osmdZf = String(zf);
+      outer.dataset.osmdLayoutW = String(layoutW);
 
-    // Heartbeat so you can see progress even if render is slow
-    const startedAt = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
-    const beat = window.setInterval(() => {
-      const now = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
-      const secs = Math.round((now - startedAt) / 1000);
-      void logStep(`render:heartbeat +${secs}s`);
-    }, 1000);
+      // Heartbeat so you can see progress even if render is slow
+      const startedAt = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
+      const beat = window.setInterval(() => {
+        const now = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
+        const secs = Math.round((now - startedAt) / 1000);
+        void logStep(`render:heartbeat +${secs}s`);
+      }, 1000);
 
-    try {
-      // Style sandbox: let width drive layout just for this call
-      host.style.left = "0";
-      host.style.right = "auto";
-      host.style.width = `${layoutW}px`;
-      void host.getBoundingClientRect(); // ensure style applies this frame
+      try {
+        // Style sandbox: let width drive layout just for this call
+        host.style.left = "0";
+        host.style.right = "auto";
+        host.style.width = `${layoutW}px`;
+        void host.getBoundingClientRect(); // ensure style applies this frame
 
-      await logStep(
-        `render:call w=${layoutW} hostW=${hostW} zf=${zf.toFixed(3)} osmd.Zoom=${osmd.Zoom ?? "n/a"}`
-      );
+        await logStep(
+          `render:call w=${layoutW} hostW=${hostW} zf=${zf.toFixed(3)} osmd.Zoom=${osmd.Zoom ?? "n/a"}`
+        );
 
-      osmd.render(); // synchronous & heavy
-    } catch (e) {
-      void logStep(`render:error ${(e as Error)?.message ?? e}`);
-      throw e;
-    } finally {
-      try { window.clearInterval(beat); } catch {}
-      // Always restore styles
-      host.style.left  = "";
-      host.style.right = "";
-      host.style.width = "";
-      const svg = getSvg(outer);
-      if (svg) { svg.style.transformOrigin = "top left"; }
-    }
-  },
-  [applyZoomFromRef]
-);
+        osmd.render(); // synchronous & heavy
+      } catch (e) {
+        void logStep(`render:error ${(e as Error)?.message ?? e}`);
+        throw e;
+      } finally {
+        try { window.clearInterval(beat); } catch {}
+        // Always restore styles
+        host.style.left  = "";
+        host.style.right = "";
+        host.style.width = "";
+        const svg = getSvg(outer);
+        if (svg) { svg.style.transformOrigin = "top left"; }
+      }
+    },
+    [applyZoomFromRef]
+  );
 
 
   const hideBusy = useCallback(async () => {
@@ -1298,42 +1298,40 @@ const renderWithEffectiveWidth = useCallback(
         }
 
         // --------- HEAVY RENDER ---------
+        const attemptForRender = Number(outer.dataset.osmdZoomEntered || "0");
+        outer.dataset.osmdRenderAttempt = String(attemptForRender);
+        await logStep(`[render] starting attempt#${attemptForRender}`);
 
-// --- First render (v50 gating) ---
-const attemptForRender = Number(outer.dataset.osmdZoomEntered || "0");
-outer.dataset.osmdRenderAttempt = String(attemptForRender);
-await logStep(`[render] starting attempt#${attemptForRender}`);
+        outer.dataset.osmdPhase = "render";
+        await logStep("render:start");                        // flush log before heavy render
+        await new Promise<void>(r => setTimeout(r, 0));       // macrotask yield
+        await ap("render:yield");                              // rAF/message paint opportunity
 
-outer.dataset.osmdPhase = "render";
-await logStep("render:start");                        // flush log before heavy render
-await new Promise<void>(r => setTimeout(r, 0));       // macrotask yield
-await ap("render:yield");                              // rAF/message paint opportunity
+        const t0 = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
+        await renderWithEffectiveWidth(outer, osmd);          // <- must be the v50 wrapper
+        const t1 = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
+        const renderMs = Math.round(t1 - t0);
+        outer.dataset.osmdRenderMs = String(renderMs);
+        await logStep(`render:finished ${renderMs}ms`);
+        await logStep(`[render] finished attempt#${attemptForRender} (${renderMs}ms)`);
 
-const t0 = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
-await renderWithEffectiveWidth(outer, osmd);          // <- must be the v50 wrapper
-const t1 = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
-const renderMs = Math.round(t1 - t0);
-outer.dataset.osmdRenderMs = String(renderMs);
-await logStep(`render:finished ${renderMs}ms`);
-await logStep(`[render] finished attempt#${attemptForRender} (${renderMs}ms)`);
+        // Post-render: mark when first paint happens (non-blocking), then gate measure
+        outer.dataset.osmdPhase = "post-render-continue";
+        void logStep("afterPaint:nonblocking");
+        ap("post-render").then(() => {
+          if (wrapRef.current !== outer) { return; }
+          outer.dataset.osmdPhase = "render:painted";
+          void logStep("render:painted");
+        });
 
-// Post-render: mark when first paint happens (non-blocking), then gate measure
-outer.dataset.osmdPhase = "post-render-continue";
-void logStep("afterPaint:nonblocking");
-ap("post-render").then(() => {
-  if (wrapRef.current !== outer) { return; }
-  outer.dataset.osmdPhase = "render:painted";
-  void logStep("render:painted");
-});
-
-// Yield once, then wait briefly for a paint signal before measuring
-await new Promise<void>(r => setTimeout(r, 0));
-let via: "ap" | "timeout" = "timeout";
-await Promise.race([
-  ap("measure:start").then(() => { via = "ap"; }),
-  new Promise<void>(r => setTimeout(r, 2000)),
-]);
-await logStep(`ap:measure:start:done via=${via}`);
+        // Yield once, then wait briefly for a paint signal before measuring
+        await new Promise<void>(r => setTimeout(r, 0));
+        let via: "ap" | "timeout" = "timeout";
+        await Promise.race([
+          ap("measure:start").then(() => { via = "ap"; }),
+          new Promise<void>(r => setTimeout(r, 2000)),
+        ]);
+        await logStep(`ap:measure:start:done via=${via}`);
         
         // --------- MEASURE ---------
         outer.dataset.osmdPhase = "measure";
