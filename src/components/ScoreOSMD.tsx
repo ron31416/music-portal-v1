@@ -678,17 +678,43 @@ export default function ScoreOSMD({
         // Ensure styles take effect this task
         void host.getBoundingClientRect();
 
-        await logStep(
+        // Do NOT await paint here; just enqueue the log and continue synchronously.
+        void logStep(
           `render:call w=${layoutW} hostW=${hostW} zf=${zf.toFixed(3)} osmd.Zoom=${osmd.Zoom ?? "n/a"}`,
-          { paint: true, outer } // <-- add this
+          { outer }
         );
-        
+
+        // Prove we resumed right after the log
+        probeLine("[probe] rWEW: after render:call log (no await)", outer);
+
+        // ---- call into osmd.render() (optionally deferred; see flag below) ----
+        const DEFER_RENDER = false; // flip to true to run render in setTimeout(0)
+
         try {
           outer.dataset.osmdPhase = "render:in";
+
           const t0 = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
           probeLine("[probe] BEGIN osmd.render()", outer);
 
-          osmd.render(); // synchronous & heavy
+          if (!DEFER_RENDER) {
+            osmd.render(); // synchronous & heavy
+          } else {
+            // timer-based debug path to *prove* the event loop runs
+            probeLine("[probe] DEFERRING osmd.render() via setTimeout(0)", outer);
+            await new Promise<void>((resolve, reject) => {
+              setTimeout(() => {
+                try {
+                  probeLine("[probe] (timer) calling osmd.render()", outer);
+                  osmd.render();
+                  probeLine("[probe] (timer) returned from osmd.render()", outer);
+                  resolve();
+                } catch (e) {
+                  probeLine(`[probe] (timer) THROW osmd.render(): ${(e as Error)?.message ?? e}`, outer);
+                  reject(e as any);
+                }
+              }, 0);
+            });
+          }
 
           const t1 = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
           const dt = Math.round(t1 - t0);
