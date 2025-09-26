@@ -1326,7 +1326,7 @@ const reflowOnWidthChange = useCallback(
 
       // ===== DEBUG ONLY: hard pause immediately after render completes =====
       // (Uncomment to arm, comment to let it run.)
-      debugger;
+      if (Date.now() > 0) { throw new Error("HARD_PAUSE_AFTER_RENDER"); }
       // ====================================================================
 
       // --------- POST-RENDER: skip wait (non-blocking, like init) ---------
