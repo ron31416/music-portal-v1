@@ -540,15 +540,6 @@ function perfLastMs(name: string) {
   return Math.round(e[e.length - 1]?.duration || 0);
 }
 
-function shouldPauseAfterRender(): boolean {
-  try {
-    return new URLSearchParams(window.location.search).has("pauseAfterRender");
-  } catch {
-    return false;
-  }
-}
-
-
 /* ---------- Component ---------- */
 
 export default function ScoreOSMD({
@@ -1339,6 +1330,11 @@ const reflowOnWidthChange = useCallback(
       await logStep(`render:finished (${renderMs}ms)`);
       await logStep(`[render] finished attempt#${attemptForRender} (${renderMs}ms)`);
 
+      // ===== DEBUG ONLY: hard pause immediately after render completes =====
+      // (Uncomment to arm, comment to let it run.)
+      debugger;
+      // ====================================================================
+
       // --------- POST-RENDER: skip wait (non-blocking, like init) ---------
       outer.dataset.osmdPhase = "render:painted";
       await logStep("post-render:skip-wait (no-yield)");
@@ -1861,11 +1857,6 @@ const reflowOnWidthChange = useCallback(
       outer.dataset.osmdRenderEndedAt = String(Date.now())
       void logStep(`render:finished ${renderMs}ms`)
       void logStep(`[render] finished attempt#${attemptForRender} (${renderMs}ms)`)
-      
-      if (shouldPauseAfterRender()) {
-        await logStep("DBG: pause after init-render");
-        debugger;
-      }
 
       dumpTelemetry("post-render:init")
 
