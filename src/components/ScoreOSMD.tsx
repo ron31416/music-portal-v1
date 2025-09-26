@@ -1301,17 +1301,13 @@ const reflowOnWidthChange = useCallback(
       await logStep(`render:finished (${renderMs}ms)`);
       await logStep(`[render] finished attempt#${attemptForRender} (${renderMs}ms)`);
 
-      // --------- CRUCIAL: BLOCKING “TWO BEATS” AFTER RENDER ---------
-      outer.dataset.osmdPhase = "post-render-wait";
-      const tWait0 = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
-      let via: "ap" | "timeout" = "timeout";
-      await Promise.race([
-        ap("post-render:block", 600).then(() => { via = "ap"; }),
-        new Promise<void>((r) => setTimeout(r, 450)),
-      ]);
-      await logStep(
-        `post-render:block done via=${via} waited=${Math.round(((typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now()) - tWait0)}ms`
-      );
+      // --------- POST-RENDER: skip wait (non-blocking, like init) ---------
+      outer.dataset.osmdPhase = "render:painted";
+      await logStep("post-render:skip-wait (no-yield)");
+      try {
+        // tiny macrotask so the DOM can breathe, then go straight to measure
+        await new Promise<void>((r) => setTimeout(r, 0));
+      } catch {}
 
       // --------- MEASURE ---------
       outer.dataset.osmdPhase = "measure";
