@@ -619,11 +619,11 @@ export default function ScoreOSMD({
     osmd: OpenSheetMusicDisplay
   ): void => {
     const host = hostRef.current;
-    if (!host || !outer) return;
+    if (!host || !outer) { return; }
 
     // Recalculate zoom and push it into OSMD so glyph sizes change.
     let zf = computeZoomFactor();
-    if (!Number.isFinite(zf) || zf <= 0) zf = 1;
+    if (!Number.isFinite(zf) || zf <= 0) { zf = 1; }
     zf = Math.min(3, Math.max(0.5, zf));
     zoomFactorRef.current = zf;
     applyZoomFromRef();
@@ -657,7 +657,7 @@ export default function ScoreOSMD({
     }
 
     const svg = getSvg(outer);
-    if (svg) svg.style.transformOrigin = "top left";
+    if (svg) { svg.style.transformOrigin = "top left"; }
   }, [computeZoomFactor, applyZoomFromRef]);
 
   const hideBusy = useCallback(async () => {
