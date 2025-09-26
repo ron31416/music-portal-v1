@@ -572,14 +572,6 @@ export default function ScoreOSMD({
   const handledWRef = useRef<number>(-1);
   const handledHRef = useRef<number>(-1);
 
-  // Record the dimensions we just handled so observers don't re-queue
-  const stampHandledDims = (outer: HTMLDivElement) => {
-    handledWRef.current = outer.clientWidth;
-    handledHRef.current = outer.clientHeight;
-    outer.dataset.osmdHandled = `${handledWRef.current}×${handledHRef.current}`;
-    void logStep(`handled:set W×H=${handledWRef.current}×${handledHRef.current}`);
-  };
-
   // add near handledWRef/handledHRef
   const reflowRunningRef = useRef(false);   // guards width reflow
   const reflowAgainRef = useRef<"none" | "width" | "height">("none");
