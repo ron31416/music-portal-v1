@@ -521,6 +521,16 @@ function hasZoomProp(o: unknown): o is { Zoom: number } {
   return typeof maybe.Zoom === "number";
 }
 
+function probeLine(msg: string, outer?: HTMLDivElement | null) {
+  try {
+    const box = getConsoleTop(); // uses your existing top-layer console
+    const ts = new Date().toISOString().split("T")[1]?.split(".")[0] ?? "";
+    box.textContent += `[${ts}] ${msg}\n`;
+    box.scrollTop = box.scrollHeight;
+    if (outer) { outer.dataset.osmdProbe = msg; } // breadcrumb
+  } catch {}
+}
+
 /* ---------- Component ---------- */
 
 export default function ScoreOSMD({
@@ -673,33 +683,33 @@ export default function ScoreOSMD({
           { paint: true, outer } // <-- add this
         );
         
-        osmd.render(); // synchronous & heavy
-
         try {
           outer.dataset.osmdPhase = "render:in";
           const t0 = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
-          console.log("[probe] BEGIN osmd.render()");
+          probeLine("[probe] BEGIN osmd.render()", outer);
+
           osmd.render(); // synchronous & heavy
+
           const t1 = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
           const dt = Math.round(t1 - t0);
           outer.dataset.osmdPhase = "render:return";
-          console.log(`[probe] END osmd.render() dt=${dt}ms`);
+          probeLine(`[probe] END osmd.render() dt=${dt}ms`, outer);
         } catch (e) {
           outer.dataset.osmdPhase = "render:throw";
-          console.error("[probe] osmd.render() threw:", e);
+          probeLine(`[probe] THROW osmd.render(): ${(e as Error)?.message ?? e}`, outer);
+          throw e;
         } finally {
-          // These prove the event loop is alive after render (or after a throw)
-          console.log("[probe] FINALLY after render (sync)");
-          Promise.resolve().then(() => console.log("[probe] microtask after render"));
-          setTimeout(() => console.log("[probe] setTimeout(0) after render"), 0);
+          // prove event loop liveness after render (or after a throw)
+          Promise.resolve().then(() => probeLine("[probe] microtask after render", outer));
+          setTimeout(() => probeLine("[probe] setTimeout(0) after render", outer), 0);
           try {
             const ch = new MessageChannel();
-            ch.port1.onmessage = () => console.log("[probe] MessageChannel after render");
+            ch.port1.onmessage = () => probeLine("[probe] MessageChannel after render", outer);
             ch.port2.postMessage(1);
           } catch {}
         }
 
-        // Give the browser one macrotask tick to breathe before we return.
+// Give the browser one macrotask tick to breathe before we return.
         // (If layout wants to flush, this lets timers/rAF queue up.)
         await new Promise<void>((r) => window.setTimeout(r, 0));
       } catch (e) {
@@ -1980,7 +1990,7 @@ export default function ScoreOSMD({
       await renderWithEffectiveWidth(outer, osmd);
      
       outer.dataset.osmdPhase = "render:return";      // shows up in Elements tab immediately
-      console.log("[probe] render returned");         // bypasses our log queue entirely
+      probeLine("[probe] render returned", wrapRef.current);        // bypasses our log queue entirely
 
       const t1 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
       const renderMs = Math.round(t1 - t0);
