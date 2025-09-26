@@ -1316,12 +1316,6 @@ const reflowOnWidthChange = useCallback(
       perfMark('zoom-render:end');
       perfMeasure('zoom-render','zoom-render:start','zoom-render:end');
       await logStep(`[perf] zoom-render ms=${perfLastMs('zoom-render')}`);
-
-      if (shouldPauseAfterRender()) {
-        await logStep("DBG: pause after zoom-render");
-        debugger;
-      }
-
       const t1 = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
       if (renderWd !== null) { window.clearTimeout(renderWd); renderWd = null; }
 
