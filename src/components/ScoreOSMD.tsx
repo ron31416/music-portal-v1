@@ -519,7 +519,7 @@ function measureSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[]
   interface Box { top: number; bottom: number; height: number; width: number }
   const boxes: Box[] = [];
 
-  let totalG = 0, inspected = 0, skippedSmallH = 0, skippedSmallW = 0, badGeom = 0, narrowedBy = 0;
+  let totalG = 0, skippedSmallH = 0, skippedSmallW = 0, badGeom = 0, narrowedBy = 0;
 
   // Thresholds (unchanged but visible) [revisit]
   const MIN_H = 2;
@@ -545,7 +545,6 @@ function measureSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[]
 
     for (const g of candidates) {
       totalG++;
-      inspected++;
 
       try {
         if (MEASURE_USE_BBOX) {
@@ -1361,7 +1360,6 @@ const reflowOnWidthChange = useCallback(
 
     let prevVisForReflow: string | null = null;
     let prevCvForReflow: string | null = null;
-    let hostWasHiddenForReflow = false;
 
     let measureWatchdog: ReturnType<typeof setTimeout> | null = null;
 
