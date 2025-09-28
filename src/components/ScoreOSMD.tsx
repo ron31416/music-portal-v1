@@ -57,7 +57,7 @@ function qflag(name: string, fallback = false): boolean {
 //const BREAK_AFTER_RENDER  = qflag("breakAfter",  false);
 
 // Measurement knobs (A/B without touching pagination)
-const MEASURE_USE_BBOX  = qflag("bbox", false);         // use getBBox() instead of getBoundingClientRect()
+//const MEASURE_USE_BBOX  = qflag("bbox", false);         // use getBBox() instead of getBoundingClientRect()
 const MEASURE_NARROW    = qflag("narrow", false);       // try narrower selector for <g> scanning
 
 async function withTimeout<T>(p: Promise<T>, ms: number, tag: string): Promise<T> {
@@ -501,10 +501,10 @@ function measureSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[]
   const hostTop = outer.getBoundingClientRect().top;
 
   // If we use getBBox() we need a pixels-per-SVG-unit scale
-  const svgRect = svgRoot.getBoundingClientRect();
-  const vb = svgRoot.viewBox?.baseVal;
-  const scaleX = (vb && vb.width)  ? (svgRect.width  / vb.width)  : 1;
-  const scaleY = (vb && vb.height) ? (svgRect.height / vb.height) : 1;
+  //const svgRect = svgRoot.getBoundingClientRect();
+  //const vb = svgRoot.viewBox?.baseVal;
+  //const scaleX = (vb && vb.width)  ? (svgRect.width  / vb.width)  : 1;
+  //const scaleY = (vb && vb.height) ? (svgRect.height / vb.height) : 1;
 
   interface Box { top: number; bottom: number; height: number; width: number }
   const boxes: Box[] = [];
@@ -532,7 +532,7 @@ function measureSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[]
         narrowedBy += (allG.length - sys.length);
       }
     }
-
+/*
     for (const g of candidates) {
       totalG++;
 
@@ -572,6 +572,27 @@ function measureSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[]
         badGeom++; continue;
       }
     }
+*/      
+    for (const g of candidates) {
+      totalG++;
+      try {
+        const r = g.getBoundingClientRect();
+        if (!Number.isFinite(r.top) || !Number.isFinite(r.height) || !Number.isFinite(r.width)) {
+          badGeom++; continue;
+        }
+        if (r.height < MIN_H) { skippedSmallH++; continue; }
+        if (r.width  < MIN_W) { skippedSmallW++; continue; }
+
+        boxes.push({
+          top: r.top - hostTop,
+          bottom: r.bottom - hostTop,
+          height: r.height,
+          width: r.width,
+        });
+      } catch {
+        badGeom++; continue;
+      }
+    }
   }
 
   boxes.sort((a, b) => a.top - b.top);
@@ -592,11 +613,16 @@ function measureSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[]
 
   // Single serialized log (keeps HUD flowing) — keep exactly one line
   void logStep(
-    `measure:scan:stats mode=${MEASURE_USE_BBOX ? "bbox" : "rect"} ` +
-    `narrow=${MEASURE_NARROW ? "on" : "off"} totalG=${totalG} boxes=${boxes.length} ` +
-    `skippedH=${skippedSmallH} skippedW=${skippedSmallW} badGeom=${badGeom} narrowedBy=${narrowedBy} ` +
-    `bands=${bands.length}`
+  `measure:scan:stats totalG=${totalG} boxes=${boxes.length} ` +
+  `skippedH=${skippedSmallH} skippedW=${skippedSmallW} badGeom=${badGeom} ` +
+  `bands=${bands.length}`
   );
+  //void logStep(
+  //  `measure:scan:stats mode=${MEASURE_USE_BBOX ? "bbox" : "rect"} ` +
+  //  `narrow=${MEASURE_NARROW ? "on" : "off"} totalG=${totalG} boxes=${boxes.length} ` +
+  //  `skippedH=${skippedSmallH} skippedW=${skippedSmallW} badGeom=${badGeom} narrowedBy=${narrowedBy} ` +
+  //  `bands=${bands.length}`
+  //);
 
   return bands;
 }
