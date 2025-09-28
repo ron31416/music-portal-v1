@@ -1,0 +1,16 @@
+{
+    "configurations": [
+        {
+            "type": "chrome",
+            "name": "http://localhost:3000/viewer?src=/api/songs/3/mxl&afterRenderStop=1&hide=0",
+            "request": "launch",
+            "url": "http://localhost:3000/viewer?src=/api/songs/3/mxl&afterRenderStop=1&hide=0"
+        },
+        {
+            "type": "chrome",
+            "name": "http://localhost:3000/viewer?src=%2Fapi%2Fsongs%2F3%2Fmxl&hide=0",
+            "request": "launch",
+            "url": "http://localhost:3000/viewer?src=%2Fapi%2Fsongs%2F3%2Fmxl&hide=0"
+        }
+    ]
+}

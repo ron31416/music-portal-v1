@@ -37,11 +37,45 @@ const REFLOW = {
   PEEK_GUARD_HI_DPR: 7,
 };
 
+// ---------- Debug flag helpers (read from ?pause=1&breakFetch=1&bbox=1&narrow=1) ----------
+function qflag(name: string, fallback = false): boolean {
+  try {
+    const sp = new URLSearchParams(window.location.search);
+    const v = sp.get(name);
+    if (v === null) { return fallback; }
+    if (/^(0|false|off)$/i.test(v)) { return false; }
+    return true;
+  } catch { return fallback; }
+}
+
+// Global, runtime-read flags (safe in Next; ignored server-side)
+const PAUSE_AFTER_RENDER = qflag("pause", false);       // dev-only: literal debugger
+const BREAK_VIA_FETCH   = qflag("breakFetch", false);   // prod/Vercel: pause via fetch breakpoint
+const HIDE_DURING_REFLOW = qflag("hide", true);
+
+// Hard, deterministic breakpoints we can flip via URL:
+const BREAK_BEFORE_REFLOW = qflag("breakBefore", false);
+const BREAK_AFTER_RENDER  = qflag("breakAfter",  false);
+
+// Measurement knobs (A/B without touching pagination)
+const MEASURE_USE_BBOX  = qflag("bbox", false);         // use getBBox() instead of getBoundingClientRect()
+const MEASURE_NARROW    = qflag("narrow", false);       // try narrower selector for <g> scanning
+
+/*
 async function withTimeout<T>(p: Promise<T>, ms: number, tag: string): Promise<T> {
   return Promise.race([
     p,
     new Promise<never>((_, rej) => window.setTimeout(() => rej(new Error(tag)), ms)),
   ]);
+}
+*/
+
+async function withTimeout<T>(p: Promise<T>, ms: number, tag: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const t = window.setTimeout(() => reject(new Error(tag)), ms);
+    p.then(v => { window.clearTimeout(t); resolve(v); },
+           e => { window.clearTimeout(t); reject(e); });
+  });
 }
 
 // Await OSMD.load(...) whether it returns void or a Promise.
@@ -398,6 +432,7 @@ function isTitleLike(first: Band | undefined, rest: Band[]): boolean {
 }
 
 /** Cluster OSMD <g> to “systems” and measure them relative to wrapper */
+/*
 function measureSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[] {
   const pageRoots = Array.from(
     svgRoot.querySelectorAll<SVGGElement>(
@@ -461,6 +496,121 @@ function measureSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[]
 
   return bands;
 }
+*/
+
+function measureSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[] {
+  // Page roots (unchanged)
+  const pageRoots = Array.from(
+    svgRoot.querySelectorAll<SVGGElement>(
+      'g[id^="osmdCanvasPage"], g[id^="Page"], g[class*="Page"], g[class*="page"]'
+    )
+  );
+  const roots: Array<SVGGElement | SVGSVGElement> = pageRoots.length ? pageRoots : [svgRoot];
+
+  // Host offset (unchanged)
+  const hostTop = outer.getBoundingClientRect().top;
+
+  // If we use getBBox() we need a pixels-per-SVG-unit scale
+  const svgRect = svgRoot.getBoundingClientRect();
+  const vb = svgRoot.viewBox?.baseVal;
+  const scaleX = (vb && vb.width)  ? (svgRect.width  / vb.width)  : 1;
+  const scaleY = (vb && vb.height) ? (svgRect.height / vb.height) : 1;
+
+  interface Box { top: number; bottom: number; height: number; width: number }
+  const boxes: Box[] = [];
+
+  let totalG = 0, inspected = 0, skippedSmallH = 0, skippedSmallW = 0, badGeom = 0, narrowedBy = 0;
+
+  // Thresholds (unchanged but visible) [revisit]
+  const MIN_H = 2;
+  const MIN_W = 8;
+
+  for (const root of roots) {
+    // Candidate selection
+    const allG = Array.from(root.querySelectorAll<SVGGElement>("g"));
+    let candidates = allG;
+
+    if (MEASURE_NARROW) {
+      // Heuristic: try to find system-like groups; if good reduction, use them
+      const sys = Array.from(
+        root.querySelectorAll<SVGGElement>(
+          'g[id*="System"], g[class*="System"], g[id*="system"], g[class*="system"]'
+        )
+      );
+      if (sys.length >= 4 && sys.length < allG.length * 0.6) {
+        candidates = sys;
+        narrowedBy += (allG.length - sys.length);
+      }
+    }
+
+    for (const g of candidates) {
+      totalG++;
+      inspected++;
+
+      try {
+        if (MEASURE_USE_BBOX) {
+          // Faster on some scores: SVG-native bbox scaled to CSS px
+          const bb = g.getBBox(); // SVG units
+          if (!Number.isFinite(bb.y) || !Number.isFinite(bb.height) || !Number.isFinite(bb.width)) {
+            badGeom++; continue;
+          }
+          const hPx = bb.height * scaleY;
+          const wPx = bb.width  * scaleX;
+          if (hPx < MIN_H) { skippedSmallH++; continue; }
+          if (wPx < MIN_W) { skippedSmallW++; continue; }
+
+          const topPx = (bb.y * scaleY) + svgRect.top - hostTop;
+          const bottomPx = topPx + hPx;
+
+          boxes.push({ top: topPx, bottom: bottomPx, height: hPx, width: wPx });
+        } else {
+          // Default path: CSS geometry
+          const r = g.getBoundingClientRect();
+          if (!Number.isFinite(r.top) || !Number.isFinite(r.height) || !Number.isFinite(r.width)) {
+            badGeom++; continue;
+          }
+          if (r.height < MIN_H) { skippedSmallH++; continue; }
+          if (r.width  < MIN_W) { skippedSmallW++; continue; }
+
+          boxes.push({
+            top: r.top - hostTop,
+            bottom: r.bottom - hostTop,
+            height: r.height,
+            width: r.width,
+          });
+        }
+      } catch {
+        badGeom++; continue;
+      }
+    }
+  }
+
+  boxes.sort((a, b) => a.top - b.top);
+
+  // Banding (unchanged)
+  const GAP = dynamicBandGapPx(outer);
+  const bands: Band[] = [];
+  for (const b of boxes) {
+    const last = bands.length ? bands[bands.length - 1] : undefined;
+    if (!last || b.top - last.bottom > GAP) {
+      bands.push({ top: b.top, bottom: b.bottom, height: b.height });
+    } else {
+      last.top = Math.min(last.top, b.top);
+      last.bottom = Math.max(last.bottom, b.bottom);
+      last.height = last.bottom - last.top;
+    }
+  }
+
+  // Single serialized log (keeps HUD flowing) — keep exactly one line
+  void logStep(
+    `measure:scan:stats mode=${MEASURE_USE_BBOX ? "bbox" : "rect"} ` +
+    `narrow=${MEASURE_NARROW ? "on" : "off"} totalG=${totalG} boxes=${boxes.length} ` +
+    `skippedH=${skippedSmallH} skippedW=${skippedSmallW} badGeom=${badGeom} narrowedBy=${narrowedBy} ` +
+    `bands=${bands.length}`
+  );
+
+  return bands;
+}
 
 /** Compute page start *indices* so each page shows only full systems */
 function computePageStartIndices(bands: Band[], viewportH: number): number[] {
@@ -490,7 +640,8 @@ function computePageStartIndices(bands: Band[], viewportH: number): number[] {
         ? Math.max(12, Math.round(viewportH * 0.06))
         : 0;
 
-      // Optional tweak: on first page, try to fit title + two full systems
+      // Optional tweak: on first page, try to fit title + two full systems [causing infinite loop?]
+      /*
       if (isFirstPage) {
         const systemsToTry = 2;        // title + 2 systems
         const endIdx = i + systemsToTry;
@@ -500,6 +651,7 @@ function computePageStartIndices(bands: Band[], viewportH: number): number[] {
           continue; // keep scanning from the new 'last'
         }
       }
+      */
 
       if (next.bottom - startTop <= viewportH + slack) {
         last++;
@@ -636,9 +788,9 @@ export default function ScoreOSMD({
       const rawLayoutW = Math.max(1, Math.floor(hostW / zf));
 
       // Tiny nudge helps avoid width-specific edge cases
-      const widthNudge = -1;
-      const MAX_LAYOUT_W = 1600;
-      const MIN_LAYOUT_W = 320;
+      const widthNudge = REFLOW.WIDTH_NUDGE;
+      const MAX_LAYOUT_W = REFLOW.MAX_LAYOUT_W;
+      const MIN_LAYOUT_W = REFLOW.MIN_LAYOUT_W;
       const layoutW = Math.max(MIN_LAYOUT_W, Math.min(rawLayoutW + widthNudge, MAX_LAYOUT_W));
 
       outer.dataset.osmdZf = String(zf);
@@ -662,8 +814,7 @@ export default function ScoreOSMD({
         // NEW: let the spinner/host actually paint before we block the main thread
         await waitForPaint(300);
 
-        await logStep(
-          `render:call w=${layoutW} hostW=${hostW} zf=${zf.toFixed(3)} osmd.Zoom=${osmd.Zoom ?? "n/a"}`
+        await logStep(`render:call w=${layoutW} hostW=${hostW} zf=${zf.toFixed(3)} osmd.Zoom=${osmd.Zoom ?? "n/a"}`
         );
 
         // NEW: mark + measure the synchronous render
@@ -1208,6 +1359,10 @@ const reflowOnWidthChange = useCallback(
     const outer = wrapRef.current;
     const osmd  = osmdRef.current;
 
+    let prevVisForReflow: string | null = null;
+    let prevCvForReflow: string | null = null;
+    let hostWasHiddenForReflow = false;
+
     let measureWatchdog: ReturnType<typeof setTimeout> | null = null;
 
     if (outer) { void logStep("phase:reflowOnWidthChange"); }
@@ -1217,6 +1372,13 @@ const reflowOnWidthChange = useCallback(
       if (outer) { void logStep(`reflow:early-bail outer=${o} osmd=${m}`); }
       return;
     }
+
+    const currW = outer.clientWidth;
+    const currH = outer.clientHeight;
+    handledWRef.current = currW;          // <- prime "handled" now, not only at the end
+    handledHRef.current = currH;
+    outer.dataset.osmdReflowTargetW = String(currW);
+    outer.dataset.osmdReflowTargetH = String(currH);
 
     // Always show spinner for width reflow
     const wantSpinner = true;
@@ -1228,6 +1390,9 @@ const reflowOnWidthChange = useCallback(
     outer.dataset.osmdZoomEntered   = String(attempt);
     outer.dataset.osmdZoomEnteredAt = String(Date.now());
     void logStep(`[reflow] ENTER attempt#${attempt} • ${fmtFlags()}`);
+
+    // >>> DEBUG HOOK: pause before heavy OSMD render
+    if (BREAK_BEFORE_REFLOW) { debugger; }
 
     const ap = makeAfterPaint(outer);
 
@@ -1295,6 +1460,18 @@ const reflowOnWidthChange = useCallback(
       outer.dataset.osmdRenderAttempt = String(attemptForRender);
       await logStep(`[render] starting attempt#${attemptForRender}`);
 
+      // Hide host to avoid a giant paint between render and measure
+      const hostForReflow = hostRef.current;
+      if (hostForReflow && HIDE_DURING_REFLOW) {
+        prevVisForReflow = hostForReflow.style.visibility || "";
+        prevCvForReflow = hostForReflow.style.getPropertyValue("content-visibility") || "";
+        hostForReflow.style.removeProperty("content-visibility");
+        hostForReflow.style.visibility = "hidden";
+        outer.dataset.osmdHostHidden = "1";
+        // force style commit so the hidden state takes effect before render
+        try { void hostForReflow.getBoundingClientRect().width; } catch {}
+      }
+
       outer.dataset.osmdPhase = "render";
       await logStep("render:start");
       await new Promise<void>((r) => setTimeout(r, 0)); // macrotask
@@ -1313,6 +1490,17 @@ const reflowOnWidthChange = useCallback(
 
       perfMark('zoom-render:start');
       await renderWithEffectiveWidth(outer, osmd);
+      // CUTPOINT A — bail right after render (before measure/pagination)
+      if (qflag("afterRenderStop", false)) {
+        await logStep("afterRenderStop: short-circuit after render");
+        spinnerOwnerRef.current = null;
+        hideBusy();
+        reflowRunningRef.current = false;
+        return;
+      }
+      // >>> DEBUG HOOK: pause right after render returns
+      if (BREAK_AFTER_RENDER) { debugger; }
+
       perfMark('zoom-render:end');
       perfMeasure('zoom-render','zoom-render:start','zoom-render:end');
       await logStep(`[perf] zoom-render ms=${perfLastMs('zoom-render')}`);
@@ -1324,9 +1512,19 @@ const reflowOnWidthChange = useCallback(
       await logStep(`render:finished (${renderMs}ms)`);
       await logStep(`[render] finished attempt#${attemptForRender} (${renderMs}ms)`);
 
-      // ===== DEBUG ONLY: hard pause immediately after render completes =====
-      // (Uncomment to arm, comment to let it run.)
-      queueMicrotask(() => { try { (0, eval)("debugger"); } catch { throw new Error("__PAUSE_AFTER_RENDER__"); } });
+      // ===== DEBUG PAUSE AFTER RENDER =====
+      // Dev: literal debugger (works in `npm run dev` if DevTools is open)
+      if (PAUSE_AFTER_RENDER) {
+        // Make sure "Pause on debugger statements" is enabled in DevTools
+        debugger;
+      }
+      // Vercel/Prod: XHR/Fetch breakpoint (Sources -> Breakpoints -> "Fetch" -> add URL contains "osmd_ping=after_render")
+      if (BREAK_VIA_FETCH) {
+        try {
+          // Hit a very cheap, always-present endpoint; add cache-buster
+          await fetch(`/favicon.ico?osmd_ping=after_render&ts=${Date.now()}`, { cache: "no-store" });
+        } catch { /* ignore */ }
+      }
       // ====================================================================
 
       // --------- POST-RENDER: skip wait (non-blocking, like init) ---------
@@ -1360,8 +1558,15 @@ const reflowOnWidthChange = useCallback(
       void logStep("measure:scan:enter");
 
       perfMark('zoom-measure:start');
-      const newBands =
-        withUntransformedSvg(outer, (svg) => measureSystemsPx(outer, svg)) ?? [];
+      const newBands = withUntransformedSvg(outer, (svg) => measureSystemsPx(outer, svg)) ?? [];
+      // CUTPOINT B — bail after measure (before starts)
+      if (qflag("afterMeasureStop", false)) {
+        await logStep(`afterMeasureStop: bands=${newBands.length}`);
+        spinnerOwnerRef.current = null;
+        hideBusy();
+        reflowRunningRef.current = false;
+        return;
+      }
       perfMark('zoom-measure:end');
       perfMeasure('zoom-measure','zoom-measure:start','zoom-measure:end');
       await logStep(`[perf] zoom-measure ms=${perfLastMs('zoom-measure')}`);
@@ -1387,6 +1592,14 @@ const reflowOnWidthChange = useCallback(
 
       perfMark('starts:compute:start');
       const newStarts = computePageStartIndices(newBands, getPAGE_H(outer));
+      // CUTPOINT C — bail after starts (before applyPage)
+      if (qflag("afterStartsStop", false)) {
+        await logStep(`afterStartsStop: starts=${newStarts.length}`);
+        spinnerOwnerRef.current = null;
+        hideBusy();
+        reflowRunningRef.current = false;
+        return;
+      }
       perfMark('starts:compute:end');
       perfMeasure('starts:compute','starts:compute:start','starts:compute:end');
       await logStep(`[perf] starts:compute ms=${perfLastMs('starts:compute')}`);
@@ -1441,6 +1654,20 @@ const reflowOnWidthChange = useCallback(
       handledWRef.current = outer.clientWidth;
       handledHRef.current = outer.clientHeight;
     } finally {
+      // Reveal host now that the page has been applied
+      try {
+        const hostNow = hostRef.current;
+        if (hostNow && HIDE_DURING_REFLOW) {
+          if (prevCvForReflow) {
+            hostNow.style.setProperty("content-visibility", prevCvForReflow);
+          } else {
+            hostNow.style.removeProperty("content-visibility");
+          }
+          hostNow.style.visibility = prevVisForReflow || "visible";
+          outer.dataset.osmdHostHidden = "0";
+        }
+      } catch {}
+
       await logStep("reflow:finally:enter", { paint: true });
 
       outer.dataset.osmdZoomExited   = outer.dataset.osmdZoomEntered || "0";
@@ -1457,6 +1684,22 @@ const reflowOnWidthChange = useCallback(
       await logStep("reflow:finally:hid-spinner");
 
       reflowRunningRef.current = false;
+
+      // if a queued width reflow matches the width we just handled, drop it
+      try {
+        const outerNow = wrapRef.current;
+        const wHandled = Number(outer.dataset.osmdReflowTargetW || NaN);
+        const wNow = outerNow?.clientWidth ?? wHandled;
+        if (reflowAgainRef.current === "width" &&
+            Number.isFinite(wHandled) &&
+            Math.abs((wNow ?? wHandled) - wHandled) < 1) {
+          reflowAgainRef.current = "none";
+          await logStep("reflow:finally:drop-queued-width (no delta)");
+        }
+      } catch { /* ignore */ }
+      // clear breadcrumbs
+      outer.dataset.osmdReflowTargetW = "";
+      outer.dataset.osmdReflowTargetH = "";
 
       const queued = reflowAgainRef.current;
       reflowAgainRef.current = "none";
@@ -2078,11 +2321,21 @@ const reflowOnWidthChange = useCallback(
               reflowQueuedCauseRef.current = `ro:guard-busy:${kind}`;
               return;
             }
+
             if (reflowRunningRef.current) {
+              // NEW: if we're already reflowing for this same width, don't queue another
+              if (kind === "width") {
+                const targetW = Number(wrapRef.current?.dataset.osmdReflowTargetW || NaN);
+                if (Number.isFinite(targetW) && Math.abs(currW - targetW) < 1) {
+                  void logStep("resize:ro:drop (width matches active reflow)");
+                  return; // don't queue; it's the same width the active reflow is handling
+                }
+              }
               reflowAgainRef.current = kind;
               reflowQueuedCauseRef.current = `ro:guard-reflow:${kind}`;
               return;
             }
+
             if (repagRunningRef.current) {
               reflowAgainRef.current = kind;
               reflowQueuedCauseRef.current = `ro:guard-repag:${kind}`;
