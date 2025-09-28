@@ -51,7 +51,6 @@ function qflag(name: string, fallback = false): boolean {
 // Global, runtime-read flags (safe in Next; ignored server-side)
 const PAUSE_AFTER_RENDER = qflag("pause", false);       // dev-only: literal debugger
 const BREAK_VIA_FETCH   = qflag("breakFetch", false);   // prod/Vercel: pause via fetch breakpoint
-//const HIDE_DURING_REFLOW = qflag("hide", true);
 
 // Hard, deterministic breakpoints we can flip via URL:
 const BREAK_BEFORE_REFLOW = qflag("breakBefore", false);
@@ -1460,7 +1459,7 @@ const reflowOnWidthChange = useCallback(
 
       // Hide host to avoid a giant paint between render and measure
       const hostForReflow = hostRef.current;
-      if (hostForReflow) { //} && HIDE_DURING_REFLOW) {
+      if (hostForReflow) {
         prevVisForReflow = hostForReflow.style.visibility || "";
         prevCvForReflow = hostForReflow.style.getPropertyValue("content-visibility") || "";
         hostForReflow.style.removeProperty("content-visibility");
@@ -1655,7 +1654,7 @@ const reflowOnWidthChange = useCallback(
       // Reveal host now that the page has been applied
       try {
         const hostNow = hostRef.current;
-        if (hostNow) { //} && HIDE_DURING_REFLOW) {
+        if (hostNow) {
           if (prevCvForReflow) {
             hostNow.style.setProperty("content-visibility", prevCvForReflow);
           } else {
@@ -2677,28 +2676,18 @@ const reflowOnWidthChange = useCallback(
     void logStep(`overlay:${visible ? 'shown' : 'hidden'} busy=${busy}`);
   }, [busy]);
 
-  // BUSY FAIL-SAFE: if the overlay lingers too long, force-clear and log once.
-  // Light breadcrumb only — no need to block on paint here.
   useEffect(() => {
-    if (!busy) { return; }
-
+    if (!busy) return;
     const t = window.setTimeout(() => {
-      const outer = wrapRef.current;
-      const host  = hostRef.current;
-      const phase = outer?.dataset.osmdPhase ?? "";
-      const hostHidden = outer?.dataset.osmdHostHidden === "1" || host?.style.visibility === "hidden";
-
-      // Don’t auto-clear while we’re in heavy phases or the host is intentionally hidden.
-      const inHeavy = /^(render|post-render|measure)/.test(phase) || hostHidden;
-      if (inHeavy) {
-        void logStep(`busy:auto-clear:skipped phase=${phase} hostHidden=${hostHidden ? "1" : "0"}`);
-        return;
+      const phase = wrapRef.current?.dataset.osmdPhase ?? "";
+      const inHeavy = /^(render|post-render|measure)/.test(phase);
+      if (!inHeavy) {
+        hideBusy();
+        void logStep("busy:auto-clear");
+      } else {
+        void logStep(`busy:auto-clear:skipped phase=${phase}`);
       }
-
-      hideBusy();
-      void logStep("busy:auto-clear");
-    }, 20000); // give long-running first renders time to finish
-
+    }, 20000);
     return () => window.clearTimeout(t);
   }, [busy, hideBusy]);
 
