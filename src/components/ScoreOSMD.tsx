@@ -38,6 +38,7 @@ const REFLOW = {
 };
 
 // ---------- Debug flag helpers (read from ?pause=1&breakFetch=1&bbox=1&narrow=1) ----------
+/*
 function qflag(name: string, fallback = false): boolean {
   try {
     const sp = new URLSearchParams(window.location.search);
@@ -47,6 +48,7 @@ function qflag(name: string, fallback = false): boolean {
     return true;
   } catch { return fallback; }
 }
+*/
 
 // Global, runtime-read flags (safe in Next; ignored server-side)
 //const PAUSE_AFTER_RENDER = qflag("pause", false);       // dev-only: literal debugger
@@ -520,6 +522,27 @@ function measureSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[]
     // Candidate selection
     const allG = Array.from(root.querySelectorAll<SVGGElement>("g"));
     let candidates = allG;
+    for (const g of candidates) {
+      totalG++;
+      try {
+        const r = g.getBoundingClientRect();
+        if (!Number.isFinite(r.top) || !Number.isFinite(r.height) || !Number.isFinite(r.width)) {
+          badGeom++; continue;
+        }
+        if (r.height < MIN_H) { skippedSmallH++; continue; }
+        if (r.width  < MIN_W) { skippedSmallW++; continue; }
+
+        boxes.push({
+          top: r.top - hostTop,
+          bottom: r.bottom - hostTop,
+          height: r.height,
+          width: r.width,
+        });
+      } catch {
+        badGeom++; continue;
+      }
+    }
+  }
 
 /*
     if (MEASURE_NARROW) {
@@ -574,27 +597,6 @@ function measureSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[]
       }
     }
 */      
-    for (const g of candidates) {
-      totalG++;
-      try {
-        const r = g.getBoundingClientRect();
-        if (!Number.isFinite(r.top) || !Number.isFinite(r.height) || !Number.isFinite(r.width)) {
-          badGeom++; continue;
-        }
-        if (r.height < MIN_H) { skippedSmallH++; continue; }
-        if (r.width  < MIN_W) { skippedSmallW++; continue; }
-
-        boxes.push({
-          top: r.top - hostTop,
-          bottom: r.bottom - hostTop,
-          height: r.height,
-          width: r.width,
-        });
-      } catch {
-        badGeom++; continue;
-      }
-    }
-  }
 
   boxes.sort((a, b) => a.top - b.top);
 
