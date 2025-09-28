@@ -93,6 +93,7 @@ function makeAfterPaint(outer: HTMLDivElement) {
           ? performance.now()
           : Date.now();
 
+          /*
       function finish(why: "raf" | "timeout" | "hidden" | "message" | "safety-tick" | "ceiling"): void {
         if (done) { return; }
         done = true;
@@ -118,7 +119,33 @@ function makeAfterPaint(outer: HTMLDivElement) {
         window.setTimeout(() => finish("hidden"), 0);
         return;
       }
+*/
 
+      function finish(
+        why: "raf" | "timeout" | "hidden" | "message" | "safety-tick" | "ceiling"
+      ): void {
+        if (done) { return; }
+        done = true;
+        try {
+          // Keep lightweight breadcrumbs for debugging
+          outer.dataset.osmdAfterpaint = `${label ?? ""}:${why}`;
+          const now =
+            typeof performance !== "undefined" && typeof performance.now === "function"
+              ? performance.now()
+              : Date.now();
+          const ms = Math.round(now - t0);
+          outer.dataset.osmdAfterpaintMs = String(ms);
+
+          void logStep(`[ap] ${label ?? ""} -> ${why} (${ms}ms)`);
+
+          // Optional: DevTools-only trace (no HUD)
+          // eslint-disable-next-line no-console
+          //console.debug(`[ap] ${label ?? ""} -> ${why} (${ms}ms)`);
+          // Or, if you prefer to route through your logger:
+          // void logStep(`[ap] ${label ?? ""} -> ${why} (${ms}ms)`);
+        } catch {}
+        resolve();
+      }
       try {
         window.requestAnimationFrame(() => {
           window.requestAnimationFrame(() => finish("raf"));
@@ -166,6 +193,7 @@ function withUntransformedSvg<T>(outer: HTMLDivElement, fn: (svg: SVGSVGElement)
 }
 
 /** Top-layer root used only for the debug console */
+/*
 function getTopLayer(): HTMLDivElement {
   let root = document.querySelector<HTMLDivElement>('[data-osmd-toplayer="1"]');
   if (!root) {
@@ -196,8 +224,10 @@ function getTopLayer(): HTMLDivElement {
   }
   return root;
 }
+*/
 
 /** The only on-page console: docked left, full height */
+/*
 function getConsoleTop(): HTMLPreElement {
   const root = getTopLayer();
 
@@ -271,6 +301,7 @@ function getConsoleTop(): HTMLPreElement {
   }
   return box;
 }
+*/
 
 /** Best-effort "wait until the browser can paint" (bounded) */
 async function waitForPaint(timeoutMs = 450): Promise<void> {
@@ -296,30 +327,14 @@ export async function logStep(
   message: string,
   opts: { paint?: boolean; outer?: HTMLDivElement | null } = {}
 ): Promise<void> {
-  if (!DEBUG_LOG) return;
-
+  if (!DEBUG_LOG) { return; }
   const { paint = false, outer = null } = opts;
-
-  const ts = new Date().toISOString().split("T")[1]?.split(".")[0] ?? "";
-  const line = `[${ts}] ${message}`;
-
   try {
-    // Single sink: DevTools console
-    // (Use console.debug if you want these hidden by default.)
-    console.log(line);
-  } catch {
-    /* ignore */
-  }
-
-  if (outer) {
-    // Keep the breadcrumb data-attr that other code reads
-    outer.dataset.osmdLastLog = `${Date.now()}:${message.slice(0, 80)}`;
-  }
-
-  if (paint) {
-    // Honor the "please yield for paint" behavior some callers rely on
-    await waitForPaint();
-  }
+    // eslint-disable-next-line no-console
+    console.log(message);
+    if (outer) outer.dataset.osmdLastLog = `${Date.now()}:${message.slice(0,80)}`;
+    if (paint) await waitForPaint();
+  } catch {}
 }
 
 /*
@@ -1553,8 +1568,10 @@ const reflowOnWidthChange = useCallback(
 
       const renderMs = Math.round(t1 - t0);
       outer.dataset.osmdRenderMs = String(renderMs);
-      await logStep(`render:finished (${renderMs}ms)`);
       await logStep(`[render] finished attempt#${attemptForRender} (${renderMs}ms)`);
+
+      //await logStep(`render:finished (${renderMs}ms)`);
+      //await logStep(`[render] finished attempt#${attemptForRender} (${renderMs}ms)`);
 
       // ===== DEBUG PAUSE AFTER RENDER =====
       // Dev: literal debugger (works in `npm run dev` if DevTools is open)
