@@ -53,8 +53,8 @@ function qflag(name: string, fallback = false): boolean {
 //const BREAK_VIA_FETCH   = qflag("breakFetch", false);   // prod/Vercel: pause via fetch breakpoint
 
 // Hard, deterministic breakpoints we can flip via URL:
-const BREAK_BEFORE_REFLOW = qflag("breakBefore", false);
-const BREAK_AFTER_RENDER  = qflag("breakAfter",  false);
+//const BREAK_BEFORE_REFLOW = qflag("breakBefore", false);
+//const BREAK_AFTER_RENDER  = qflag("breakAfter",  false);
 
 // Measurement knobs (A/B without touching pagination)
 const MEASURE_USE_BBOX  = qflag("bbox", false);         // use getBBox() instead of getBoundingClientRect()
@@ -1380,7 +1380,7 @@ const reflowOnWidthChange = useCallback(
     void logStep(`[reflow] ENTER attempt#${attempt} • ${fmtFlags()}`);
 
     // >>> DEBUG HOOK: pause before heavy OSMD render
-    if (BREAK_BEFORE_REFLOW) { debugger; }
+    //if (BREAK_BEFORE_REFLOW) { debugger; }
 
     const ap = makeAfterPaint(outer);
 
@@ -1486,7 +1486,7 @@ const reflowOnWidthChange = useCallback(
         return;
       }
       // >>> DEBUG HOOK: pause right after render returns
-      if (BREAK_AFTER_RENDER) { debugger; }
+      //if (BREAK_AFTER_RENDER) { debugger; }
 
       perfMark('zoom-render:end');
       perfMeasure('zoom-render','zoom-render:start','zoom-render:end');
