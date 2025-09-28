@@ -2916,31 +2916,6 @@ const reflowOnWidthChange = useCallback(
           <div>{busyMsg || DEFAULT_BUSY}</div>
         </div>
       </div>
-      {/* Tiny fixed debug button (on top of overlay) */}
-      <button
-        type="button"
-        onClick={() => dumpDebug()}
-        style={{
-          position: "fixed",
-          top: 8,
-          right: 8,
-          zIndex: 10000,          // higher than the overlay (overlay is 9999)
-          pointerEvents: "auto",  // ensure it can be clicked even over overlay
-          background: "#111",
-          color: "#0f0",
-          border: "1px solid #0f0",
-          borderRadius: 6,
-          padding: "4px 6px",
-          fontSize: 11,
-          fontFamily: "monospace",
-          cursor: "pointer",
-          opacity: 0.9,
-          userSelect: "none"
-        }}
-        aria-label="Dump debug info"
-      >
-        DBG
-      </button>
 
       <style>{`@keyframes osmd-spin { from { transform: rotate(0) } to { transform: rotate(360deg) } }`}</style>
     </div>
