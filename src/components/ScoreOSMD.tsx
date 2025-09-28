@@ -37,31 +37,6 @@ const REFLOW = {
   PEEK_GUARD_HI_DPR: 7,
 };
 
-// ---------- Debug flag helpers (read from ?pause=1&breakFetch=1&bbox=1&narrow=1) ----------
-/*
-function qflag(name: string, fallback = false): boolean {
-  try {
-    const sp = new URLSearchParams(window.location.search);
-    const v = sp.get(name);
-    if (v === null) { return fallback; }
-    if (/^(0|false|off)$/i.test(v)) { return false; }
-    return true;
-  } catch { return fallback; }
-}
-*/
-
-// Global, runtime-read flags (safe in Next; ignored server-side)
-//const PAUSE_AFTER_RENDER = qflag("pause", false);       // dev-only: literal debugger
-//const BREAK_VIA_FETCH   = qflag("breakFetch", false);   // prod/Vercel: pause via fetch breakpoint
-
-// Hard, deterministic breakpoints we can flip via URL:
-//const BREAK_BEFORE_REFLOW = qflag("breakBefore", false);
-//const BREAK_AFTER_RENDER  = qflag("breakAfter",  false);
-
-// Measurement knobs (A/B without touching pagination)
-//const MEASURE_USE_BBOX  = qflag("bbox", false);         // use getBBox() instead of getBoundingClientRect()
-//const MEASURE_NARROW    = qflag("narrow", false);       // try narrower selector for <g> scanning
-
 async function withTimeout<T>(p: Promise<T>, ms: number, tag: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const t = window.setTimeout(() => reject(new Error(tag)), ms);
@@ -93,34 +68,6 @@ function makeAfterPaint(outer: HTMLDivElement) {
           ? performance.now()
           : Date.now();
 
-          /*
-      function finish(why: "raf" | "timeout" | "hidden" | "message" | "safety-tick" | "ceiling"): void {
-        if (done) { return; }
-        done = true;
-        try {
-          outer.dataset.osmdAfterpaint = `${label ?? ""}:${why}`;
-          const now =
-            typeof performance !== "undefined" && typeof performance.now === "function"
-              ? performance.now()
-              : Date.now();
-          const ms = Math.round(now - t0);
-          outer.dataset.osmdAfterpaintMs = String(ms);
-          const box = document.querySelector<HTMLPreElement>('pre[data-osmd-log="1"]');
-          if (box) {
-            const ts = new Date().toISOString().split('T')[1]?.split('.')[0] ?? '';
-            box.textContent += `[${ts}] [ap] ${label ?? ""} -> ${why} (${ms}ms)\n`;
-            box.scrollTop = box.scrollHeight;
-          }
-        } catch {}
-        resolve();
-      }
-
-      if (document.visibilityState !== "visible") {
-        window.setTimeout(() => finish("hidden"), 0);
-        return;
-      }
-*/
-
       function finish(
         why: "raf" | "timeout" | "hidden" | "message" | "safety-tick" | "ceiling"
       ): void {
@@ -137,12 +84,6 @@ function makeAfterPaint(outer: HTMLDivElement) {
           outer.dataset.osmdAfterpaintMs = String(ms);
 
           void logStep(`[ap] ${label ?? ""} -> ${why} (${ms}ms)`);
-
-          // Optional: DevTools-only trace (no HUD)
-          // eslint-disable-next-line no-console
-          //console.debug(`[ap] ${label ?? ""} -> ${why} (${ms}ms)`);
-          // Or, if you prefer to route through your logger:
-          // void logStep(`[ap] ${label ?? ""} -> ${why} (${ms}ms)`);
         } catch {}
         resolve();
       }
@@ -163,9 +104,9 @@ function makeAfterPaint(outer: HTMLDivElement) {
         ch.port2.postMessage(1);
       } catch {}
 
-      // Never wedge even if rAF/message are throttled: resolve next macrotask.
-      window.setTimeout(() => finish("safety-tick"), 0);
+      //window.setTimeout(() => finish("safety-tick"), 0);
 
+      // Never wedge even if rAF/message are throttled: resolve next macrotask.
       window.setTimeout(() => finish("ceiling"), Math.max(timeoutMs * 4, 1200));
     });
   };
@@ -191,117 +132,6 @@ function withUntransformedSvg<T>(outer: HTMLDivElement, fn: (svg: SVGSVGElement)
     svg.style.transformOrigin = prevOrigin;
   }
 }
-
-/** Top-layer root used only for the debug console */
-/*
-function getTopLayer(): HTMLDivElement {
-  let root = document.querySelector<HTMLDivElement>('[data-osmd-toplayer="1"]');
-  if (!root) {
-    root = document.createElement('div');
-    root.dataset.osmdToplayer = '1';
-    Object.assign(root.style, {
-      position: 'fixed',
-      inset: '0',
-      zIndex: String(2147483647),
-      pointerEvents: 'none',
-      margin: '0',
-      padding: '0',
-      transform: 'none',
-      filter: 'none',
-      contain: 'layout style paint',
-    } as CSSStyleDeclaration);
-    document.body.appendChild(root);
-
-    if (!document.querySelector('style[data-osmd-log-reset]')) {
-      const st = document.createElement('style');
-      st.setAttribute('data-osmd-log-reset', '');
-      st.textContent = `
-        html, body { margin:0 !important; padding:0 !important; border:0 !important; }
-        html, body, #__next, [data-osmd-root] { transform:none !important; filter:none !important; }
-      `;
-      document.head.appendChild(st);
-    }
-  }
-  return root;
-}
-*/
-
-/** The only on-page console: docked left, full height */
-/*
-function getConsoleTop(): HTMLPreElement {
-  const root = getTopLayer();
-
-  let box = root.querySelector<HTMLPreElement>('pre[data-osmd-log="1"]');
-  if (!box) {
-    box = document.createElement('pre');
-    box.dataset.osmdLog = '1';
-
-    Object.assign(box.style, {
-      position: 'absolute',
-      left: '8px',
-      right: 'auto',
-      // we’ll drive top/bottom dynamically to fill full height
-      top: '0px',
-      bottom: '0px',
-      width: 'min(560px, 45vw)',           // narrow column; resizeable
-      maxWidth: 'calc(100vw - 16px)',
-      overflow: 'auto',
-      background: 'rgba(0,0,0,0.85)',
-      color: '#0f0',
-      padding: '6px 8px',
-      borderRadius: '8px',
-      font: '11px/1.35 monospace',
-      whiteSpace: 'pre-wrap',
-      pointerEvents: 'auto',               // allow scrolling
-      touchAction: 'pan-y',
-      overscrollBehavior: 'contain',
-      boxSizing: 'border-box',
-      resize: 'horizontal',                // drag to widen/narrow
-    } as CSSStyleDeclaration);
-
-    root.appendChild(box);
-
-    const syncBounds = () => {
-      try {
-        const vv = (typeof window !== 'undefined' && 'visualViewport' in window)
-          ? window.visualViewport
-          : undefined;
-
-        if (vv) {
-          const topPx = Math.max(0, Math.floor(vv.offsetTop));
-          const bottomGapPx = Math.max(
-            0,
-            Math.floor((window.innerHeight || 0) - (vv.offsetTop + vv.height))
-          );
-          // Fill the visible viewport between its top and bottom edges
-          box!.style.top    = `calc(${topPx}px + env(safe-area-inset-top, 0px))`;
-          box!.style.bottom = `calc(${bottomGapPx}px + env(safe-area-inset-bottom, 0px))`;
-        } else {
-          // Desktop fallback: simply fill from top to bottom
-          box!.style.top = 'env(safe-area-inset-top, 0px)';
-          box!.style.bottom = 'env(safe-area-inset-bottom, 0px)';
-        }
-      } catch {
-        box!.style.top = '0px';
-        box!.style.bottom = '0px';
-      }
-    };
-
-    // Keep pinned to the visible viewport
-    try {
-      window.visualViewport?.addEventListener('resize', syncBounds);
-      window.visualViewport?.addEventListener('scroll', syncBounds);
-    } catch {}
-    window.addEventListener('resize', syncBounds);
-    window.addEventListener('scroll', syncBounds, { passive: true });
-    window.addEventListener('orientationchange', syncBounds);
-
-    // Initial layout
-    syncBounds();
-  }
-  return box;
-}
-*/
 
 /** Best-effort "wait until the browser can paint" (bounded) */
 async function waitForPaint(timeoutMs = 450): Promise<void> {
@@ -338,35 +168,6 @@ export async function logStep(
   } catch {}
 }
 
-/*
-let __logQueue: Promise<void> = Promise.resolve();
-
-export async function logStep(
-  message: string,
-  opts: { paint?: boolean; outer?: HTMLDivElement | null } = {}
-): Promise<void> {
-  if (!DEBUG_LOG) { return; }
-
-  const { paint = false, outer = null } = opts;
-
-  __logQueue = __logQueue.then(async () => {
-    const box = getConsoleTop();
-    const ts = new Date().toISOString().split("T")[1]?.split(".")[0] ?? "";
-    box.textContent += `[${ts}] ${message}\n`;
-    box.scrollTop = box.scrollHeight;
-
-    if (outer) {
-      outer.dataset.osmdLastLog = `${Date.now()}:${message.slice(0, 80)}`;
-    }
-
-    if (paint) {
-      await waitForPaint(); // give the browser a chance to actually paint
-    }
-  }).catch(() => { });
-
-  return __logQueue;
-}
-*/
 function tnow() {
   return (typeof performance !== 'undefined' && performance.now)
     ? performance.now()
@@ -470,73 +271,6 @@ function isTitleLike(first: Band | undefined, rest: Band[]): boolean {
   return first.height < Math.max(36, 0.6 * median);
 }
 
-/** Cluster OSMD <g> to “systems” and measure them relative to wrapper */
-/*
-function measureSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[] {
-  const pageRoots = Array.from(
-    svgRoot.querySelectorAll<SVGGElement>(
-      'g[id^="osmdCanvasPage"], g[id^="Page"], g[class*="Page"], g[class*="page"]'
-    )
-  );
-  const roots: Array<SVGGElement | SVGSVGElement> = pageRoots.length ? pageRoots : [svgRoot];
-
-  const hostTop = outer.getBoundingClientRect().top;
-  interface Box { top: number; bottom: number; height: number; width: number }
-  const boxes: Box[] = [];
-
-  let totalG = 0, skippedSmallH = 0, skippedSmallW = 0, badGeom = 0;
-    
-  for (const root of roots) {
-    for (const g of Array.from(root.querySelectorAll<SVGGElement>("g"))) {
-      totalG++;  // ← ADD: count every <g> we inspect
-
-      const r = g.getBoundingClientRect();
-      if (!Number.isFinite(r.top) || !Number.isFinite(r.height) || !Number.isFinite(r.width)) {
-        badGeom++;
-        continue;
-      }
-
-      // Looser thresholds so very narrow measures on phones are still captured
-      const MIN_H = 2;   // was 8 → 4 → 2 (capture ultra-thin groups)
-      const MIN_W = 8;   // was 40 → 16 → 8
-
-      if (r.height < MIN_H) { skippedSmallH++; continue; }
-      if (r.width  < MIN_W) { skippedSmallW++; continue; }
-
-      boxes.push({
-        top: r.top - hostTop,
-        bottom: r.bottom - hostTop,
-        height: r.height,
-        width: r.width,
-      });
-    }
-  }
-
-  boxes.sort((a, b) => a.top - b.top);
-
-  const GAP = dynamicBandGapPx(outer);
-  const bands: Band[] = [];
-  for (const b of boxes) {
-    const last = bands.length ? bands[bands.length - 1] : undefined;
-    if (!last || b.top - last.bottom > GAP) {
-      bands.push({ top: b.top, bottom: b.bottom, height: b.height });
-    } else {
-      last.top = Math.min(last.top, b.top);
-      last.bottom = Math.max(last.bottom, b.bottom);
-      last.height = last.bottom - last.top;
-    }
-  }
-
-  void logStep(
-  `measure:scan:stats totalG=${totalG} boxes=${boxes.length} ` +
-  `skippedH=${skippedSmallH} skippedW=${skippedSmallW} badGeom=${badGeom} ` +
-  `bands=${bands.length}`
-  );
-
-  return bands;
-}
-*/
-
 function measureSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[] {
   // Page roots (unchanged)
   const pageRoots = Array.from(
@@ -548,12 +282,6 @@ function measureSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[]
 
   // Host offset (unchanged)
   const hostTop = outer.getBoundingClientRect().top;
-
-  // If we use getBBox() we need a pixels-per-SVG-unit scale
-  //const svgRect = svgRoot.getBoundingClientRect();
-  //const vb = svgRoot.viewBox?.baseVal;
-  //const scaleX = (vb && vb.width)  ? (svgRect.width  / vb.width)  : 1;
-  //const scaleY = (vb && vb.height) ? (svgRect.height / vb.height) : 1;
 
   interface Box { top: number; bottom: number; height: number; width: number }
   const boxes: Box[] = [];
@@ -585,60 +313,6 @@ function measureSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[]
     }
   }
 
-/*
-    if (MEASURE_NARROW) {
-      // Heuristic: try to find system-like groups; if good reduction, use them
-      const sys = Array.from(
-        root.querySelectorAll<SVGGElement>(
-          'g[id*="System"], g[class*="System"], g[id*="system"], g[class*="system"]'
-        )
-      );
-      if (sys.length >= 4 && sys.length < allG.length * 0.6) {
-        candidates = sys;
-        //narrowedBy += (allG.length - sys.length);
-      }
-    }
-    for (const g of candidates) {
-      totalG++;
-
-      try {
-        if (MEASURE_USE_BBOX) {
-          // Faster on some scores: SVG-native bbox scaled to CSS px
-          const bb = g.getBBox(); // SVG units
-          if (!Number.isFinite(bb.y) || !Number.isFinite(bb.height) || !Number.isFinite(bb.width)) {
-            badGeom++; continue;
-          }
-          const hPx = bb.height * scaleY;
-          const wPx = bb.width  * scaleX;
-          if (hPx < MIN_H) { skippedSmallH++; continue; }
-          if (wPx < MIN_W) { skippedSmallW++; continue; }
-
-          const topPx = (bb.y * scaleY) + svgRect.top - hostTop;
-          const bottomPx = topPx + hPx;
-
-          boxes.push({ top: topPx, bottom: bottomPx, height: hPx, width: wPx });
-        } else {
-          // Default path: CSS geometry
-          const r = g.getBoundingClientRect();
-          if (!Number.isFinite(r.top) || !Number.isFinite(r.height) || !Number.isFinite(r.width)) {
-            badGeom++; continue;
-          }
-          if (r.height < MIN_H) { skippedSmallH++; continue; }
-          if (r.width  < MIN_W) { skippedSmallW++; continue; }
-
-          boxes.push({
-            top: r.top - hostTop,
-            bottom: r.bottom - hostTop,
-            height: r.height,
-            width: r.width,
-          });
-        }
-      } catch {
-        badGeom++; continue;
-      }
-    }
-*/      
-
   boxes.sort((a, b) => a.top - b.top);
 
   // Banding (unchanged)
@@ -654,20 +328,7 @@ function measureSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[]
       last.height = last.bottom - last.top;
     }
   }
-
-  // Single serialized log (keeps HUD flowing) — keep exactly one line
-  void logStep(
-  `measure:scan:stats totalG=${totalG} boxes=${boxes.length} ` +
-  `skippedH=${skippedSmallH} skippedW=${skippedSmallW} badGeom=${badGeom} ` +
-  `bands=${bands.length}`
-  );
-  //void logStep(
-  //  `measure:scan:stats mode=${MEASURE_USE_BBOX ? "bbox" : "rect"} ` +
-  //  `narrow=${MEASURE_NARROW ? "on" : "off"} totalG=${totalG} boxes=${boxes.length} ` +
-  //  `skippedH=${skippedSmallH} skippedW=${skippedSmallW} badGeom=${badGeom} narrowedBy=${narrowedBy} ` +
-  //  `bands=${bands.length}`
-  //);
-
+  
   return bands;
 }
 
@@ -699,19 +360,6 @@ function computePageStartIndices(bands: Band[], viewportH: number): number[] {
         ? Math.max(12, Math.round(viewportH * 0.06))
         : 0;
 
-      // Optional tweak: on first page, try to fit title + two full systems [causing infinite loop?]
-      /*
-      if (isFirstPage) {
-        const systemsToTry = 2;        // title + 2 systems
-        const endIdx = i + systemsToTry;
-        const endBand = bands[endIdx];
-        if (endBand && (endBand.bottom - startTop) <= (viewportH + slack)) {
-          last = endIdx;
-          continue; // keep scanning from the new 'last'
-        }
-      }
-      */
-
       if (next.bottom - startTop <= viewportH + slack) {
         last++;
       } else {
@@ -731,19 +379,6 @@ function hasZoomProp(o: unknown): o is { Zoom: number } {
   const maybe = o as { Zoom?: unknown };
   return typeof maybe.Zoom === "number";
 }
-
-/*
-function probeLine(msg: string, outer?: HTMLDivElement | null) {
-  if (!DEBUG_LOG) { return; } 
-  try {
-    const box = getConsoleTop(); // uses your existing top-layer console
-    const ts = new Date().toISOString().split("T")[1]?.split(".")[0] ?? "";
-    box.textContent += `[${ts}] ${msg}\n`;
-    box.scrollTop = box.scrollHeight;
-    if (outer) { outer.dataset.osmdProbe = msg; } // breadcrumb
-  } catch {}
-}
-*/
 
 function perfMark(n: string) { try { performance.mark(n); } catch {} }
 function perfMeasure(n: string, a: string, b: string) {
