@@ -685,7 +685,9 @@ function hasZoomProp(o: unknown): o is { Zoom: number } {
   return typeof maybe.Zoom === "number";
 }
 
+/*
 function probeLine(msg: string, outer?: HTMLDivElement | null) {
+  if (!DEBUG_LOG) { return; } 
   try {
     const box = getConsoleTop(); // uses your existing top-layer console
     const ts = new Date().toISOString().split("T")[1]?.split(".")[0] ?? "";
@@ -694,6 +696,7 @@ function probeLine(msg: string, outer?: HTMLDivElement | null) {
     if (outer) { outer.dataset.osmdProbe = msg; } // breadcrumb
   } catch {}
 }
+*/
 
 function perfMark(n: string) { try { performance.mark(n); } catch {} }
 function perfMeasure(n: string, a: string, b: string) {
@@ -887,7 +890,7 @@ export default function ScoreOSMD({
     const svg   = outer ? getSvg(outer) : null;
 
     const phase = outer?.dataset.osmdPhase ?? "(none)";
-    const hostHiddenAttr = outer?.dataset.osmdHostHidden ?? "(unset)";
+    //const hostHiddenAttr = outer?.dataset.osmdHostHidden ?? "(unset)";
     const busyAttr = outer?.dataset.osmdBusy ?? "(unset)";
     const overlayShown = !!overlayRef.current && overlayRef.current.style.display !== "none";
 
@@ -907,7 +910,7 @@ export default function ScoreOSMD({
     void logStep(
       `[telemetry] ${label} ` +
       `phase=${phase} host=${Boolean(host)} svg=${Boolean(svg)} g#=${gCount} ` +
-      `busy=${busyRef.current} busyAttr=${busyAttr} overlayShown=${overlayShown} hostHidden=${hostHiddenAttr} ` +
+      `busy=${busyRef.current} busyAttr=${busyAttr} overlayShown=${overlayShown} ` +
       `cv:inline=${cvInline} cv:computed=${cvComputed} vis:inline=${visInline} vis:computed=${visComputed}`
     );
   }, []);
@@ -1553,19 +1556,11 @@ const reflowOnWidthChange = useCallback(
       measureWatchdog = setTimeout(() => {
         try {
           outer.dataset.osmdPhase = "measure:watchdog";
-          probeLine("[probe] measure:watchdog fired", outer);
-          void logStep("measure:watchdog:force-continue");
+          void logStep("[probe] measure:watchdog fired → force-continue", { outer });
         } catch {}
       }, 2500);
 
-      // Bypass the queued logger so we always see *something* immediately
-      probeLine("[probe] measure:start", outer);
-
-      // Do not await the logger here (avoid blocking on the queue)
-      void logStep("measure:start");
-
-      // (optional breadcrumb before the heavy scan)
-      void logStep("measure:scan:enter");
+      void logStep("measure:start:scan-enter", { outer });
 
       perfMark('zoom-measure:start');
       const newBands = withUntransformedSvg(outer, (svg) => measureSystemsPx(outer, svg)) ?? [];
@@ -2084,10 +2079,11 @@ const reflowOnWidthChange = useCallback(
       await logStep("render:start")
 
       // prove the loop is alive before we call into OSMD (no awaits)
-      try { queueMicrotask(() => probeLine("[probe] init:microtask before render", outer)) } catch {}
+      try { queueMicrotask(() => { void logStep("[probe] init:microtask before render", { outer }); }); } catch {}
+
       try {
         const ch = new MessageChannel()
-        ch.port1.onmessage = () => probeLine("[probe] init:MessageChannel before render", outer)
+        ch.port1.onmessage = () => { void logStep("[probe] init:MessageChannel before render", { outer }); };
         ch.port2.postMessage(1)
       } catch {}
 
@@ -2095,14 +2091,14 @@ const reflowOnWidthChange = useCallback(
       const t0 = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now()
       await renderWithEffectiveWidth(outer, osmd)
       outer.dataset.osmdPhase = "render:return"
-      probeLine("[probe] render returned", outer)
+      void logStep("[probe] render returned", { outer });
+
       const t1 = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now()
       const renderMs = Math.round(t1 - t0)
       outer.dataset.osmdRenderMs = String(renderMs)
       outer.dataset.osmdRenderEndedAt = String(Date.now())
-      void logStep(`render:finished ${renderMs}ms`)
-      void logStep(`[render] finished attempt#${attemptForRender} (${renderMs}ms)`)
-
+      void logStep(`[render] finished attempt#${attemptForRender} (${renderMs}ms)`, { outer });
+ 
       dumpTelemetry("post-render:init")
 
       // --------- SKIP POST-RENDER WAIT (large scores can throttle timers) ---------
