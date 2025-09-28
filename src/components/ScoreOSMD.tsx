@@ -519,16 +519,12 @@ function measureSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[]
   const MIN_W = 8;
 
   for (const root of roots) {
-    // Candidate selection
     const allG = Array.from(root.querySelectorAll<SVGGElement>("g"));
-    let candidates = allG;
-    for (const g of candidates) {
+    for (const g of allG) {
       totalG++;
       try {
         const r = g.getBoundingClientRect();
-        if (!Number.isFinite(r.top) || !Number.isFinite(r.height) || !Number.isFinite(r.width)) {
-          badGeom++; continue;
-        }
+        if (!Number.isFinite(r.top) || !Number.isFinite(r.height) || !Number.isFinite(r.width)) { badGeom++; continue; }
         if (r.height < MIN_H) { skippedSmallH++; continue; }
         if (r.width  < MIN_W) { skippedSmallW++; continue; }
 
@@ -538,9 +534,7 @@ function measureSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[]
           height: r.height,
           width: r.width,
         });
-      } catch {
-        badGeom++; continue;
-      }
+      } catch { badGeom++; continue; }
     }
   }
 
