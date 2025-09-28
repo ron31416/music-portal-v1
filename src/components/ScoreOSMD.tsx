@@ -1478,13 +1478,13 @@ const reflowOnWidthChange = useCallback(
       perfMark('zoom-render:start');
       await renderWithEffectiveWidth(outer, osmd);
       // CUTPOINT A — bail right after render (before measure/pagination)
-      if (qflag("afterRenderStop", false)) {
-        await logStep("afterRenderStop: short-circuit after render");
-        spinnerOwnerRef.current = null;
-        hideBusy();
-        reflowRunningRef.current = false;
-        return;
-      }
+      // if (qflag("afterRenderStop", false)) {
+       //  await logStep("afterRenderStop: short-circuit after render");
+        // spinnerOwnerRef.current = null;
+        // hideBusy();
+        // reflowRunningRef.current = false;
+        // return;
+      // }
       // >>> DEBUG HOOK: pause right after render returns
       //if (BREAK_AFTER_RENDER) { debugger; }
 
@@ -1547,13 +1547,13 @@ const reflowOnWidthChange = useCallback(
       perfMark('zoom-measure:start');
       const newBands = withUntransformedSvg(outer, (svg) => measureSystemsPx(outer, svg)) ?? [];
       // CUTPOINT B — bail after measure (before starts)
-      if (qflag("afterMeasureStop", false)) {
-        await logStep(`afterMeasureStop: bands=${newBands.length}`);
-        spinnerOwnerRef.current = null;
-        hideBusy();
-        reflowRunningRef.current = false;
-        return;
-      }
+      // if (qflag("afterMeasureStop", false)) {
+        // await logStep(`afterMeasureStop: bands=${newBands.length}`);
+        // spinnerOwnerRef.current = null;
+        // hideBusy();
+        // reflowRunningRef.current = false;
+        // return;
+      // }
       perfMark('zoom-measure:end');
       perfMeasure('zoom-measure','zoom-measure:start','zoom-measure:end');
       await logStep(`[perf] zoom-measure ms=${perfLastMs('zoom-measure')}`);
@@ -1580,13 +1580,13 @@ const reflowOnWidthChange = useCallback(
       perfMark('starts:compute:start');
       const newStarts = computePageStartIndices(newBands, getPAGE_H(outer));
       // CUTPOINT C — bail after starts (before applyPage)
-      if (qflag("afterStartsStop", false)) {
-        await logStep(`afterStartsStop: starts=${newStarts.length}`);
-        spinnerOwnerRef.current = null;
-        hideBusy();
-        reflowRunningRef.current = false;
-        return;
-      }
+      // if (qflag("afterStartsStop", false)) {
+        // await logStep(`afterStartsStop: starts=${newStarts.length}`);
+        // spinnerOwnerRef.current = null;
+        // hideBusy();
+        // reflowRunningRef.current = false;
+        // return;
+      // }
       perfMark('starts:compute:end');
       perfMeasure('starts:compute','starts:compute:start','starts:compute:end');
       await logStep(`[perf] starts:compute ms=${perfLastMs('starts:compute')}`);
