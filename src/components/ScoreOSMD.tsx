@@ -18,7 +18,7 @@ interface Props {
 
 interface Band { top: number; bottom: number; height: number }
 
-/* ---------- Reflow & pagination sizing (central knobs) ---------- */
+// Central pagination/masking knobs (tuned for Hi/Lo DPR). Change here, not inline.
 const REFLOW = {
   // Width used for OSMD's layout (computed from container width / zoom, then clamped)
   MIN_LAYOUT_W: 320,
@@ -35,7 +35,11 @@ const REFLOW = {
   MASK_BOTTOM_SAFETY_PX: 12,
   PEEK_GUARD_LO_DPR: 5,
   PEEK_GUARD_HI_DPR: 7,
-};
+
+  // Fixed bottom cutter padding
+  BOTTOM_PEEK_PAD_LO_DPR: 5,
+  BOTTOM_PEEK_PAD_HI_DPR: 6,
+} as const;
 
 async function withTimeout<T>(p: Promise<T>, ms: number, tag: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {
@@ -286,9 +290,6 @@ function measureSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[]
   interface Box { top: number; bottom: number; height: number; width: number }
   const boxes: Box[] = [];
 
-  //let totalG = 0, skippedSmallH = 0, skippedSmallW = 0, badGeom = 0, narrowedBy = 0;
-  let totalG = 0, skippedSmallH = 0, skippedSmallW = 0, badGeom = 0;
-
   // Thresholds (unchanged but visible) [revisit]
   const MIN_H = 2;
   const MIN_W = 8;
@@ -296,12 +297,13 @@ function measureSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[]
   for (const root of roots) {
     const allG = Array.from(root.querySelectorAll<SVGGElement>("g"));
     for (const g of allG) {
-      totalG++;
       try {
         const r = g.getBoundingClientRect();
-        if (!Number.isFinite(r.top) || !Number.isFinite(r.height) || !Number.isFinite(r.width)) { badGeom++; continue; }
-        if (r.height < MIN_H) { skippedSmallH++; continue; }
-        if (r.width  < MIN_W) { skippedSmallW++; continue; }
+        if (!Number.isFinite(r.top) || !Number.isFinite(r.height) || !Number.isFinite(r.width)) {
+          continue;
+        }
+        if (r.height < MIN_H) continue;
+        if (r.width  < MIN_W) continue;
 
         boxes.push({
           top: r.top - hostTop,
@@ -309,7 +311,9 @@ function measureSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[]
           height: r.height,
           width: r.width,
         });
-      } catch { badGeom++; continue; }
+      } catch {
+        continue;
+      }
     }
   }
 
@@ -657,9 +661,11 @@ export default function ScoreOSMD({
   }, [vpHRef, topGutterPx]);
 
   const bottomPeekPad = useCallback(
-    () => ((window.devicePixelRatio || 1) >= 2 ? 6 : 5), // same pad everywhere
-    []
-  );
+  () => ((window.devicePixelRatio || 1) >= 2
+    ? REFLOW.BOTTOM_PEEK_PAD_HI_DPR
+    : REFLOW.BOTTOM_PEEK_PAD_LO_DPR),
+  []
+);
 
   const pageHeight = useCallback(
     (outer: HTMLDivElement) => Math.max(1, getViewportH(outer) - bottomPeekPad()),
@@ -937,7 +943,7 @@ export default function ScoreOSMD({
           background: "#fff",
           pointerEvents: "none",
           zIndex: "6",
-        } as CSSStyleDeclaration);
+        });
         outer.appendChild(bottomCutter);
       } else {
         bottomCutter.style.height = `${BOTTOM_PEEK_PAD}px`;
