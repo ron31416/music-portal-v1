@@ -58,7 +58,7 @@ function qflag(name: string, fallback = false): boolean {
 
 // Measurement knobs (A/B without touching pagination)
 //const MEASURE_USE_BBOX  = qflag("bbox", false);         // use getBBox() instead of getBoundingClientRect()
-const MEASURE_NARROW    = qflag("narrow", false);       // try narrower selector for <g> scanning
+//const MEASURE_NARROW    = qflag("narrow", false);       // try narrower selector for <g> scanning
 
 async function withTimeout<T>(p: Promise<T>, ms: number, tag: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {
@@ -521,6 +521,7 @@ function measureSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[]
     const allG = Array.from(root.querySelectorAll<SVGGElement>("g"));
     let candidates = allG;
 
+/*
     if (MEASURE_NARROW) {
       // Heuristic: try to find system-like groups; if good reduction, use them
       const sys = Array.from(
@@ -533,7 +534,6 @@ function measureSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[]
         //narrowedBy += (allG.length - sys.length);
       }
     }
-/*
     for (const g of candidates) {
       totalG++;
 
