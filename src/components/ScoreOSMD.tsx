@@ -332,8 +332,9 @@ export async function logStep(
   try {
     // eslint-disable-next-line no-console
     console.log(message);
-    if (outer) outer.dataset.osmdLastLog = `${Date.now()}:${message.slice(0,80)}`;
-    if (paint) await waitForPaint();
+
+    if (outer) { outer.dataset.osmdLastLog = `${Date.now()}:${message.slice(0,80)}`; }
+    if (paint) { await waitForPaint(); }
   } catch {}
 }
 
