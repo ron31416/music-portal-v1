@@ -290,8 +290,39 @@ async function waitForPaint(timeoutMs = 450): Promise<void> {
 }
 
 // Flip this to disable all on-page logging in one place.
-const DEBUG_LOG = false;
+const DEBUG_LOG = true;
 
+export async function logStep(
+  message: string,
+  opts: { paint?: boolean; outer?: HTMLDivElement | null } = {}
+): Promise<void> {
+  if (!DEBUG_LOG) return;
+
+  const { paint = false, outer = null } = opts;
+
+  const ts = new Date().toISOString().split("T")[1]?.split(".")[0] ?? "";
+  const line = `[${ts}] ${message}`;
+
+  try {
+    // Single sink: DevTools console
+    // (Use console.debug if you want these hidden by default.)
+    console.log(line);
+  } catch {
+    /* ignore */
+  }
+
+  if (outer) {
+    // Keep the breadcrumb data-attr that other code reads
+    outer.dataset.osmdLastLog = `${Date.now()}:${message.slice(0, 80)}`;
+  }
+
+  if (paint) {
+    // Honor the "please yield for paint" behavior some callers rely on
+    await waitForPaint();
+  }
+}
+
+/*
 let __logQueue: Promise<void> = Promise.resolve();
 
 export async function logStep(
@@ -315,11 +346,11 @@ export async function logStep(
     if (paint) {
       await waitForPaint(); // give the browser a chance to actually paint
     }
-  }).catch(() => { /* keep the queue alive even if a write fails */ });
+  }).catch(() => { });
 
   return __logQueue;
 }
-
+*/
 function tnow() {
   return (typeof performance !== 'undefined' && performance.now)
     ? performance.now()
