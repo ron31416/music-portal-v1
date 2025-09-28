@@ -51,7 +51,7 @@ function qflag(name: string, fallback = false): boolean {
 // Global, runtime-read flags (safe in Next; ignored server-side)
 const PAUSE_AFTER_RENDER = qflag("pause", false);       // dev-only: literal debugger
 const BREAK_VIA_FETCH   = qflag("breakFetch", false);   // prod/Vercel: pause via fetch breakpoint
-const HIDE_DURING_REFLOW = qflag("hide", true);
+//const HIDE_DURING_REFLOW = qflag("hide", true);
 
 // Hard, deterministic breakpoints we can flip via URL:
 const BREAK_BEFORE_REFLOW = qflag("breakBefore", false);
@@ -1460,7 +1460,7 @@ const reflowOnWidthChange = useCallback(
 
       // Hide host to avoid a giant paint between render and measure
       const hostForReflow = hostRef.current;
-      if (hostForReflow && HIDE_DURING_REFLOW) {
+      if (hostForReflow) { //} && HIDE_DURING_REFLOW) {
         prevVisForReflow = hostForReflow.style.visibility || "";
         prevCvForReflow = hostForReflow.style.getPropertyValue("content-visibility") || "";
         hostForReflow.style.removeProperty("content-visibility");
@@ -1655,7 +1655,7 @@ const reflowOnWidthChange = useCallback(
       // Reveal host now that the page has been applied
       try {
         const hostNow = hostRef.current;
-        if (hostNow && HIDE_DURING_REFLOW) {
+        if (hostNow) { //} && HIDE_DURING_REFLOW) {
           if (prevCvForReflow) {
             hostNow.style.setProperty("content-visibility", prevCvForReflow);
           } else {
