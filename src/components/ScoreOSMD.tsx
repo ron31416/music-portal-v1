@@ -509,7 +509,8 @@ function measureSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[]
   interface Box { top: number; bottom: number; height: number; width: number }
   const boxes: Box[] = [];
 
-  let totalG = 0, skippedSmallH = 0, skippedSmallW = 0, badGeom = 0, narrowedBy = 0;
+  //let totalG = 0, skippedSmallH = 0, skippedSmallW = 0, badGeom = 0, narrowedBy = 0;
+  let totalG = 0, skippedSmallH = 0, skippedSmallW = 0, badGeom = 0;
 
   // Thresholds (unchanged but visible) [revisit]
   const MIN_H = 2;
@@ -529,7 +530,7 @@ function measureSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[]
       );
       if (sys.length >= 4 && sys.length < allG.length * 0.6) {
         candidates = sys;
-        narrowedBy += (allG.length - sys.length);
+        //narrowedBy += (allG.length - sys.length);
       }
     }
 /*
