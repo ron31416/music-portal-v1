@@ -49,8 +49,8 @@ function qflag(name: string, fallback = false): boolean {
 }
 
 // Global, runtime-read flags (safe in Next; ignored server-side)
-const PAUSE_AFTER_RENDER = qflag("pause", false);       // dev-only: literal debugger
-const BREAK_VIA_FETCH   = qflag("breakFetch", false);   // prod/Vercel: pause via fetch breakpoint
+//const PAUSE_AFTER_RENDER = qflag("pause", false);       // dev-only: literal debugger
+//const BREAK_VIA_FETCH   = qflag("breakFetch", false);   // prod/Vercel: pause via fetch breakpoint
 
 // Hard, deterministic breakpoints we can flip via URL:
 const BREAK_BEFORE_REFLOW = qflag("breakBefore", false);
@@ -59,15 +59,6 @@ const BREAK_AFTER_RENDER  = qflag("breakAfter",  false);
 // Measurement knobs (A/B without touching pagination)
 const MEASURE_USE_BBOX  = qflag("bbox", false);         // use getBBox() instead of getBoundingClientRect()
 const MEASURE_NARROW    = qflag("narrow", false);       // try narrower selector for <g> scanning
-
-/*
-async function withTimeout<T>(p: Promise<T>, ms: number, tag: string): Promise<T> {
-  return Promise.race([
-    p,
-    new Promise<never>((_, rej) => window.setTimeout(() => rej(new Error(tag)), ms)),
-  ]);
-}
-*/
 
 async function withTimeout<T>(p: Promise<T>, ms: number, tag: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {
@@ -1464,7 +1455,6 @@ const reflowOnWidthChange = useCallback(
         prevCvForReflow = hostForReflow.style.getPropertyValue("content-visibility") || "";
         hostForReflow.style.removeProperty("content-visibility");
         hostForReflow.style.visibility = "hidden";
-        //outer.dataset.osmdHostHidden = "1";
         // force style commit so the hidden state takes effect before render
         try { void hostForReflow.getBoundingClientRect().width; } catch {}
       }
@@ -1511,17 +1501,17 @@ const reflowOnWidthChange = useCallback(
 
       // ===== DEBUG PAUSE AFTER RENDER =====
       // Dev: literal debugger (works in `npm run dev` if DevTools is open)
-      if (PAUSE_AFTER_RENDER) {
+      //if (PAUSE_AFTER_RENDER) {
         // Make sure "Pause on debugger statements" is enabled in DevTools
-        debugger;
-      }
+        //debugger;
+      //}
       // Vercel/Prod: XHR/Fetch breakpoint (Sources -> Breakpoints -> "Fetch" -> add URL contains "osmd_ping=after_render")
-      if (BREAK_VIA_FETCH) {
-        try {
+      //if (BREAK_VIA_FETCH) {
+        //try {
           // Hit a very cheap, always-present endpoint; add cache-buster
-          await fetch(`/favicon.ico?osmd_ping=after_render&ts=${Date.now()}`, { cache: "no-store" });
-        } catch { /* ignore */ }
-      }
+          //await fetch(`/favicon.ico?osmd_ping=after_render&ts=${Date.now()}`, { cache: "no-store" });
+        //} catch { /* ignore */ }
+      //}
       // ====================================================================
 
       // --------- POST-RENDER: skip wait (non-blocking, like init) ---------
@@ -1661,7 +1651,6 @@ const reflowOnWidthChange = useCallback(
             hostNow.style.removeProperty("content-visibility");
           }
           hostNow.style.visibility = prevVisForReflow || "visible";
-          //outer.dataset.osmdHostHidden = "0";
         }
       } catch {}
 
@@ -2065,7 +2054,6 @@ const reflowOnWidthChange = useCallback(
       if (hostForInit) {
         hostForInit.style.removeProperty("content-visibility");
         hostForInit.style.visibility = "hidden"
-        //outer.dataset.osmdHostHidden = "1"
       }
 
       // ⬇️ IMPORTANT: remove rAF/setTimeout gating; call render immediately.
@@ -2259,7 +2247,6 @@ const reflowOnWidthChange = useCallback(
             hostForInit2.style.removeProperty("content-visibility");
           }
           hostForInit2.style.visibility = prevVisForInit || "visible";
-          //outer.dataset.osmdHostHidden = "0";
         }
       } catch {}
 
