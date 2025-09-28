@@ -97,20 +97,11 @@ function makeAfterPaint(outer: HTMLDivElement) {
         });
       } catch {}
 
+      // Primary watchdog: if rendering takes longer than timeoutMs, force-finish
       window.setTimeout(() => finish("timeout"), timeoutMs);
 
-      try {
-        const ch = new MessageChannel();
-        ch.port1.onmessage = () => {
-          ch.port1.onmessage = null;
-          finish("message");
-        };
-        ch.port2.postMessage(1);
-      } catch {}
-
-      //window.setTimeout(() => finish("safety-tick"), 0);
-
-      // Never wedge even if rAF/message are throttled: resolve next macrotask.
+      // Ceiling guard: absolute upper bound (4× timeout or 1200ms minimum)
+      // prevents spinner from hanging forever in edge cases
       window.setTimeout(() => finish("ceiling"), Math.max(timeoutMs * 4, 1200));
     });
   };
@@ -1764,46 +1755,49 @@ const reflowOnWidthChange = useCallback(
         hostForInit.style.visibility = "hidden"
       }
 
-      // ⬇️ IMPORTANT: remove rAF/setTimeout gating; call render immediately.
-      outer.dataset.osmdPhase = "render"
-      await logStep("render:start")
+      // Kick off render immediately (no async gating)
+      outer.dataset.osmdPhase = "render";
+      await logStep("render:start");
 
-      // prove the loop is alive before we call into OSMD (no awaits)
-      try { queueMicrotask(() => { void logStep("[probe] init:microtask before render", { outer }); }); } catch {}
-
+      // (optional) prove the event loop is still responsive
+      // NOTE: MessageChannel probe removed as redundant
       try {
-        const ch = new MessageChannel()
-        ch.port1.onmessage = () => { void logStep("[probe] init:MessageChannel before render", { outer }); };
-        ch.port2.postMessage(1)
+        queueMicrotask(() => { void logStep("[probe] init:microtask before render", { outer }); });
       } catch {}
 
-      // time the call; renderWithEffectiveWidth writes its own probes inside
-      const t0 = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now()
-      await renderWithEffectiveWidth(outer, osmd)
-      outer.dataset.osmdPhase = "render:return"
+      // Time the actual render call
+      const t0 = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
+      await renderWithEffectiveWidth(outer, osmd);
+      outer.dataset.osmdPhase = "render:return";
       void logStep("[probe] render returned", { outer });
 
-      const t1 = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now()
-      const renderMs = Math.round(t1 - t0)
-      outer.dataset.osmdRenderMs = String(renderMs)
-      outer.dataset.osmdRenderEndedAt = String(Date.now())
+      const t1 = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
+      const renderMs = Math.round(t1 - t0);
+      outer.dataset.osmdRenderMs = String(renderMs);
+      outer.dataset.osmdRenderEndedAt = String(Date.now());
       void logStep(`[render] finished attempt#${attemptForRender} (${renderMs}ms)`, { outer });
- 
-      dumpTelemetry("post-render:init")
 
-      // --------- SKIP POST-RENDER WAIT (large scores can throttle timers) ---------
-      outer.dataset.osmdPhase = "render:painted"
-      void logStep("post-render:skip-wait (no-yield)")
+      // Dev-only: dump all tracked telemetry values (phase, timings, etc.)
+      dumpTelemetry("post-render:init");
 
-      // --------- Make subtree layoutable (same idea as reflow path) ---------
-      outer.dataset.osmdPhase = "post-render-prepare"
+      // Normally we would wait for requestAnimationFrame/paint here,
+      // but large scores can throttle timers. Instead, mark "painted"
+      // immediately so downstream steps don't block forever.
+      outer.dataset.osmdPhase = "render:painted";
+      void logStep("post-render:skip-wait (no-yield)");
+
+      // Prepare the rendered SVG subtree for layout calculations.
+      // Similar to the reflow path: strip content-visibility so
+      // the browser actually lays it out, but keep it hidden from
+      // the user until pagination/masking is ready.
+      outer.dataset.osmdPhase = "post-render-prepare";
       try {
-        const hostX = hostRef.current
+        const hostX = hostRef.current;
         if (hostX) {
           hostX.style.removeProperty("content-visibility");
-          hostX.style.visibility = "hidden"                      // keep hidden for now
-          void hostX.getBoundingClientRect().width              // force layout
-          void hostX.scrollWidth
+          hostX.style.visibility = "hidden";         // keep hidden until ready
+          void hostX.getBoundingClientRect().width;  // force layout
+          void hostX.scrollWidth;                    // ditto
         }
       } catch {}
 
