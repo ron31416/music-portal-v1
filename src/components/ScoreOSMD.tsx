@@ -1464,7 +1464,7 @@ const reflowOnWidthChange = useCallback(
         prevCvForReflow = hostForReflow.style.getPropertyValue("content-visibility") || "";
         hostForReflow.style.removeProperty("content-visibility");
         hostForReflow.style.visibility = "hidden";
-        outer.dataset.osmdHostHidden = "1";
+        //outer.dataset.osmdHostHidden = "1";
         // force style commit so the hidden state takes effect before render
         try { void hostForReflow.getBoundingClientRect().width; } catch {}
       }
@@ -1661,7 +1661,7 @@ const reflowOnWidthChange = useCallback(
             hostNow.style.removeProperty("content-visibility");
           }
           hostNow.style.visibility = prevVisForReflow || "visible";
-          outer.dataset.osmdHostHidden = "0";
+          //outer.dataset.osmdHostHidden = "0";
         }
       } catch {}
 
@@ -2065,7 +2065,7 @@ const reflowOnWidthChange = useCallback(
       if (hostForInit) {
         hostForInit.style.removeProperty("content-visibility");
         hostForInit.style.visibility = "hidden"
-        outer.dataset.osmdHostHidden = "1"
+        //outer.dataset.osmdHostHidden = "1"
       }
 
       // ⬇️ IMPORTANT: remove rAF/setTimeout gating; call render immediately.
@@ -2155,7 +2155,7 @@ const reflowOnWidthChange = useCallback(
                 }
                 hostForInitX.style.visibility = prevVisForInit || "visible";
               }
-              o.dataset.osmdHostHidden = "0";
+              //o.dataset.osmdHostHidden = "0";
             } catch {}
             o.dataset.osmdPhase = "init:forced-finalize";
             void logStep("init:forced-finalize");
@@ -2259,7 +2259,7 @@ const reflowOnWidthChange = useCallback(
             hostForInit2.style.removeProperty("content-visibility");
           }
           hostForInit2.style.visibility = prevVisForInit || "visible";
-          outer.dataset.osmdHostHidden = "0";
+          //outer.dataset.osmdHostHidden = "0";
         }
       } catch {}
 
@@ -2677,7 +2677,7 @@ const reflowOnWidthChange = useCallback(
   }, [busy]);
 
   useEffect(() => {
-    if (!busy) return;
+    if (!busy) { return; }
     const t = window.setTimeout(() => {
       const phase = wrapRef.current?.dataset.osmdPhase ?? "";
       const inHeavy = /^(render|post-render|measure)/.test(phase);
