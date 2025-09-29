@@ -731,7 +731,7 @@ export default function ScoreOSMD({
         const outerNow = wrapRef.current;
         if (outerNow) {
           outerNow.dataset.osmdPhase = 'applyPage:bailout';
-          logStep('applyPage:bailout depth>3'); // single logger
+          logStep('depth>3'); // single logger
         }
         return;
       }
@@ -1271,6 +1271,7 @@ export default function ScoreOSMD({
         outer.dataset.osmdPhase = `starts:${newStarts.length}`;
         await logStep(`starts:${newStarts.length}`);
 
+        /*
         if (newStarts.length === 0) {
           outer.dataset.osmdPhase = "reset:first:empty-starts";
           applyPage(0);
@@ -1280,15 +1281,15 @@ export default function ScoreOSMD({
           await logStep("reset:first:done");
           return;
         }
+*/
 
         if (resetToFirst) {
           outer.dataset.osmdPhase = "reset:first";
-          await logStep("reset:first");
+          await logStep("start");
           applyPage(0);
           await Promise.race([ ap("apply:first"), new Promise<void>((r) => setTimeout(r, 400)) ]);
           applyPage(0);
-          outer.dataset.osmdPhase = "reset:first:done";
-          await logStep("reset:first:done");
+          await logStep("done");
           return;
         }
 
