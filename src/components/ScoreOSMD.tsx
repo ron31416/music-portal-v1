@@ -1319,6 +1319,10 @@ export default function ScoreOSMD({
         handledHRef.current = outer.clientHeight;
 
       } finally {
+        try {
+          outer.dataset.osmdFunc = prevFuncTag;
+        } catch {}
+        
         // Reveal host now that the page has been applied (or if we bailed)
         try {
           const hostNow = hostRef.current;
