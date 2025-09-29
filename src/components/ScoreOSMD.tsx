@@ -385,36 +385,6 @@ function perfLastMs(name: string) {
   return Math.round(e[e.length - 1]?.duration || 0);
 }
 
-const toastRef = useRef<HTMLDivElement | null>(null);
-function showToast(msg: string, ms = 2500) {
-  // create once, reuse
-  let el = toastRef.current;
-  if (!el) {
-    el = document.createElement("div");
-    toastRef.current = el;
-    Object.assign(el.style, {
-      position: "fixed",
-      left: "50%",
-      bottom: "14px",
-      transform: "translateX(-50%)",
-      zIndex: "99999",
-      background: "rgba(17,17,17,0.9)",
-      color: "#fff",
-      padding: "8px 12px",
-      borderRadius: "10px",
-      fontSize: "13px",
-      boxShadow: "0 6px 18px rgba(0,0,0,0.28)",
-      opacity: "0",
-      transition: "opacity 160ms ease",
-      pointerEvents: "none",
-    } as CSSStyleDeclaration);
-    document.body.appendChild(el);
-  }
-  el.textContent = msg;
-  requestAnimationFrame(() => { el!.style.opacity = "1"; });
-  window.setTimeout(() => { if (el) el.style.opacity = "0"; }, ms);
-}
-
 /* ---------- Component ---------- */
 
 export default function ScoreOSMD({
@@ -441,6 +411,20 @@ export default function ScoreOSMD({
   const [busy, setBusy] = useState<boolean>(false);
   const overlayRef = useRef<HTMLDivElement | null>(null);
   const [busyMsg, setBusyMsg] = useState<string>(DEFAULT_BUSY);
+
+  // --- Toast (lightweight, no library) ---
+  const [toastMsg, setToastMsg] = useState<string>("");
+  const toastTimerRef = useRef<number | null>(null);
+
+  const showToast = React.useCallback((msg: string, ms = 2600) => {
+    // clear any prior auto-hide timer
+    if (toastTimerRef.current !== null) { window.clearTimeout(toastTimerRef.current); }
+    setToastMsg(msg);
+    toastTimerRef.current = window.setTimeout(() => {
+      setToastMsg("");
+      toastTimerRef.current = null;
+    }, ms);
+  }, []);
 
   // Spinner ownership + fail-safe timer (used by zoom reflow)
   const spinnerOwnerRef = useRef<symbol | null>(null);
@@ -2603,6 +2587,33 @@ export default function ScoreOSMD({
           />
           <div>{busyMsg || DEFAULT_BUSY}</div>
         </div>
+      </div>
+
+      {/* Top-center toast */}
+      <div
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        style={{
+          position: "fixed",
+          top: 12,
+          left: "50%",
+          transform: "translateX(-50%)",
+          zIndex: 10000,
+          display: toastMsg ? "block" : "none",
+          background: "rgba(17,17,17,0.92)",
+          color: "#fff",
+          padding: "8px 12px",
+          borderRadius: 10,
+          boxShadow: "0 6px 20px rgba(0,0,0,0.25)",
+          fontSize: 13,
+          pointerEvents: "none",
+          maxWidth: "min(90vw, 560px)",
+          textAlign: "center",
+          lineHeight: 1.35,
+        }}
+      >
+        {toastMsg}
       </div>
 
       <style>{`@keyframes osmd-spin { from { transform: rotate(0) } to { transform: rotate(360deg) } }`}</style>
