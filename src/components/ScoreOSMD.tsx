@@ -412,31 +412,6 @@ export default function ScoreOSMD({
   const overlayRef = useRef<HTMLDivElement | null>(null);
   const [busyMsg, setBusyMsg] = useState<string>(DEFAULT_BUSY);
 
-  /*
-  // --- Toast (lightweight, no library) ---
-  const [toastMsg, setToastMsg] = useState<string>("");
-  const toastTimerRef = useRef<number | null>(null);
-
-  const showToast = React.useCallback((msg: string, ms = 2600) => {
-    // clear any prior auto-hide timer
-    if (toastTimerRef.current !== null) { window.clearTimeout(toastTimerRef.current); }
-    setToastMsg(msg);
-    toastTimerRef.current = window.setTimeout(() => {
-      setToastMsg("");
-      toastTimerRef.current = null;
-    }, ms);
-  }, []);
-
-  // Cleanup any pending toast timer on unmount
-  useEffect(() => {
-    return () => {
-      if (toastTimerRef.current !== null) {
-        window.clearTimeout(toastTimerRef.current);
-        toastTimerRef.current = null;
-      }
-    };
-  }, []);
-*/
   // Spinner ownership + fail-safe timer (used by zoom reflow)
   const spinnerOwnerRef = useRef<symbol | null>(null);
   const spinnerFailSafeRef = useRef<number | null>(null);
