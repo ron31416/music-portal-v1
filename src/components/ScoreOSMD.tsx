@@ -640,23 +640,30 @@ export default function ScoreOSMD({
   const vpHRef = useVisibleViewportHeight();
 
   const getViewportH = useCallback((outer: HTMLDivElement): number => {
-    const v = vpHRef.current || 0;                              // visualViewport
-    const outerH = outer.clientHeight || 0;                     // wrapper height
-    const docH = Math.floor(document.documentElement?.clientHeight || 0); // fallback
+    const vv = typeof window !== "undefined" ? window.visualViewport : undefined;
+    const vvH = vv ? Math.floor(vv.height) : 0;
+    const outerH = outer.clientHeight || 0;
+    const docH = Math.floor(document.documentElement?.clientHeight || 0);
 
-    // Prefer wrapper height; fall back to visualViewport; then to document
-    const base = outerH > 0 ? outerH : (v > 0 ? v : docH);
+    // If VV and wrapper disagree a lot (URL/tool bars mid-animation),
+    // be conservative and take the smaller so we never overfill page 1.
+    let base: number;
+    if (vvH && outerH && Math.abs(vvH - outerH) > 24) {
+      base = Math.min(vvH, outerH);
+    } else {
+      base = outerH || vvH || docH;
+    }
 
-    // Always return a positive, integer px height minus the gutter
     return Math.max(1, Math.floor(base) - Math.max(0, topGutterPx));
-  }, [vpHRef, topGutterPx]);
+  }, [topGutterPx]
+  );
 
   const bottomPeekPad = useCallback(
-  () => ((window.devicePixelRatio || 1) >= 2
-    ? REFLOW.BOTTOM_PEEK_PAD_HI_DPR
-    : REFLOW.BOTTOM_PEEK_PAD_LO_DPR),
-  []
-);
+    () => ((window.devicePixelRatio || 1) >= 2
+      ? REFLOW.BOTTOM_PEEK_PAD_HI_DPR
+      : REFLOW.BOTTOM_PEEK_PAD_LO_DPR),
+    []
+  );
 
   const pageHeight = useCallback(
     (outer: HTMLDivElement) => Math.max(1, getViewportH(outer) - bottomPeekPad()),
