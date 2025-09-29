@@ -352,7 +352,8 @@ function computePageStartIndices(bands: Band[], viewportH: number): number[] {
 
       const isFirstPage = starts.length === 0 && i === 0;
       const slack = isFirstPage && fuseTitle
-        ? Math.max(12, Math.round(viewportH * 0.06))
+        //? Math.max(12, Math.round(viewportH * 0.06))
+        ? Math.min(28, Math.round(viewportH * 0.035))  // ≤28px or 3.5%
         : 0;
 
       if (next.bottom - startTop <= viewportH + slack) {
