@@ -155,9 +155,8 @@ export async function logStep(
   if (!DEBUG_LOG) { return; }
   const { paint = false, outer = null } = opts;
   try {
-    // Try the provided element first; otherwise find our wrapper in the DOM.
-    // We render it with data-osmd-wrapper="1", so this is a safe fallback.
-    let mod = "(none)";
+    // Prefer the provided wrapper; otherwise find our wrapper element by data attribute.
+    let fn = "(none)";
     let phase = "(none)";
     const wrap: HTMLElement | null =
       outer ??
@@ -166,13 +165,13 @@ export async function logStep(
         : null);
 
     if (wrap !== null) {
-      const dm = wrap.dataset?.osmdModule;
+      const df = wrap.dataset?.osmdFunc;
       const dp = wrap.dataset?.osmdPhase;
-      if (typeof dm === "string" && dm.length > 0) { mod = dm; }
+      if (typeof df === "string" && df.length > 0) { fn = df; }
       if (typeof dp === "string" && dp.length > 0) { phase = dp; }
     }
 
-    const composed = `[mod:${mod}] [phase:${phase}] ${message}`;
+    const composed = `[fn:${fn}] [phase:${phase}] ${message}`;
 
     // eslint-disable-next-line no-console
     console.log(composed);
@@ -1322,7 +1321,7 @@ export default function ScoreOSMD({
         try {
           outer.dataset.osmdFunc = prevFuncTag;
         } catch {}
-        
+
         // Reveal host now that the page has been applied (or if we bailed)
         try {
           const hostNow = hostRef.current;
