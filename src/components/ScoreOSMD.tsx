@@ -1082,9 +1082,7 @@ export default function ScoreOSMD({
 
       // Always show spinner for width reflow
       const wantSpinner = true;
-      void logStep(
-        `reflow:enter reset=${resetToFirst} spin=${wantSpinner} running=${reflowRunningRef.current} repag=${repagRunningRef.current} busy=${busyRef.current}`
-      );
+      void logStep(`reflow:enter reset=${resetToFirst} spin=${wantSpinner} running=${reflowRunningRef.current} repag=${repagRunningRef.current} busy=${busyRef.current}`);
 
       const attempt = Number(outer.dataset.osmdZoomAttempt || "0");
       outer.dataset.osmdZoomEntered   = String(attempt);
@@ -1180,7 +1178,7 @@ export default function ScoreOSMD({
           }
 
           // If the deadline already fired while we were yielding, stop here.
-          if (didHardBail) return;
+          if (didHardBail) { return; }
 
           outer.dataset.osmdPhase = "spinner-on";
           void logStep("spinner-on");
@@ -1209,13 +1207,13 @@ export default function ScoreOSMD({
           try { void hostForReflow.getBoundingClientRect().width; } catch {}
         }
 
-        if (didHardBail) return;
+        if (didHardBail) { return; }
 
         outer.dataset.osmdPhase = "render";
         await logStep("render:start");
         await new Promise<void>((r) => setTimeout(r, 0)); // macrotask
         await ap("render:yield");                         // one paint opportunity
-        if (didHardBail) return;
+        if (didHardBail) { return; }
 
         // Render watchdog
         let renderWd: number | null = window.setTimeout(() => {
@@ -1231,7 +1229,7 @@ export default function ScoreOSMD({
         perfMark('zoom-render:start');
         await renderWithEffectiveWidth(outer, osmd);
 
-        if (didHardBail) return;
+        if (didHardBail) { return; }
 
         perfMark('zoom-render:end');
         perfMeasure('zoom-render','zoom-render:start','zoom-render:end');
@@ -1250,7 +1248,7 @@ export default function ScoreOSMD({
           await new Promise<void>((r) => setTimeout(r, 0));
         } catch {}
 
-        if (didHardBail) return;
+        if (didHardBail) { return; }
 
         // --------- MEASURE (non-blocking log + immediate probe) ---------
         outer.dataset.osmdPhase = "measure";
@@ -1278,7 +1276,7 @@ export default function ScoreOSMD({
 
         if (measureWatchdog) { clearTimeout(measureWatchdog); measureWatchdog = null; }
 
-        if (didHardBail) return;
+        if (didHardBail) { return; }
 
         if (newBands.length === 0) {
           // clear hard deadline before leaving
@@ -1307,7 +1305,7 @@ export default function ScoreOSMD({
         outer.dataset.osmdPhase = `starts:${newStarts.length}`;
         await logStep(`starts:${newStarts.length}`);
 
-        if (didHardBail) return;
+        if (didHardBail) { return; }
 
         if (newStarts.length === 0) {
           if (hardBailTimer !== null) { window.clearTimeout(hardBailTimer); hardBailTimer = null; }
