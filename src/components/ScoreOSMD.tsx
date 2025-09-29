@@ -1105,7 +1105,8 @@ export default function ScoreOSMD({
       reflowRunningRef.current = true;
 
       // ───────── HARDENING: reflow bail-out window (absolute cap) ─────────
-      const HARD_DEADLINE_MS = 8000;
+      //const HARD_DEADLINE_MS = 8000;
+      const HARD_DEADLINE_MS = 300; //TEMP
       let hardBailTimer: number | null = null;
       let didHardBail = false;
 
@@ -1181,6 +1182,7 @@ export default function ScoreOSMD({
           if (didHardBail) { return; }
 
           outer.dataset.osmdPhase = "spinner-on";
+          await new Promise(r => setTimeout(r, 1000)); // TEMP: simulate a stall
           void logStep("spinner-on");
 
           // Hard fail-safe (always clears even if ownership is stale)
