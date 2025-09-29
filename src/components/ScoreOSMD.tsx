@@ -412,6 +412,7 @@ export default function ScoreOSMD({
   const overlayRef = useRef<HTMLDivElement | null>(null);
   const [busyMsg, setBusyMsg] = useState<string>(DEFAULT_BUSY);
 
+  /*
   // --- Toast (lightweight, no library) ---
   const [toastMsg, setToastMsg] = useState<string>("");
   const toastTimerRef = useRef<number | null>(null);
@@ -435,7 +436,7 @@ export default function ScoreOSMD({
       }
     };
   }, []);
-
+*/
   // Spinner ownership + fail-safe timer (used by zoom reflow)
   const spinnerOwnerRef = useRef<symbol | null>(null);
   const spinnerFailSafeRef = useRef<number | null>(null);
@@ -1100,36 +1101,7 @@ export default function ScoreOSMD({
         return;
       }
 
-      // ── HARD-BAIL (deadline) wiring ───────────────────────────────────────
-      //const HARD_DEADLINE_MS = 1500; // keep doc comment in sync
-      const HARD_DEADLINE_MS = 300; // TEMP: trigger "hard bail"
-      let hardBailTimer: number | null = null;
-
-      const forceHardBail = (why: "deadline" | "manual") => {
-        const o = wrapRef.current;
-        if (!o) { return; }
-
-        try { if (hardBailTimer !== null) { clearTimeout(hardBailTimer); hardBailTimer = null; } } catch {}
-
-        o.dataset.osmdPhase   = "reflow:hard-bail";
-        o.dataset.osmdBailWhy = why;
-        o.dataset.osmdBailAt  = String(Date.now());
-
-        spinnerOwnerRef.current = null;
-        hideBusy();
-        reflowRunningRef.current = false;
-
-        void logStep(`[reflow] HARD-BAIL reason=${why} • ${fmtFlags()}`);
-        showToast("Zoom took too long—keeping the current layout.");
-      };
-
       try {
-        // Arm the deadline right away; clear it on every successful milestone
-        try {
-          if (hardBailTimer !== null) { window.clearTimeout(hardBailTimer); }
-          hardBailTimer = window.setTimeout(() => forceHardBail("deadline"), HARD_DEADLINE_MS);
-        } catch {}
-
         const currW = outer.clientWidth;
         const currH = outer.clientHeight;
         handledWRef.current = currW; // prime "handled" now, not only at the end
@@ -1201,12 +1173,6 @@ export default function ScoreOSMD({
           }, 9000);
         }
 
-        // Milestone: spinner shown — refresh deadline
-        try {
-          if (hardBailTimer !== null) { clearTimeout(hardBailTimer); }
-          hardBailTimer = window.setTimeout(() => forceHardBail("deadline"), HARD_DEADLINE_MS);
-        } catch {}
-
         // --------- HEAVY RENDER ---------
         const attemptForRender = Number(outer.dataset.osmdZoomEntered || "0");
         outer.dataset.osmdRenderAttempt = String(attemptForRender);
@@ -1226,12 +1192,6 @@ export default function ScoreOSMD({
         await new Promise<void>((r) => setTimeout(r, 0)); // macrotask
         await ap("render:yield");                         // one paint opportunity
 
-        // Milestone: just before render — refresh deadline
-        try {
-          if (hardBailTimer !== null) { clearTimeout(hardBailTimer); }
-          hardBailTimer = window.setTimeout(() => forceHardBail("deadline"), HARD_DEADLINE_MS);
-        } catch {}
-
         // Render watchdog
         let renderWd: number | null = window.setTimeout(() => {
           outer.dataset.osmdPhase = "render:watchdog";
@@ -1244,7 +1204,6 @@ export default function ScoreOSMD({
         const t0 = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
 
         perfMark("zoom-render:start");
-        await new Promise<void>(r => setTimeout(r, 800)); // TEMP: trigger "hard bail"
         await renderWithEffectiveWidth(outer, osmd);
         perfMark("zoom-render:end");
         perfMeasure("zoom-render", "zoom-render:start", "zoom-render:end");
@@ -1255,15 +1214,6 @@ export default function ScoreOSMD({
         const renderMs = Math.round(t1 - t0);
         outer.dataset.osmdRenderMs = String(renderMs);
         await logStep(`[render] finished attempt#${attemptForRender} (${renderMs}ms)`);
-
-        // Milestone: render returned — refresh deadline
-        try {
-          if (hardBailTimer !== null) { clearTimeout(hardBailTimer); }
-          hardBailTimer = window.setTimeout(() => forceHardBail("deadline"), HARD_DEADLINE_MS);
-        } catch {}
-
-        // Short-circuit if we bailed during render
-        if (outer.dataset.osmdPhase === "reflow:hard-bail") { return; }
 
         // --------- POST-RENDER: skip wait (non-blocking, like init) ---------
         outer.dataset.osmdPhase = "render:painted";
@@ -1302,12 +1252,6 @@ export default function ScoreOSMD({
           return;
         }
 
-        // Milestone: measured — refresh deadline
-        try {
-          if (hardBailTimer !== null) { clearTimeout(hardBailTimer); }
-          hardBailTimer = window.setTimeout(() => forceHardBail("deadline"), HARD_DEADLINE_MS);
-        } catch {}
-
         const prevStarts = pageStartsRef.current.slice();
         const prevPage   = pageIdxRef.current;
         const oldTopIdx  = prevStarts.length
@@ -1325,12 +1269,6 @@ export default function ScoreOSMD({
         pageStartsRef.current = newStarts;
         outer.dataset.osmdPhase = `starts:${newStarts.length}`;
         await logStep(`starts:${newStarts.length}`);
-
-        // Milestone: starts computed — refresh deadline
-        try {
-          if (hardBailTimer !== null) { clearTimeout(hardBailTimer); }
-          hardBailTimer = window.setTimeout(() => forceHardBail("deadline"), HARD_DEADLINE_MS);
-        } catch {}
 
         if (newStarts.length === 0) {
           outer.dataset.osmdPhase = "reset:first:empty-starts";
@@ -1378,8 +1316,6 @@ export default function ScoreOSMD({
         handledWRef.current = outer.clientWidth;
         handledHRef.current = outer.clientHeight;
 
-        // Success — clear deadline
-        try { if (hardBailTimer !== null) { clearTimeout(hardBailTimer); hardBailTimer = null; } } catch {}
       } finally {
         // Reveal host now that the page has been applied (or if we bailed)
         try {
@@ -1400,11 +1336,8 @@ export default function ScoreOSMD({
         outer.dataset.osmdZoomExitedAt = String(Date.now());
         await logStep(`[reflow] EXIT attempt#${outer.dataset.osmdZoomExited} • ${fmtFlags()}`);
 
-        outer.dataset.osmdPhase = outer.dataset.osmdPhase === "reflow:hard-bail" ? "reflow:hard-bail" : "finally";
+        outer.dataset.osmdPhase = "finally";
         await logStep("finally");
-
-        // Clear the hard-bail timer on any exit path
-        try { if (hardBailTimer !== null) { clearTimeout(hardBailTimer); hardBailTimer = null; } } catch {}
 
         // Clear the 2s logging watchdog, if it was started
         if (wd !== null) {
@@ -1460,7 +1393,7 @@ export default function ScoreOSMD({
         await logStep("reflow:finally:exit");
       }
     },
-    [applyPage, getPAGE_H, hideBusy, renderWithEffectiveWidth, fmtFlags, showToast]
+    [applyPage, getPAGE_H, hideBusy, renderWithEffectiveWidth, fmtFlags]
   );
 
   // keep ref pointing to latest width-reflow callback
@@ -2599,33 +2532,6 @@ export default function ScoreOSMD({
           />
           <div>{busyMsg || DEFAULT_BUSY}</div>
         </div>
-      </div>
-
-      {/* Top-center toast */}
-      <div
-        role="status"
-        aria-live="polite"
-        aria-atomic="true"
-        style={{
-          position: "fixed",
-          top: 12,
-          left: "50%",
-          transform: "translateX(-50%)",
-          zIndex: 10000,
-          display: toastMsg ? "block" : "none",
-          background: "rgba(17,17,17,0.92)",
-          color: "#fff",
-          padding: "8px 12px",
-          borderRadius: 10,
-          boxShadow: "0 6px 20px rgba(0,0,0,0.25)",
-          fontSize: 13,
-          pointerEvents: "none",
-          maxWidth: "min(90vw, 560px)",
-          textAlign: "center",
-          lineHeight: 1.35,
-        }}
-      >
-        {toastMsg}
       </div>
 
       <style>{`@keyframes osmd-spin { from { transform: rotate(0) } to { transform: rotate(360deg) } }`}</style>
