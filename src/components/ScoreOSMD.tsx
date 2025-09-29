@@ -155,12 +155,35 @@ export async function logStep(
   if (!DEBUG_LOG) { return; }
   const { paint = false, outer = null } = opts;
   try {
-    // eslint-disable-next-line no-console
-    console.log(message);
+    // Try the provided element first; otherwise find our wrapper in the DOM.
+    // We render it with data-osmd-wrapper="1", so this is a safe fallback.
+    let mod = "(none)";
+    let phase = "(none)";
+    const wrap: HTMLElement | null =
+      outer ??
+      (typeof document !== "undefined"
+        ? document.querySelector<HTMLElement>('[data-osmd-wrapper="1"]')
+        : null);
 
-    if (outer) { outer.dataset.osmdLastLog = `${Date.now()}:${message.slice(0,80)}`; }
-    if (paint) { await waitForPaint(); }
-  } catch {}
+    if (wrap !== null) {
+      const dm = wrap.dataset?.osmdModule;
+      const dp = wrap.dataset?.osmdPhase;
+      if (typeof dm === "string" && dm.length > 0) { mod = dm; }
+      if (typeof dp === "string" && dp.length > 0) { phase = dp; }
+    }
+
+    const composed = `[mod:${mod}] [phase:${phase}] ${message}`;
+
+    // eslint-disable-next-line no-console
+    console.log(composed);
+
+    if (wrap !== null) {
+      wrap.dataset.osmdLastLog = `${Date.now()}:${composed.slice(0, 80)}`;
+    }
+    if (paint) {
+      await waitForPaint();
+    }
+  } catch { /* no-op */ }
 }
 
 function tnow() {
@@ -1075,6 +1098,10 @@ export default function ScoreOSMD({
         if (outer) { void logStep(`reflow:early-bail outer=${o} osmd=${m}`); }
         return;
       }
+
+      // tag function for all logs in this path
+      const prevFuncTag = outer.dataset.osmdFunc ?? "";
+      outer.dataset.osmdFunc = "reflowOnWidthChange";
 
       try {
         const currW = outer.clientWidth;
