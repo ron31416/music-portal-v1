@@ -435,7 +435,7 @@ export default function ScoreOSMD({
       }
     };
   }, []);
-  
+
   // Spinner ownership + fail-safe timer (used by zoom reflow)
   const spinnerOwnerRef = useRef<symbol | null>(null);
   const spinnerFailSafeRef = useRef<number | null>(null);
@@ -1458,7 +1458,7 @@ export default function ScoreOSMD({
         await logStep("reflow:finally:exit");
       }
     },
-    [applyPage, getPAGE_H, hideBusy, renderWithEffectiveWidth, fmtFlags]
+    [applyPage, getPAGE_H, hideBusy, renderWithEffectiveWidth, fmtFlags, showToast]
   );
 
   // keep ref pointing to latest width-reflow callback
