@@ -1101,7 +1101,8 @@ export default function ScoreOSMD({
       }
 
       // ── HARD-BAIL (deadline) wiring ───────────────────────────────────────
-      const HARD_DEADLINE_MS = 1500; // keep doc comment in sync
+      //const HARD_DEADLINE_MS = 1500; // keep doc comment in sync
+      const HARD_DEADLINE_MS = 300; // TEMP: trigger "hard bail"
       let hardBailTimer: number | null = null;
 
       const forceHardBail = (why: "deadline" | "manual") => {
@@ -1243,6 +1244,7 @@ export default function ScoreOSMD({
         const t0 = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
 
         perfMark("zoom-render:start");
+        await new Promise<void>(r => setTimeout(r, 800)); // TEMP: trigger "hard bail"
         await renderWithEffectiveWidth(outer, osmd);
         perfMark("zoom-render:end");
         perfMeasure("zoom-render", "zoom-render:start", "zoom-render:end");
