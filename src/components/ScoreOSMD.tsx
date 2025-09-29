@@ -17,6 +17,7 @@ interface Props {
 }
 
 interface Band { top: number; bottom: number; height: number }
+type ReflowCallback = (resetToFirst?: boolean, reflowCause?: string) => Promise<void>;
 
 // Central pagination/masking knobs (tuned for Hi/Lo DPR). Change here, not inline.
 const REFLOW = {
@@ -652,9 +653,12 @@ export default function ScoreOSMD({
   }, []);
 
   // ---- callback ref proxies (used by queued window.setTimeouts) ----
-  const reflowFnRef = useRef<
-    (resetToFirst?: boolean, reflowCause?: string) => void | Promise<void>
-  >(() => {});
+  const reflowFnRef = useRef<ReflowCallback>(async function noopReflow(
+    _resetToFirst?: boolean,
+    _reflowCause?: string
+  ): Promise<void> {
+    return;
+  });
   
   const repagFnRef = useRef<
     (resetToFirst?: boolean, showBusy?: boolean) => void
@@ -1076,9 +1080,13 @@ export default function ScoreOSMD({
     repagFnRef.current = recomputePaginationHeightOnly;
   }, [recomputePaginationHeightOnly]);
 
+
   // --- WIDTH REFLOW (OSMD render at new width) ---
   const reflowOnWidthChange = useCallback(
-    async function reflowOnWidthChange(resetToFirst = false) {
+    async function reflowOnWidthChange(
+      resetToFirst: boolean = false,
+      reflowCause?: string
+    ): Promise<void> {
       const outer = wrapRef.current;
       const osmd  = osmdRef.current;
 
@@ -1270,18 +1278,6 @@ export default function ScoreOSMD({
         pageStartsRef.current = newStarts;
         outer.dataset.osmdPhase = `starts:${newStarts.length}`;
         await logStep(`starts:${newStarts.length}`);
-
-        /*
-        if (newStarts.length === 0) {
-          outer.dataset.osmdPhase = "reset:first:empty-starts";
-          applyPage(0);
-          await ap("apply:first-empty");
-          applyPage(0);
-          outer.dataset.osmdPhase = "reset:first:done";
-          await logStep("reset:first:done");
-          return;
-        }
-*/
 
         if (resetToFirst) {
           outer.dataset.osmdPhase = "reset:first";
