@@ -426,6 +426,16 @@ export default function ScoreOSMD({
     }, ms);
   }, []);
 
+  // Cleanup any pending toast timer on unmount
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current !== null) {
+        window.clearTimeout(toastTimerRef.current);
+        toastTimerRef.current = null;
+      }
+    };
+  }, []);
+  
   // Spinner ownership + fail-safe timer (used by zoom reflow)
   const spinnerOwnerRef = useRef<symbol | null>(null);
   const spinnerFailSafeRef = useRef<number | null>(null);
@@ -1149,7 +1159,7 @@ export default function ScoreOSMD({
         }
         reflowRunningRef.current = true;
 
-        let wd: number | null = null;
+        // start 2s logging watchdog (uses the wd declared near the top of the function)
         wd = window.setInterval(() => {
           const el = wrapRef.current;
           void logStep(`watchdog: phase=${el?.dataset.osmdPhase ?? "unset"}`);
