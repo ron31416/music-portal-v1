@@ -654,7 +654,7 @@ export default function ScoreOSMD({
     [applyZoomFromRef]
   );
 
-  const hideBusy = useCallback(async () => {
+  const hideBusy = useCallback(() => {
     setBusy(false);
     setBusyMsg(DEFAULT_BUSY);
   }, []);
@@ -1362,7 +1362,7 @@ export default function ScoreOSMD({
         // immediately instead of bouncing off the reflowRunning guard.
         // Use 'await hideBusy()' for deterministic log ordering and to avoid racing the drain.
         reflowRunningRef.current = false;
-        await hideBusy();
+        hideBusy();
 
         // if a queued width reflow matches the width we just handled, drop it
         try {
