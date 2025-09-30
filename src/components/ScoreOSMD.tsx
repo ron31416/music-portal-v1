@@ -467,7 +467,6 @@ export default function ScoreOSMD({
   const busyRef = useRef(false);
   useEffect(() => { busyRef.current = busy; }, [busy]);
 
-  //const resizeTimerRef = useRef<number | null>(null); // ResizeObserver debounce
   const vvTimerRef = useRef<number | null>(null);     // visualViewport debounce
 
   const handledWRef = useRef<number>(-1);
@@ -1505,6 +1504,20 @@ export default function ScoreOSMD({
       const outer = wrapRef.current;
       if (!host || !outer) { return; }
 
+      try {
+        const vv = typeof window !== "undefined" ? window.visualViewport : undefined;
+        const hasVV = !!vv && typeof vv.scale === "number";
+        const hasRO = typeof (globalThis as any).ResizeObserver === "function";
+
+        await logStep(
+          `capabilities: visualViewport=${hasVV ? "yes" : "no"} resizeObserver=${hasRO ? "yes" : "no"}`
+        );
+
+        if (!hasVV) {
+          await logStep("note: zoom-driven reflow disabled (visualViewport unavailable)");
+        }
+      } catch {}
+
       await logStep("BUILD: ScoreOSMD v10 @ tick+ap-gate");
 
       // Phase breadcrumb + first log
@@ -1916,91 +1929,6 @@ export default function ScoreOSMD({
       readyRef.current = true;
       hideBusy();
 
-/*
-      // --- ResizeObserver to trigger reflow/repag on size changes ---
-      if (typeof ResizeObserver !== "undefined") {
-        resizeObs = new ResizeObserver(() => {
-          if (!readyRef.current) { return; }
-
-          // debounce bursts
-          if (resizeTimerRef.current) {
-            window.clearTimeout(resizeTimerRef.current);
-          }
-          resizeTimerRef.current = window.setTimeout(() => {
-            resizeTimerRef.current = null;
-
-            const outerNow = wrapRef.current;
-            if (!outerNow) { return; }
-
-            const currW = outerNow.clientWidth;
-            const currH = outerNow.clientHeight;
-
-            const widthChangedSinceHandled =
-              handledWRef.current === -1 || Math.abs(currW - handledWRef.current) >= 1;
-            const heightChangedSinceHandled =
-              handledHRef.current === -1 || Math.abs(currH - handledHRef.current) >= 1;
-
-            // NEW: trace RO events and deltas
-            void logStep(`resize:ro w=${currW} h=${currH} handled=${handledWRef.current}×${handledHRef.current} ΔW=${widthChangedSinceHandled} ΔH=${heightChangedSinceHandled}`
-            );
-
-            // --- queue + return if not safe to run now (RO callback) ---
-            const kind =
-              widthChangedSinceHandled ? "width" :
-              (heightChangedSinceHandled ? "height" : "none");
-
-            if (kind === "none") {
-              return;
-            }
-
-            if (busyRef.current) {
-              reflowAgainRef.current = kind;
-              reflowQueuedCauseRef.current = `ro:guard-busy:${kind}`;
-              return;
-            }
-
-            if (reflowRunningRef.current) {
-              // NEW: if we're already reflowing for this same width, don't queue another
-              if (kind === "width") {
-                const targetW = Number(wrapRef.current?.dataset.osmdReflowTargetW || NaN);
-                if (Number.isFinite(targetW) && Math.abs(currW - targetW) < 1) {
-                  void logStep("resize:ro:drop (width matches active reflow)");
-                  return; // don't queue; it's the same width the active reflow is handling
-                }
-              }
-              reflowAgainRef.current = kind;
-              reflowQueuedCauseRef.current = `ro:guard-reflow:${kind}`;
-              return;
-            }
-
-            if (repagRunningRef.current) {
-              reflowAgainRef.current = kind;
-              reflowQueuedCauseRef.current = `ro:guard-repag:${kind}`;
-              return;
-            }
-
-            (async () => {
-              if (widthChangedSinceHandled) {
-                // HORIZONTAL change → full OSMD reflow + reset to page 1
-                await reflowFnRef.current("ro:width-change");
-                handledWRef.current = currW;
-                handledHRef.current = currH;
-              } else if (heightChangedSinceHandled) {
-                // VERTICAL-only change → cheap repagination (no spinner) + reset to page 1
-                repagFnRef.current(true, false);
-                handledHRef.current = currH;
-              } else {
-                return;
-              }
-            })();
-          }, 200);
-        });
-
-        try { resizeObs.observe(outer); } catch {}
-      } else {
-        void logStep("resize:observer-unavailable (skipping)");
-      }
-*/ 
     })().catch((err: unknown) => {
       hideBusy();
 
@@ -2018,11 +1946,6 @@ export default function ScoreOSMD({
     });
 
     return () => {
-      //if (resizeTimerRef.current) {
-      //  window.clearTimeout(resizeTimerRef.current);
-      //  resizeTimerRef.current = null;
-      //}
-
       if (osmdRef.current) {
         osmdRef.current?.clear();
         (osmdRef.current as { dispose?: () => void } | null)?.dispose?.();
