@@ -1214,7 +1214,7 @@ export default function ScoreOSMD({
         }
 
         await new Promise<void>(r => setTimeout(r, 0));
-        await logStep("yielded one task before measure");
+        await logStep("yielded one task before geometry phase");
 
         outer.dataset.osmdPhase = "geometry";
         void logStep("start", { outer });
