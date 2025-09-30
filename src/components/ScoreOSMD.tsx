@@ -174,7 +174,7 @@ export async function logStep(
       if (typeof dp === "string" && dp.length > 0) { phase = dp; }
     }
 
-    const composed = `[fn:${fn}] [phase:${phase}] ${message}`;
+    const composed = `[${fn}]${phase && phase !== "(none)" ? ` [${phase}]` : ""} ${message}`;
 
     // eslint-disable-next-line no-console
     console.log(composed);
@@ -1119,10 +1119,8 @@ export default function ScoreOSMD({
         outer.dataset.osmdReflowTargetH = String(currH);
 
         // Always show spinner for width reflow
-        const wantSpinner = true;
-        void logStep(
-          `reflow:enter spin=${wantSpinner} running=${reflowRunningRef.current} repag=${repagRunningRef.current} busy=${busyRef.current}`
-        );
+        //const wantSpinner = true;
+        //void logStep(`reflow:enter spin=${wantSpinner} running=${reflowRunningRef.current} repag=${repagRunningRef.current} busy=${busyRef.current}`);
 
         const attempt = Number(outer.dataset.osmdZoomAttempt || "0");
         outer.dataset.osmdZoomEntered   = String(attempt);
@@ -1150,7 +1148,7 @@ export default function ScoreOSMD({
         outer.dataset.osmdPhase = "start";
         const run = (Number(outer.dataset.osmdRun || "0") + 1);
         outer.dataset.osmdRun = String(run);
-        void logStep(`reflow:start#${run} spin=${wantSpinner}`);
+        void logStep(`reflow:start#${run}`);
 
         // Spinner on (with unconditional fail-safe)
         {
