@@ -425,12 +425,67 @@ function hasZoomProp(o: unknown): o is { Zoom: number } {
 }
 
 function perfMark(n: string) { try { performance.mark(n); } catch {} }
+
 function perfMeasure(n: string, a: string, b: string) {
   try { performance.measure(n, { start: a, end: b }); } catch {}
 }
+
 function perfLastMs(name: string) {
   const e = performance.getEntriesByName(name);
   return Math.round(e[e.length - 1]?.duration || 0);
+}
+
+// --------- Perf blocks (module-scope; reusable) ---------
+function perfBlock<T>(
+  uid: string,
+  logLabel: string,
+  work: () => T,
+  after?: (ms: number) => void
+): T {
+  const start   = `${uid} start`;
+  const end     = `${uid} end`;
+  const runtime = `${uid} runtime`;
+  perfMark(start);
+  try {
+    return work();
+  } finally {
+    perfMark(end);
+    perfMeasure(runtime, start, end);
+    const ms = perfLastMs(runtime);
+    void logStep(`${logLabel} runtime: (${ms}ms)`);
+    try { after?.(ms); } catch {}
+    try {
+      performance.clearMarks(start);
+      performance.clearMarks(end);
+      performance.clearMeasures(runtime);
+    } catch {}
+  }
+}
+
+async function perfBlockAsync<T>(
+  uid: string,
+  logLabel: string,
+  work: () => Promise<T>,
+  after?: (ms: number) => void
+): Promise<T> {
+  const start   = `${uid} start`;
+  const end     = `${uid} end`;
+  const runtime = `${uid} runtime`;
+  perfMark(start);
+  try {
+    return await work();
+  } finally {
+    perfMark(end);
+    perfMeasure(runtime, start, end);
+    const ms = perfLastMs(runtime);
+    await logStep(`${logLabel} runtime: (${ms}ms)`);
+    try { after?.(ms); } catch {}
+    try {
+      performance.clearMarks(start);
+      performance.clearMarks(end);
+      performance.clearMeasures(runtime);
+    } catch {}
+  }
 }
 
 /* ---------- Component ---------- */
@@ -468,8 +523,13 @@ export default function ScoreOSMD({
   const busyRef = useRef(false);
   useEffect(() => { busyRef.current = busy; }, [busy]);
 
-  // Stable per-instance id for perf scoping & breadcrumbs
+  // Monotonic UID for perf blocks within this component instance
   const instanceIdRef = useRef<string>(`osmd-${Math.random().toString(36).slice(2, 8)}`);
+  const perfSeqRef = useRef(0);
+  const nextPerfUID = useCallback((run: string | number | undefined) => {
+    perfSeqRef.current += 1;
+    return `${instanceIdRef.current}#${run ?? "?"}@${perfSeqRef.current}`;
+  }, []);
 
   const vvTimerRef = useRef<number | null>(null);     // visualViewport debounce
 
@@ -1194,23 +1254,12 @@ export default function ScoreOSMD({
         }
 
         {
-          const runTag  = `${instanceIdRef.current}#${outer.dataset.osmdRun || "?"}`;
-          const start   = `renderWithEffectiveWidth ${runTag} start`;
-          const end     = `renderWithEffectiveWidth ${runTag} end`;
-          const runtime = `renderWithEffectiveWidth ${runTag} runtime`;
-
-          perfMark(start);
-          await renderWithEffectiveWidth(outer, osmd);
-          perfMark(end);
-          perfMeasure(runtime, start, end);
-          const ms = perfLastMs(runtime);
-          outer.dataset.osmdRenderMs = String(ms);
-          await logStep(`renderWithEffectiveWidth runtime: (${ms}ms)`);
-          try {
-            performance.clearMarks(start);
-            performance.clearMarks(end);
-            performance.clearMeasures(runtime);
-          } catch {}
+          const uid = nextPerfUID(outer.dataset.osmdRun);
+          await perfBlockAsync(uid, "renderWithEffectiveWidth", async () => {
+            await renderWithEffectiveWidth(outer, osmd);
+          }, (ms) => {
+            outer.dataset.osmdRenderMs = String(ms);
+          });
         }
 
         await new Promise<void>(r => setTimeout(r, 0));
@@ -1221,21 +1270,12 @@ export default function ScoreOSMD({
 
         let newBands: Band[] = [];
         {
-          const runTag  = `${instanceIdRef.current}#${outer.dataset.osmdRun || "?"}`;
-          const start   = `scanSystemsPx ${runTag} start`;
-          const end     = `scanSystemsPx ${runTag} end`;
-          const runtime = `scanSystemsPx ${runTag} runtime`;
-          perfMark(start);
-          newBands = withUntransformedSvg(outer, (svg) => scanSystemsPx(outer, svg)) ?? [];
-          perfMark(end);
-          perfMeasure(runtime, start, end);
-          const ms = perfLastMs(runtime);
-          await logStep(`scanSystemsPx runtime: (${ms}ms)`);
-          try {
-            performance.clearMarks(start);
-            performance.clearMarks(end);
-            performance.clearMeasures(runtime);
-          } catch {}
+          const uid = nextPerfUID(outer.dataset.osmdRun);
+          newBands = perfBlock(
+            uid,
+            "scanSystemsPx",
+            () => withUntransformedSvg(outer, (svg) => scanSystemsPx(outer, svg)) ?? []
+          );
         }
 
         const n = newBands.length;
@@ -1247,11 +1287,15 @@ export default function ScoreOSMD({
 
         bandsRef.current = newBands;
 
-        perfMark("starts:compute:start");
-        const newStarts = computePageStartIndices(newBands, getPAGE_H(outer));
-        perfMark("starts:compute:end");
-        perfMeasure("starts:compute", "starts:compute:start", "starts:compute:end");
-        await logStep(`[perf] starts:compute ms=${perfLastMs("starts:compute")}`);
+        let newStarts: number[] = [];
+        {
+          const uid = nextPerfUID(outer.dataset.osmdRun);
+          const H = getPAGE_H(outer);
+          newStarts = perfBlock(uid, "computePageStartIndices", () =>
+            computePageStartIndices(newBands, H)
+          );
+          await logStep(`computePageStartIndices H=${H}`);
+        }
 
         pageStartsRef.current = newStarts;
         outer.dataset.osmdPhase = `starts:${newStarts.length}`;
