@@ -532,6 +532,10 @@ export default function ScoreOSMD({
     return `${instanceIdRef.current}#${run ?? "?"}@${perfSeqRef.current}`;
   }, []);
 
+  // --- Init watchdog guards ---
+  const initEpochRef = useRef(0);
+  const initFinalizeTimerRef = useRef<number | null>(null);
+
   const vvTimerRef = useRef<number | null>(null);     // visualViewport debounce
 
   const handledWRef = useRef<number>(-1);
@@ -1536,13 +1540,14 @@ export default function ScoreOSMD({
 
   /** Init OSMD */
   useEffect(function initOSMDEffect() {
-    //let resizeObs: ResizeObserver | null = null;
-
     (async () => {
       const host = hostRef.current;
       const outer = wrapRef.current;
       if (!host || !outer) { return; }
 
+      const epoch = ++initEpochRef.current;
+      outer.dataset.osmdInitEpoch = String(epoch);
+      
       try {
         const hasVV =
           typeof window !== "undefined" &&
@@ -1838,27 +1843,39 @@ export default function ScoreOSMD({
       // Safety: if we don’t reach starts/applied quickly, reveal + clear busy anyway.
       // Idempotent: real path will still run and win.
       try {
-        window.setTimeout(() => {
+        // Cancel any older init finalize timer for safety
+        if (initFinalizeTimerRef.current) {
+          window.clearTimeout(initFinalizeTimerRef.current);
+        }
+        initFinalizeTimerRef.current = window.setTimeout(() => {
           const o = wrapRef.current;
           if (!o) { return; }
+
+          // Only act if this timeout belongs to the *current* init attempt
+          if (o.dataset.osmdInitEpoch !== String(epoch)) { return; }
+
           const ph = o.dataset.osmdPhase || "";
-          if (!/^starts:/.test(ph) && !/^applied:/.test(ph)) {
-            try {
-              const hostForInitX = hostRef.current;
-              if (hostForInitX) {
-                if (prevCvValueForInit) {
-                  hostForInitX.style.setProperty("content-visibility", prevCvValueForInit || "");
-                } else {
-                  hostForInitX.style.removeProperty("content-visibility");
-                }
-                hostForInitX.style.visibility = prevVisForInit || "visible";
-              }
-              //o.dataset.osmdHostHidden = "0";
-            } catch {}
-            o.dataset.osmdPhase = "init:forced-finalize";
-            void logStep("init:forced-finalize");
-            hideBusy();
+
+          // If first pagination has started/completed, do nothing
+          if (/^starts:/.test(ph) || ph === "apply" || /^applied:/.test(ph)) {
+            return;
           }
+
+          try {
+            const hostForInitX = hostRef.current;
+            if (hostForInitX) {
+              if (prevCvValueForInit) {
+                hostForInitX.style.setProperty("content-visibility", prevCvValueForInit || "");
+              } else {
+                hostForInitX.style.removeProperty("content-visibility");
+              }
+              hostForInitX.style.visibility = prevVisForInit || "visible";
+            }
+          } catch {}
+
+          o.dataset.osmdPhase = "init:forced-finalize";
+          void logStep("init:forced-finalize");
+          hideBusy();
         }, 1500);
       } catch {}
 
@@ -1991,13 +2008,20 @@ export default function ScoreOSMD({
     });
 
     return () => {
+      try {
+        if (initFinalizeTimerRef.current) {
+          window.clearTimeout(initFinalizeTimerRef.current);
+          initFinalizeTimerRef.current = null;
+        }
+      } catch {}
+
       if (osmdRef.current) {
         osmdRef.current?.clear();
         (osmdRef.current as { dispose?: () => void } | null)?.dispose?.();
         osmdRef.current = null;
       }
     };
-    // Only re-init when source or measure-number mode changes.
+    // Only re-init when source changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [src, debugShowAllMeasureNumbers]);
 
