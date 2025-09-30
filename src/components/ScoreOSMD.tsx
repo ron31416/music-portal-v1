@@ -1238,8 +1238,10 @@ export default function ScoreOSMD({
           } catch {}
         }
 
-        if (newBands.length === 0) {
-          await logStep("0 bands — abort reflow");
+        const n = newBands.length;
+        outer.dataset.osmdBands = String(n);
+        if (n === 0) {
+          await logStep("0 bands — abort");
           return;
         }
 
