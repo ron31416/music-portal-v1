@@ -1583,6 +1583,15 @@ export default function ScoreOSMD({
       const epoch = ++initEpochRef.current;
       outer.dataset.osmdInitEpoch = String(epoch);
       
+      // If a newer init started (src changed), abort this one quietly.
+      const isStale = () => outer.dataset.osmdInitEpoch !== String(epoch);
+
+      // Tag the function for aligned log prefixes and start a simple boot phase.
+      const prevFuncTag = outer.dataset.osmdFunc ?? "";
+      outer.dataset.osmdFunc = "initOSMD";
+      outer.dataset.osmdPhase = "boot";
+      await logStep("phase starting", { outer });
+
       try {
         const hasVV =
           typeof window !== "undefined" &&
@@ -1594,14 +1603,26 @@ export default function ScoreOSMD({
           "ResizeObserver" in window &&
           typeof window.ResizeObserver === "function";
 
-        await logStep(
-          `capabilities: visualViewport=${hasVV ? "yes" : "no"} resizeObserver=${hasRO ? "yes" : "no"}`
-        );
+        outer.dataset.osmdCapVv = hasVV ? "1" : "0";
+        outer.dataset.osmdCapRo = hasRO ? "1" : "0";
+
+        outer.dataset.osmdCapVv = hasVV ? "1" : "0";
+        outer.dataset.osmdCapRo = hasRO ? "1" : "0";
+
+        await logStep(`caps vv=${hasVV ? "yes" : "no"} ro=${hasRO ? "yes" : "no"}`, { outer });
 
         if (!hasVV) {
-          await logStep("note: zoom-driven reflow disabled (visualViewport unavailable)");
+          // Hard-fail policy
+          outer.dataset.osmdPhase = "fatal:no-visual-viewport";
+          outer.dataset.osmdFatal = "1";
+          setBusyMsg("This viewer requires the Visual Viewport API for correct zoom & pagination.\nTry a modern browser (Chrome, Edge, Safari 16+).");
+          setBusy(true); // show blocking overlay with the message
+          await logStep("fatal: visualViewport unavailable — aborting init", { outer });
+          return; // stop init right here
         }
-      } catch {}
+        if (isStale()) { return; }
+
+    } catch {}
 
       await logStep("BUILD: ScoreOSMD v10 @ tick+ap-gate");
 
@@ -1864,9 +1885,11 @@ export default function ScoreOSMD({
             void logStep("purge:skip(no-canvas)")
         }
 
-        outer.dataset.osmdPhase = "measure"
-        void logStep("measure:start")
-        void logStep("diag: measure:start (no gate)")
+        outer.dataset.osmdPhase = "scan"
+        void logStep("phase starting", { outer })
+        // (optional breadcrumb)
+        void logStep("scan: no gate", { outer })
+
       } catch (e) {
         const err: Error = e instanceof Error ? e : new Error(String(e))
         void logStep(`MEASURE-ENTRY:exception:${err.message}`)
