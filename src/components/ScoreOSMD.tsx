@@ -467,6 +467,9 @@ export default function ScoreOSMD({
   const busyRef = useRef(false);
   useEffect(() => { busyRef.current = busy; }, [busy]);
 
+  // Stable per-instance id for perf scoping & breadcrumbs
+  const instanceIdRef = useRef<string>(`osmd-${Math.random().toString(36).slice(2, 8)}`);
+
   const vvTimerRef = useRef<number | null>(null);     // visualViewport debounce
 
   const handledWRef = useRef<number>(-1);
@@ -1189,12 +1192,25 @@ export default function ScoreOSMD({
           try { void hostForReflow.getBoundingClientRect().width; } catch {}
         }
 
-        perfMark("renderWithEffectiveWidth start");
-        await renderWithEffectiveWidth(outer, osmd);
-        perfMark("renderWithEffectiveWidth end");
-        perfMeasure("renderWithEffectiveWidth runtime", "renderWithEffectiveWidth start", "renderWithEffectiveWidth end");
-        outer.dataset.osmdRenderMs = String(perfLastMs("renderWithEffectiveWidth runtime"));
-        await logStep(`renderWithEffectiveWidth runtime: (${outer.dataset.osmdRenderMs}ms)`);
+        {
+          const runTag  = `${instanceIdRef.current}#${outer.dataset.osmdRun || "?"}`;
+          const start   = `renderWithEffectiveWidth ${runTag} start`;
+          const end     = `renderWithEffectiveWidth ${runTag} end`;
+          const runtime = `renderWithEffectiveWidth ${runTag} runtime`;
+
+          perfMark(start);
+          await renderWithEffectiveWidth(outer, osmd);
+          perfMark(end);
+          perfMeasure(runtime, start, end);
+          const ms = perfLastMs(runtime);
+          outer.dataset.osmdRenderMs = String(ms);
+          await logStep(`renderWithEffectiveWidth runtime: (${ms}ms)`);
+          try {
+            performance.clearMarks(start);
+            performance.clearMarks(end);
+            performance.clearMeasures(runtime);
+          } catch {}
+        }
 
         // --------- POST-RENDER: skip wait (non-blocking, like init) ---------
         outer.dataset.osmdPhase = "render:painted";
