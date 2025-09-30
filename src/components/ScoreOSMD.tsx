@@ -654,11 +654,9 @@ export default function ScoreOSMD({
     [applyZoomFromRef]
   );
 
-
   const hideBusy = useCallback(async () => {
     setBusy(false);
     setBusyMsg(DEFAULT_BUSY);
-    await logStep("busy:off"); // or { paint: true } if you want it blocking
   }, []);
 
   // --- LOG SNAPSHOT (lean) ---
