@@ -586,6 +586,7 @@ export default function ScoreOSMD({
 
       const prevFuncTag = outer.dataset.osmdFunc ?? "";
       outer.dataset.osmdFunc = "renderWithEffectiveWidth";
+      await logStep("enter", { outer });
 
       // Use our zoom source of truth
       applyZoomFromRef();
@@ -634,6 +635,7 @@ export default function ScoreOSMD({
         void logStep(`render:error ${(e as Error)?.message ?? e}`);
         throw e;
       } finally {
+        try { await logStep("exit", { outer }); } catch {}
         try { outer.dataset.osmdFunc = prevFuncTag; } catch {}
 
         try { window.clearInterval(beat); } catch {}
