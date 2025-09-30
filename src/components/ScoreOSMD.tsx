@@ -1185,6 +1185,8 @@ export default function ScoreOSMD({
       let prevVisForReflow: string | null = null;
       let prevCvForReflow: string | null = null;
 
+      let started = false;
+
       try {
         if (!osmd) {
           void logStep("early-bail outer=1 osmd=0");
@@ -1200,6 +1202,8 @@ export default function ScoreOSMD({
           void logStep("reflow already in progress; queued follow-up");
           return;
         }
+
+        started = true;
 
         reflowRunningRef.current = true;
 
@@ -1332,89 +1336,91 @@ export default function ScoreOSMD({
         await logStep("phase finished");
 
       } finally {
-        try { outer.dataset.osmdPhase = "finally"; } catch {}
-        await logStep("phase starting");
+        if (started) {
+          try { outer.dataset.osmdPhase = "finally"; } catch {}
+          await logStep("phase starting");
 
-        // Reveal host now that the page has been applied (or if we bailed)
-        try {
-          const hostNow = hostRef.current;
-          if (hostNow) {
-            // restore content-visibility
-            if (prevCvForReflow) {
-              hostNow.style.setProperty("content-visibility", prevCvForReflow);
-            } else {
-              hostNow.style.removeProperty("content-visibility");
+          // Reveal host now that the page has been applied (or if we bailed)
+          try {
+            const hostNow = hostRef.current;
+            if (hostNow) {
+              // restore content-visibility
+              if (prevCvForReflow) {
+                hostNow.style.setProperty("content-visibility", prevCvForReflow);
+              } else {
+                hostNow.style.removeProperty("content-visibility");
+              }
+
+              // restore visibility
+              if (prevVisForReflow) {
+                hostNow.style.visibility = prevVisForReflow;
+              } else {
+                hostNow.style.removeProperty("visibility");
+              }
             }
+          } catch {}
 
-            // restore visibility
-            if (prevVisForReflow) {
-              hostNow.style.visibility = prevVisForReflow;
-            } else {
-              hostNow.style.removeProperty("visibility");
+          spinnerOwnerRef.current = null;
+
+          // set reflowRunning=false BEFORE we flip busy off so the post-busy drain
+          // sees we're idle and can drain queued work immediately.
+          reflowRunningRef.current = false;
+
+          // if a queued width-reflow matches the width we just handled, drop it
+          try {
+            const wHandled = Number(outer.dataset.osmdReflowTargetW ?? NaN);
+            const wNow = wrapRef.current ? (wrapRef.current.clientWidth || 0) : NaN;
+
+            if (
+              reflowAgainRef.current === "width" &&
+              Number.isFinite(wHandled) &&
+              Number.isFinite(wNow) &&
+              Math.abs(wNow - wHandled) < 1 // <= 1px tolerance
+            ) {
+              reflowAgainRef.current = "none";
+              reflowQueuedCauseRef.current = "";
+              await logStep(`dropped queued width reflow: handled=${wHandled}px current=${wNow}px (Δ<1px)`);
             }
+          } catch { /* ignore */ }
+
+          // hide overlay next; post-busy drain will see reflowRunning=false and (if dropped) no queued work
+          hideBusy();
+
+          // clear breadcrumbs
+          outer.dataset.osmdReflowTargetW = "";
+          outer.dataset.osmdReflowTargetH = "";
+
+          const queued = reflowAgainRef.current;
+          const cause  = reflowQueuedCauseRef.current || "drain:finally";
+
+          // clear flags before scheduling to avoid double-drain races
+          reflowAgainRef.current = "none";
+          reflowQueuedCauseRef.current = "";
+
+          // Only log/schedule if there's actually something to drain
+          if (queued === "width") {
+            await logStep(`draining queued width reflow (cause=${cause})`);
+            setTimeout(() => {
+              void logStep(`starting queued width reflow (cause=${cause})`);
+              reflowFnRef.current(cause);
+            }, 0);
+          } else if (queued === "height") {
+            await logStep(`draining queued height repagination (cause=${cause})`);
+            setTimeout(() => {
+              void logStep("starting queued height repagination");
+              repagFnRef.current(true, false);
+            }, 0);
           }
-        } catch {}
+          // else: queued === "none" → no log, nothing to schedule
 
-        spinnerOwnerRef.current = null;
-
-        // set reflowRunning=false BEFORE we flip busy off so the post-busy drain
-        // sees we're idle and can drain queued work immediately.
-        reflowRunningRef.current = false;
-
-        // if a queued width-reflow matches the width we just handled, drop it
-        try {
-          const wHandled = Number(outer.dataset.osmdReflowTargetW ?? NaN);
-          const wNow = wrapRef.current ? (wrapRef.current.clientWidth || 0) : NaN;
-
-          if (
-            reflowAgainRef.current === "width" &&
-            Number.isFinite(wHandled) &&
-            Number.isFinite(wNow) &&
-            Math.abs(wNow - wHandled) < 1 // <= 1px tolerance
-          ) {
-            reflowAgainRef.current = "none";
-            reflowQueuedCauseRef.current = "";
-            await logStep(`dropped queued width reflow: handled=${wHandled}px current=${wNow}px (Δ<1px)`);
+          if (spinnerFailSafeRef.current) {
+            window.clearTimeout(spinnerFailSafeRef.current);
+            spinnerFailSafeRef.current = null;
           }
-        } catch { /* ignore */ }
 
-        // hide overlay next; post-busy drain will see reflowRunning=false and (if dropped) no queued work
-        hideBusy();
-
-        // clear breadcrumbs
-        outer.dataset.osmdReflowTargetW = "";
-        outer.dataset.osmdReflowTargetH = "";
-
-        const queued = reflowAgainRef.current;
-        const cause  = reflowQueuedCauseRef.current || "drain:finally";
-
-        // clear flags before scheduling to avoid double-drain races
-        reflowAgainRef.current = "none";
-        reflowQueuedCauseRef.current = "";
-
-        // Only log/schedule if there's actually something to drain
-        if (queued === "width") {
-          await logStep(`draining queued width reflow (cause=${cause})`);
-          setTimeout(() => {
-            void logStep(`starting queued width reflow (cause=${cause})`);
-            reflowFnRef.current(cause);
-          }, 0);
-        } else if (queued === "height") {
-          await logStep(`draining queued height repagination (cause=${cause})`);
-          setTimeout(() => {
-            void logStep("starting queued height repagination");
-            repagFnRef.current(true, false);
-          }, 0);
+          await logStep("phase finished");
         }
-        // else: queued === "none" → no log, nothing to schedule
-
-        if (spinnerFailSafeRef.current) {
-          window.clearTimeout(spinnerFailSafeRef.current);
-          spinnerFailSafeRef.current = null;
-        }
-
-        await logStep("phase finished");
-
+        
         try { outer.dataset.osmdFunc = prevFuncTag; } catch {}
       }
     },
