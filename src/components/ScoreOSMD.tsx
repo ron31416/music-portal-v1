@@ -1174,6 +1174,11 @@ export default function ScoreOSMD({
         }
 
         outer.dataset.osmdPhase = "render";
+        await logStep("start");
+
+        const ap = makeAfterPaint(outer);
+        await new Promise<void>((r) => setTimeout(r, 0)); // macrotask
+        await ap("one paint opportunity before heavy render");
 
         const hostForReflow = hostRef.current;
         if (hostForReflow) {
@@ -1184,20 +1189,12 @@ export default function ScoreOSMD({
           try { void hostForReflow.getBoundingClientRect().width; } catch {}
         }
 
-        const ap = makeAfterPaint(outer);
-
-        await logStep("render:start");
-        await new Promise<void>((r) => setTimeout(r, 0)); // macrotask
-        await ap("render:yield");                         // one paint opportunity
-
-        perfMark("zoom-render:start");
+        perfMark("renderWithEffectiveWidth start");
         await renderWithEffectiveWidth(outer, osmd);
-        perfMark("zoom-render:end");
-        perfMeasure("zoom-render", "zoom-render:start", "zoom-render:end");
-
-        const renderMs = perfLastMs("render");
-        outer.dataset.osmdRenderMs = String(renderMs);
-        await logStep(`finished (${renderMs}ms)`);
+        perfMark("renderWithEffectiveWidth end");
+        perfMeasure("renderWithEffectiveWidth runtime", "renderWithEffectiveWidth start", "renderWithEffectiveWidth end");
+        outer.dataset.osmdRenderMs = String(perfLastMs("renderWithEffectiveWidth runtime"));
+        await logStep(`renderWithEffectiveWidth runtime: (${outer.dataset.osmdRenderMs}ms)`);
 
         // --------- POST-RENDER: skip wait (non-blocking, like init) ---------
         outer.dataset.osmdPhase = "render:painted";
