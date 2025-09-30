@@ -376,19 +376,15 @@ function scanSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[] {
 }
 
 /** Compute page start *indices* so each page shows only full systems */
-function computePageStartIndices(
-  bands: Band[],
-  viewportH: number,
-  outer?: HTMLDivElement
-): number[] {
-  const prevFuncTag = outer?.dataset.osmdFunc ?? "";
-  if (outer) { outer.dataset.osmdFunc = "computePageStartIndices"; }
+function computePageStartIndices(outer: HTMLDivElement, bands: Band[], viewportH: number): number[] {
+  const prevFuncTag = outer.dataset.osmdFunc ?? "";
+  outer.dataset.osmdFunc = "computePageStartIndices";
 
   try {
-    if (outer) { void logStep("enter", { outer }); }
+    void logStep("enter", { outer });
 
     if (bands.length === 0 || viewportH <= 0) {
-      if (outer) { void logStep("exit starts=1 (fallback [0])", { outer }); }
+      void logStep("exit starts=1 (fallback [0])", { outer });
       return [0];
     }
 
@@ -397,16 +393,12 @@ function computePageStartIndices(
     const fuseTitle = isTitleLike(bands[0], bands.slice(1));
 
     while (i < bands.length) {
-      const current = bands[i];
-      if (!current) { break; }
-
+      const current = bands[i]!;
       const startTop = current.top;
       let last = i;
 
       while (last + 1 < bands.length) {
-        const next = bands[last + 1];
-        if (!next) { break; }
-
+        const next = bands[last + 1]!;
         const isFirstPage = starts.length === 0 && i === 0;
         const slack = isFirstPage && fuseTitle
           ? Math.min(28, Math.round(viewportH * 0.035))
@@ -424,10 +416,10 @@ function computePageStartIndices(
     }
 
     const out = starts.length ? starts : [0];
-    if (outer) { void logStep(`exit starts=${out.length}`, { outer }); }
+    void logStep(`exit starts=${out.length}`, { outer });
     return out;
   } finally {
-    if (outer) { try { outer.dataset.osmdFunc = prevFuncTag; } catch {} }
+    try { outer.dataset.osmdFunc = prevFuncTag; } catch {}
   }
 }
 
@@ -807,7 +799,7 @@ export default function ScoreOSMD({
 
     const measured = withUntransformedSvg(outer, (svg) => scanSystemsPx(outer, svg)) ?? [];
     const H = getPAGE_H(outer);
-    const starts = computePageStartIndices(measured, H);
+    const starts = computePageStartIndices(outer, measured, H);
 
     void logStep(`debug:probe measured bands=${measured.length} H=${H} starts=${starts.join(",") || "(none)"}`);
   }, [getPAGE_H]);
@@ -871,7 +863,7 @@ export default function ScoreOSMD({
           const nextTopRel = nextBand.top - startBand.top;
 
           if (nextTopRel <= hVisible - TOL) {
-            const fresh = computePageStartIndices(bands, PAGE_H);
+            const fresh = computePageStartIndices(outer, bands, PAGE_H);
             if (fresh.length) {
               // lower bound: first start >= startIndex
               let lb = fresh.length - 1;
@@ -936,7 +928,7 @@ export default function ScoreOSMD({
       const lastBottomRel = assumedLast ? (assumedLast.bottom - startBand.top) : 0;
 
       if (assumedLast && lastBottomRel > hVisible - SAFETY) {
-        const freshStarts = computePageStartIndices(bands, PAGE_H); // ← PAGE_H
+        const freshStarts = computePageStartIndices(outer, bands, PAGE_H); // ← PAGE_H
         if (freshStarts.length) {
           let nearest = 0, best = Number.POSITIVE_INFINITY;
           for (let i = 0; i < freshStarts.length; i++) {
@@ -986,7 +978,7 @@ export default function ScoreOSMD({
         const high = Math.floor(nextTopRel) - PEEK_GUARD;
 
         if (low > high) {
-          const fresh = computePageStartIndices(bands, PAGE_H);
+          const fresh = computePageStartIndices(outer, bands, PAGE_H);
           if (fresh.length) {
             let nearest = 0, best = Number.POSITIVE_INFINITY;
             for (let i = 0; i < fresh.length; i++) {
@@ -1106,7 +1098,7 @@ export default function ScoreOSMD({
         }
 
         const H = getPAGE_H(outer);
-        const starts = timeSection("starts:compute", () => computePageStartIndices(bands, H));
+        const starts = timeSection("starts:compute", () => computePageStartIndices(outer, bands, H));
         const oldStarts = pageStartsRef.current;
 
         void logStep(`recompute h=${H} bands=${bands.length} old=${oldStarts.join(',')} new=${starts.join(',')} page=${pageIdxRef.current}`
@@ -1305,7 +1297,7 @@ export default function ScoreOSMD({
           const H = getPAGE_H(outer);
           newStarts = perfBlock(
             uid,
-            () => computePageStartIndices(newBands, H),
+            () => computePageStartIndices(outer, newBands, H),
             (ms) => { void logStep(`computePageStartIndices runtime: (${ms}ms) H=${H}`); }
           );
         }
@@ -1943,7 +1935,7 @@ export default function ScoreOSMD({
 
       const __startsInit = timeSection(
         "starts:compute",
-        () => computePageStartIndices(bands, getPAGE_H(outer))
+        () => computePageStartIndices(outer, bands, getPAGE_H(outer))
       );
       pageStartsRef.current = __startsInit;
       outer.dataset.osmdPages = String(pageStartsRef.current.length);
@@ -2034,7 +2026,7 @@ export default function ScoreOSMD({
         const outer = wrapRef.current;
         if (!outer) { return; }
 
-        const fresh = computePageStartIndices(bandsRef.current, getPAGE_H(outer));
+        const fresh = computePageStartIndices(outer, bandsRef.current, getPAGE_H(outer));
         if (!fresh.length) { return; }
 
         pageStartsRef.current = fresh;
