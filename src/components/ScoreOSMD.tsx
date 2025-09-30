@@ -1217,30 +1217,34 @@ export default function ScoreOSMD({
           } catch {}
         }
 
-        try {
-          await new Promise<void>((r) => setTimeout(r, 0)); 
-        } catch {}
+        await new Promise<void>(r => setTimeout(r, 0));
         await logStep("yielded one task before measure");
 
 
-        // --------- MEASURE ---------
-        outer.dataset.osmdPhase = "measure";
+        outer.dataset.osmdPhase = "geometry";
+        void logStep("start", { outer });
 
-        if (measureWatchdog) { clearTimeout(measureWatchdog); measureWatchdog = null; }
-        measureWatchdog = setTimeout(() => {
+        let newBands: Band[] = [];
+        {
+          const runTag  = `${instanceIdRef.current}#${outer.dataset.osmdRun || "?"}`;
+          const start   = `measureSystemsPx ${runTag} start`;
+          const end     = `measureSystemsPx ${runTag} end`;
+          const runtime = `measureSystemsPx ${runTag} runtime`;
+
+          perfMark(start);
+          newBands = withUntransformedSvg(outer, (svg) => measureSystemsPx(outer, svg)) ?? [];
+          perfMark(end);
+          perfMeasure(runtime, start, end);
+
+          const ms = perfLastMs(runtime);
+          await logStep(`measureSystemsPx runtime: (${ms}ms)`);
+
           try {
-            outer.dataset.osmdPhase = "measure:watchdog";
-            void logStep("[probe] measure:watchdog fired → force-continue", { outer });
+            performance.clearMarks(start);
+            performance.clearMarks(end);
+            performance.clearMeasures(runtime);
           } catch {}
-        }, 2500);
-
-        void logStep("measure:start:scan-enter", { outer });
-
-        perfMark("zoom-measure:start");
-        const newBands = withUntransformedSvg(outer, (svg) => measureSystemsPx(outer, svg)) ?? [];
-        perfMark("zoom-measure:end");
-        perfMeasure("zoom-measure", "zoom-measure:start", "zoom-measure:end");
-        await logStep(`[perf] zoom-measure ms=${perfLastMs("zoom-measure")}`);
+        }
 
         outer.dataset.osmdPhase = `measure:${newBands.length}`;
         void logStep(`measured:${newBands.length}`);
