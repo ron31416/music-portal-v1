@@ -1498,7 +1498,7 @@ export default function ScoreOSMD({
 
   /** Init OSMD */
   useEffect(function initOSMDEffect() {
-    let resizeObs: ResizeObserver | null = null;
+    //let resizeObs: ResizeObserver | null = null;
 
     (async () => {
       const host = hostRef.current;
@@ -1916,6 +1916,7 @@ export default function ScoreOSMD({
       readyRef.current = true;
       hideBusy();
 
+/*
       // --- ResizeObserver to trigger reflow/repag on size changes ---
       if (typeof ResizeObserver !== "undefined") {
         resizeObs = new ResizeObserver(() => {
@@ -1986,7 +1987,7 @@ export default function ScoreOSMD({
                 handledHRef.current = currH;
               } else if (heightChangedSinceHandled) {
                 // VERTICAL-only change → cheap repagination (no spinner) + reset to page 1
-                repagFnRef.current(true /* resetToFirst */, false /* no spinner */);
+                repagFnRef.current(true, false);
                 handledHRef.current = currH;
               } else {
                 return;
@@ -1999,7 +2000,7 @@ export default function ScoreOSMD({
       } else {
         void logStep("resize:observer-unavailable (skipping)");
       }
- 
+*/ 
     })().catch((err: unknown) => {
       hideBusy();
 
@@ -2017,13 +2018,13 @@ export default function ScoreOSMD({
     });
 
     // Cleanup
-    const cleanupOuter = wrapRef.current;
+    //const cleanupOuter = wrapRef.current;
 
     return () => {
-      if (resizeObs) {
-        if (cleanupOuter) { resizeObs.unobserve(cleanupOuter); }
-        resizeObs.disconnect();
-      }
+      //if (resizeObs) {
+      //  if (cleanupOuter) { resizeObs.unobserve(cleanupOuter); }
+      //  resizeObs.disconnect();
+      // }
 
       if (resizeTimerRef.current) {
         window.clearTimeout(resizeTimerRef.current);
