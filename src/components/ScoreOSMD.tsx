@@ -1261,10 +1261,6 @@ export default function ScoreOSMD({
           return;
         }
 
-        const prevStarts = pageStartsRef.current.slice();
-        const prevPage   = pageIdxRef.current;
-        //const oldTopIdx  = prevStarts.length ? (prevStarts[Math.max(0, Math.min(prevPage, prevStarts.length - 1))] ?? 0) : 0;
-
         bandsRef.current = newBands;
 
         perfMark("starts:compute:start");
@@ -1288,32 +1284,7 @@ export default function ScoreOSMD({
         perfMeasure("applyPage", "applyPage:start", "applyPage:end");
 
         await logStep("done");
-/*
-        let nearest = 0, best = Number.POSITIVE_INFINITY;
-        for (let i = 0; i < newStarts.length; i++) {
-          const s = newStarts[i];
-          if (s === undefined) { continue; }
-          const d = Math.abs(s - oldTopIdx);
-          if (d < best) { best = d; nearest = i; }
-        }
 
-        outer.dataset.osmdPhase = `apply-page:${nearest}`;
-        await logStep(`apply-page:${nearest}`);
-
-        perfMark("applyPage:start");
-        applyPage(nearest);
-        await Promise.race([ ap("apply:nearest"), new Promise<void>((r) => setTimeout(r, 700)) ]);
-        applyPage(nearest);
-        perfMark("applyPage:end");
-        perfMeasure("applyPage", "applyPage:start", "applyPage:end");
-        await logStep(`[perf] applyPage ms=${perfLastMs("applyPage")}`);
-
-        outer.dataset.osmdPhase = `applied:${nearest}`;
-        await logStep(`applied:${nearest}`);
-        await logStep(`reflow:done page=${nearest + 1}/${newStarts.length} bands=${newBands.length}`);
-        handledWRef.current = outer.clientWidth;
-        handledHRef.current = outer.clientHeight;
-*/
       } finally {
         try {
           outer.dataset.osmdFunc = prevFuncTag;
