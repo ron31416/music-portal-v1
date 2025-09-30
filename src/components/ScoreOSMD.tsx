@@ -44,6 +44,10 @@ const REFLOW = {
   BOTTOM_PEEK_PAD_HI_DPR: 6,
 } as const;
 
+// Allow up to 3 recursive passes of applyPage to settle layout.
+// Bail on the 4th to prevent oscillation.
+const APPLY_MAX_PASSES = 3 as const;
+
 async function withTimeout<T>(p: Promise<T>, ms: number, tag: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const t = window.setTimeout(() => reject(new Error(tag)), ms);
@@ -808,272 +812,280 @@ export default function ScoreOSMD({
     void logStep(`debug:probe measured bands=${measured.length} H=${H} starts=${starts.join(",") || "(none)"}`);
   }, [getPAGE_H]);
 
-  /** Apply a page index */
+  
+  // Apply the chosen page to the viewport: translate the SVG to its start and mask/cut to hide any next-page peek.
+  // May recompute page starts and re-apply to preserve whole systems; bounded recursion prevents oscillation.
   const applyPage = useCallback(
     (pageIdx: number, depth: number = 0): void => {
-      if (depth > 3) {           // hard stop if anything oscillates
-        const outerNow = wrapRef.current;
-        if (outerNow) {
-          outerNow.dataset.osmdPhase = 'applyPage:bailout';
-          logStep('depth>3'); // single logger
-        }
-        return;
-      }
       const outer = wrapRef.current;
-      if (!outer) {
-        return;
-      }
+      if (!outer) { return; }
 
-      const svg = getSvg(outer);
-      if (!svg) {
-        return;
-      }
+      // Temporary func tag for crisp, aligned prefixes in logs.
+      const prevFuncTag = outer.dataset.osmdFunc ?? "";
+      outer.dataset.osmdFunc = "applyPage";
 
-      const bands = bandsRef.current;
-      const starts = pageStartsRef.current;
-      if (bands.length === 0 || starts.length === 0) {
-        return;
-      }
+      try {
+        // Bail if recursion depth exceeds APPLY_MAX_PASSES (prevents oscillation).
+        // This allows up to 3 recursive passes; the 4th would bail.
+        if (depth > APPLY_MAX_PASSES) {
+          outer.dataset.osmdPhase = "applyPage:bailout";
+          void logStep(`bail: recursion depth>${APPLY_MAX_PASSES} at pageIdx=${pageIdx}`, { outer });
+          return;
+        }
 
-      const pages = starts.length;
-      const clampedPage = Math.max(0, Math.min(pageIdx, pages - 1));
-      pageIdxRef.current = clampedPage;
+        void logStep(`enter pageIdx=${pageIdx} depth=${depth}`, { outer });
+        const svg = getSvg(outer);
+        if (!svg) {
+          return;
+        }
 
-      const startIndex = starts[clampedPage] ?? 0;
-      const startBand = bands[startIndex];
-      if (!startBand) {
-        return;
-      }
+        const bands = bandsRef.current;
+        const starts = pageStartsRef.current;
+        if (bands.length === 0 || starts.length === 0) {
+          return;
+        }
 
-      const ySnap = Math.ceil(startBand.top);
+        const pages = starts.length;
+        const clampedPage = Math.max(0, Math.min(pageIdx, pages - 1));
+        pageIdxRef.current = clampedPage;
 
-      svg.style.transform = `translateY(${-ySnap + Math.max(0, topGutterPx)}px)`;
-      svg.style.transformOrigin = "top left";
-      svg.style.willChange = "transform";
+        const startIndex = starts[clampedPage] ?? 0;
+        const startBand = bands[startIndex];
+        if (!startBand) {
+          return;
+        }
 
-      const nextStartIndex = clampedPage + 1 < starts.length ? (starts[clampedPage + 1] ?? -1) : -1;
+        const ySnap = Math.ceil(startBand.top);
 
-      const BOTTOM_PEEK_PAD = bottomPeekPad();
-      const hVisible = pageHeight(outer);
+        svg.style.transform = `translateY(${-ySnap + Math.max(0, topGutterPx)}px)`;
+        svg.style.transformOrigin = "top left";
+        svg.style.willChange = "transform";
 
-      // NEW: unify all repagination to one height
-      const TOL = (window.devicePixelRatio || 1) >= 2 ? 2 : 1; // tiny tolerance
-      const PAGE_H = getPAGE_H(outer);                         // unified height
+        const nextStartIndex = clampedPage + 1 < starts.length ? (starts[clampedPage + 1] ?? -1) : -1;
 
-      // If the top of the next system is already inside the window...
-      if (nextStartIndex >= 0) {
-        const nextBand = bands[nextStartIndex];
-        if (nextBand) {
-          const nextTopRel = nextBand.top - startBand.top;
+        const BOTTOM_PEEK_PAD = bottomPeekPad();
+        const hVisible = pageHeight(outer);
 
-          if (nextTopRel <= hVisible - TOL) {
-            const fresh = computePageStartIndices(outer, bands, PAGE_H);
-            if (fresh.length) {
-              // lower bound: first start >= startIndex
-              let lb = fresh.length - 1;
-              for (let i = 0; i < fresh.length; i++) {
-                const s = fresh[i] ?? 0;
-                if (s >= startIndex) { lb = i; break; }
-              }
+        // NEW: unify all repagination to one height
+        const TOL = (window.devicePixelRatio || 1) >= 2 ? 2 : 1; // tiny tolerance
+        const PAGE_H = getPAGE_H(outer);                         // unified height
 
-              const noChange =
-                fresh.length === starts.length &&
-                fresh.every((v, i) => v === (starts[i] ?? -1)) &&
-                lb === clampedPage;
+        // If the top of the next system is already inside the window...
+        if (nextStartIndex >= 0) {
+          const nextBand = bands[nextStartIndex];
+          if (nextBand) {
+            const nextTopRel = nextBand.top - startBand.top;
 
-              if (!noChange) {
-                pageStartsRef.current = fresh;
-                applyPage(lb, depth + 1); // ← pass recursion depth
-                return;
+            if (nextTopRel <= hVisible - TOL) {
+              const fresh = computePageStartIndices(outer, bands, PAGE_H);
+              if (fresh.length) {
+                // lower bound: first start >= startIndex
+                let lb = fresh.length - 1;
+                for (let i = 0; i < fresh.length; i++) {
+                  const s = fresh[i] ?? 0;
+                  if (s >= startIndex) { lb = i; break; }
+                }
+
+                const noChange =
+                  fresh.length === starts.length &&
+                  fresh.every((v, i) => v === (starts[i] ?? -1)) &&
+                  lb === clampedPage;
+
+                if (!noChange) {
+                  pageStartsRef.current = fresh;
+                  applyPage(lb, depth + 1); // ← pass recursion depth
+                  return;
+                }
               }
             }
           }
         }
-      }
 
-      // --- last-page margin rule: push final system to a new page if too close ---
-      const LAST_PAGE_BOTTOM_PAD_PX = REFLOW.LAST_PAGE_BOTTOM_PAD_PX;
+        // --- last-page margin rule: push final system to a new page if too close ---
+        const LAST_PAGE_BOTTOM_PAD_PX = REFLOW.LAST_PAGE_BOTTOM_PAD_PX;
 
-      if (nextStartIndex < 0) { // we are on the last page
-        let cutIdx = -1;
+        if (nextStartIndex < 0) { // we are on the last page
+          let cutIdx = -1;
 
-        for (let i = startIndex; i < bands.length; i++) {
-          const b = bands[i];
-          if (!b) { continue; }                        // TS guard: b is Band
-          const relBottom = b.bottom - startBand.top; // bottom within current page
+          for (let i = startIndex; i < bands.length; i++) {
+            const b = bands[i];
+            if (!b) { continue; }                        // TS guard: b is Band
+            const relBottom = b.bottom - startBand.top; // bottom within current page
 
-          if (relBottom > hVisible - LAST_PAGE_BOTTOM_PAD_PX) {
-            cutIdx = i;
-            break;
+            if (relBottom > hVisible - LAST_PAGE_BOTTOM_PAD_PX) {
+              cutIdx = i;
+              break;
+            }
           }
-        }
 
-        if (cutIdx !== -1 && cutIdx > startIndex) {
-          const freshStarts = starts.slice(0, clampedPage + 1);
-          if (freshStarts[freshStarts.length - 1] !== cutIdx) {
-            freshStarts.push(cutIdx);
-            pageStartsRef.current = freshStarts;
-          }
-          applyPage(clampedPage, depth + 1);                    // ← depth+1
-          return;
-        }
-        // If cutIdx === startIndex, the single system is taller than the page; do nothing.
-      }
-
-
-      // ---- stale page-starts guard: recompute if last-included doesn't fit ----
-
-      const SAFETY = (window.devicePixelRatio || 1) >= 2 ? 12 : 10;  // roughly MASK_BOTTOM_SAFETY_PX + (PEEK_GUARD - 2), avoids edge-shave on Hi-DPR
-      const assumedLastIdx = (clampedPage + 1 < starts.length)
-        ? Math.max(startIndex, (starts[clampedPage + 1] ?? startIndex) - 1)
-        : Math.max(startIndex, bands.length - 1);
-
-      const assumedLast = bands[assumedLastIdx];
-      const lastBottomRel = assumedLast ? (assumedLast.bottom - startBand.top) : 0;
-
-      if (assumedLast && lastBottomRel > hVisible - SAFETY) {
-        const freshStarts = computePageStartIndices(outer, bands, PAGE_H); // ← PAGE_H
-        if (freshStarts.length) {
-          let nearest = 0, best = Number.POSITIVE_INFINITY;
-          for (let i = 0; i < freshStarts.length; i++) {
-            const s = freshStarts[i] ?? 0;
-            const d = Math.abs(s - startIndex);
-            if (d < best) { best = d; nearest = i; }
-          }
-          const noChange =
-            freshStarts.length === starts.length &&
-            freshStarts.every((v, i) => v === (starts[i] ?? -1)) &&
-            nearest === clampedPage;
-
-          if (!noChange) {
-            pageStartsRef.current = freshStarts;
-            applyPage(nearest, depth + 1);                     // ← depth+1
+          if (cutIdx !== -1 && cutIdx > startIndex) {
+            const freshStarts = starts.slice(0, clampedPage + 1);
+            if (freshStarts[freshStarts.length - 1] !== cutIdx) {
+              freshStarts.push(cutIdx);
+              pageStartsRef.current = freshStarts;
+            }
+            applyPage(clampedPage, depth + 1);                    // ← depth+1
             return;
           }
+          // If cutIdx === startIndex, the single system is taller than the page; do nothing.
         }
-      }
 
-      // ---- masking: hide anything that belongs to the next page ----
-      //const MASK_BOTTOM_SAFETY_PX = 12;
-      //const PEEK_GUARD = (window.devicePixelRatio || 1) >= 2 ? 7 : 5; // was 4/3
-      const MASK_BOTTOM_SAFETY_PX = REFLOW.MASK_BOTTOM_SAFETY_PX;
-      const PEEK_GUARD = (window.devicePixelRatio || 1) >= 2
-        ? REFLOW.PEEK_GUARD_HI_DPR
-        : REFLOW.PEEK_GUARD_LO_DPR;
 
-      const maskTopWithinMusicPx = (() => {
-        // Last page → never mask; show full height
-        if (nextStartIndex < 0) { return hVisible; }
+        // ---- stale page-starts guard: recompute if last-included doesn't fit ----
 
-        const lastIncludedIdx = Math.max(startIndex, nextStartIndex - 1);
-        const lastBand = bands[lastIncludedIdx];
-        const nextBand = bands[nextStartIndex];
-        if (!lastBand || !nextBand) { return hVisible; }
+        const SAFETY = (window.devicePixelRatio || 1) >= 2 ? 12 : 10;  // roughly MASK_BOTTOM_SAFETY_PX + (PEEK_GUARD - 2), avoids edge-shave on Hi-DPR
+        const assumedLastIdx = (clampedPage + 1 < starts.length)
+          ? Math.max(startIndex, (starts[clampedPage + 1] ?? startIndex) - 1)
+          : Math.max(startIndex, bands.length - 1);
 
-        const relBottom  = lastBand.bottom - startBand.top;
-        const nextTopRel = nextBand.top    - startBand.top;
+        const assumedLast = bands[assumedLastIdx];
+        const lastBottomRel = assumedLast ? (assumedLast.bottom - startBand.top) : 0;
 
-        // If nothing from the next page peeks into the viewport, don't mask at all.
-        if (nextTopRel >= hVisible - PEEK_GUARD - 1) { return hVisible; }
-
-        // Otherwise, hide just the peeking sliver.
-        const nudge = (window.devicePixelRatio || 1) >= 2 ? 3 : 2;
-        const low  = Math.ceil(relBottom) + MASK_BOTTOM_SAFETY_PX - nudge;
-        const high = Math.floor(nextTopRel) - PEEK_GUARD;
-
-        if (low > high) {
-          const fresh = computePageStartIndices(outer, bands, PAGE_H);
-          if (fresh.length) {
+        if (assumedLast && lastBottomRel > hVisible - SAFETY) {
+          const freshStarts = computePageStartIndices(outer, bands, PAGE_H); // ← PAGE_H
+          if (freshStarts.length) {
             let nearest = 0, best = Number.POSITIVE_INFINITY;
-            for (let i = 0; i < fresh.length; i++) {
-              const s = fresh[i] ?? 0;
+            for (let i = 0; i < freshStarts.length; i++) {
+              const s = freshStarts[i] ?? 0;
               const d = Math.abs(s - startIndex);
               if (d < best) { best = d; nearest = i; }
             }
-            const same =
-              fresh.length === starts.length &&
-              fresh.every((v, i) => v === (starts[i] ?? -1)) &&
+            const noChange =
+              freshStarts.length === starts.length &&
+              freshStarts.every((v, i) => v === (starts[i] ?? -1)) &&
               nearest === clampedPage;
-            if (!same) {
-              pageStartsRef.current = fresh;
-              applyPage(nearest, depth + 1);
-              return hVisible;
+
+            if (!noChange) {
+              pageStartsRef.current = freshStarts;
+              applyPage(nearest, depth + 1);                     // ← depth+1
+              return;
             }
           }
         }
 
-        const m = Math.min(hVisible, Math.max(0, Math.max(low, Math.min(high, hVisible))));
-        return Math.floor(m);
-      })();
+        // ---- masking: hide anything that belongs to the next page ----
+        //const MASK_BOTTOM_SAFETY_PX = 12;
+        //const PEEK_GUARD = (window.devicePixelRatio || 1) >= 2 ? 7 : 5; // was 4/3
+        const MASK_BOTTOM_SAFETY_PX = REFLOW.MASK_BOTTOM_SAFETY_PX;
+        const PEEK_GUARD = (window.devicePixelRatio || 1) >= 2
+          ? REFLOW.PEEK_GUARD_HI_DPR
+          : REFLOW.PEEK_GUARD_LO_DPR;
 
-      // Breadcrumbs (data attrs kept; HUD removed)
-      outer.dataset.osmdLastApply = String(Date.now());
-      outer.dataset.osmdPage = String(pageIdxRef.current);
-      outer.dataset.osmdMaskTop = String(maskTopWithinMusicPx);
-      outer.dataset.osmdPages  = String(pages);
-      outer.dataset.osmdStarts = starts.slice(0, 12).join(',');
-      outer.dataset.osmdTy     = String(-ySnap + Math.max(0, topGutterPx));
-      outer.dataset.osmdH      = String(hVisible);
+        const maskTopWithinMusicPx = (() => {
+          // Last page → never mask; show full height
+          if (nextStartIndex < 0) { return hVisible; }
 
-      // Single, serialized logger
-      logStep(`apply page:${clampedPage+1}/${pages} start:${startIndex} nextStart:${nextStartIndex} h:${hVisible} maskTop:${maskTopWithinMusicPx}`
-      );
+          const lastIncludedIdx = Math.max(startIndex, nextStartIndex - 1);
+          const lastBand = bands[lastIncludedIdx];
+          const nextBand = bands[nextStartIndex];
+          if (!lastBand || !nextBand) { return hVisible; }
 
-      let mask = outer.querySelector<HTMLDivElement>("[data-osmd-mask='1']");
-      if (!mask) {
-        mask = document.createElement("div");
-        mask.dataset.osmdMask = "1";
-        mask.style.position = "absolute";
-        mask.style.left = "0";
-        mask.style.right = "0";
-        mask.style.top = "0";
-        mask.style.bottom = "0";
-        mask.style.background = "#fff";
-        mask.style.pointerEvents = "none";
-        mask.style.zIndex = "10";
-        outer.appendChild(mask);
+          const relBottom  = lastBand.bottom - startBand.top;
+          const nextTopRel = nextBand.top    - startBand.top;
+
+          // If nothing from the next page peeks into the viewport, don't mask at all.
+          if (nextTopRel >= hVisible - PEEK_GUARD - 1) { return hVisible; }
+
+          // Otherwise, hide just the peeking sliver.
+          const nudge = (window.devicePixelRatio || 1) >= 2 ? 3 : 2;
+          const low  = Math.ceil(relBottom) + MASK_BOTTOM_SAFETY_PX - nudge;
+          const high = Math.floor(nextTopRel) - PEEK_GUARD;
+
+          if (low > high) {
+            const fresh = computePageStartIndices(outer, bands, PAGE_H);
+            if (fresh.length) {
+              let nearest = 0, best = Number.POSITIVE_INFINITY;
+              for (let i = 0; i < fresh.length; i++) {
+                const s = fresh[i] ?? 0;
+                const d = Math.abs(s - startIndex);
+                if (d < best) { best = d; nearest = i; }
+              }
+              const same =
+                fresh.length === starts.length &&
+                fresh.every((v, i) => v === (starts[i] ?? -1)) &&
+                nearest === clampedPage;
+              if (!same) {
+                pageStartsRef.current = fresh;
+                applyPage(nearest, depth + 1);
+                return hVisible;
+              }
+            }
+          }
+
+          const m = Math.min(hVisible, Math.max(0, Math.max(low, Math.min(high, hVisible))));
+          return Math.floor(m);
+        })();
+
+        // Breadcrumbs
+        outer.dataset.osmdLastApply = String(Date.now());
+        outer.dataset.osmdPage = String(pageIdxRef.current);
+        outer.dataset.osmdMaskTop = String(maskTopWithinMusicPx);
+        outer.dataset.osmdPages  = String(pages);
+        outer.dataset.osmdStarts = starts.slice(0, 12).join(',');
+        outer.dataset.osmdTy     = String(-ySnap + Math.max(0, topGutterPx));
+        outer.dataset.osmdH      = String(hVisible);
+
+        // Single, serialized logger
+        logStep(`apply page:${clampedPage+1}/${pages} start:${startIndex} nextStart:${nextStartIndex} h:${hVisible} maskTop:${maskTopWithinMusicPx}`);
+
+        let mask = outer.querySelector<HTMLDivElement>("[data-osmd-mask='1']");
+        if (!mask) {
+          mask = document.createElement("div");
+          mask.dataset.osmdMask = "1";
+          mask.style.position = "absolute";
+          mask.style.left = "0";
+          mask.style.right = "0";
+          mask.style.top = "0";
+          mask.style.bottom = "0";
+          mask.style.background = "#fff";
+          mask.style.pointerEvents = "none";
+          mask.style.zIndex = "10";
+          outer.appendChild(mask);
+        }
+        mask.style.top = `${Math.max(0, topGutterPx) + maskTopWithinMusicPx}px`;
+
+        let bottomCutter = outer.querySelector<HTMLDivElement>("[data-osmd-bottomcutter='1']");
+        if (!bottomCutter) {
+          bottomCutter = document.createElement("div");
+          bottomCutter.dataset.osmdBottomcutter = "1";
+          Object.assign(bottomCutter.style, {
+            position: "absolute",
+            left: "0",
+            right: "0",
+            bottom: "0",
+            height: `${BOTTOM_PEEK_PAD}px`,
+            background: "#fff",
+            pointerEvents: "none",
+            zIndex: "6",
+          });
+          outer.appendChild(bottomCutter);
+        } else {
+          bottomCutter.style.height = `${BOTTOM_PEEK_PAD}px`;
+        }
+
+        let topCutter = outer.querySelector<HTMLDivElement>("[data-osmd-topcutter='1']");
+        if (!topCutter) {
+          topCutter = document.createElement("div");
+          topCutter.dataset.osmdTopcutter = "1";
+          topCutter.style.position = "absolute";
+          topCutter.style.left = "0";
+          topCutter.style.right = "0";
+          topCutter.style.top = "0";
+          topCutter.style.height = `${Math.max(0, topGutterPx)}px`;
+          topCutter.style.background = "#fff";
+          topCutter.style.pointerEvents = "none";
+          topCutter.style.zIndex = "6";
+          outer.appendChild(topCutter);
+        } else {
+          topCutter.style.height = `${Math.max(0, topGutterPx)}px`;
+        }
+
+        // Stop layer promotion after page is applied
+        if (svg) { svg.style.willChange = "auto"; }
+      } finally {
+        try { outer.dataset.osmdFunc = prevFuncTag; } catch {}
       }
-      mask.style.top = `${Math.max(0, topGutterPx) + maskTopWithinMusicPx}px`;
-
-      let bottomCutter = outer.querySelector<HTMLDivElement>("[data-osmd-bottomcutter='1']");
-      if (!bottomCutter) {
-        bottomCutter = document.createElement("div");
-        bottomCutter.dataset.osmdBottomcutter = "1";
-        Object.assign(bottomCutter.style, {
-          position: "absolute",
-          left: "0",
-          right: "0",
-          bottom: "0",
-          height: `${BOTTOM_PEEK_PAD}px`,
-          background: "#fff",
-          pointerEvents: "none",
-          zIndex: "6",
-        });
-        outer.appendChild(bottomCutter);
-      } else {
-        bottomCutter.style.height = `${BOTTOM_PEEK_PAD}px`;
-      }
-
-      let topCutter = outer.querySelector<HTMLDivElement>("[data-osmd-topcutter='1']");
-      if (!topCutter) {
-        topCutter = document.createElement("div");
-        topCutter.dataset.osmdTopcutter = "1";
-        topCutter.style.position = "absolute";
-        topCutter.style.left = "0";
-        topCutter.style.right = "0";
-        topCutter.style.top = "0";
-        topCutter.style.height = `${Math.max(0, topGutterPx)}px`;
-        topCutter.style.background = "#fff";
-        topCutter.style.pointerEvents = "none";
-        topCutter.style.zIndex = "6";
-        outer.appendChild(topCutter);
-      } else {
-        topCutter.style.height = `${Math.max(0, topGutterPx)}px`;
-      }
-
-      // Stop layer promotion after page is applied
-      if (svg) { svg.style.willChange = "auto"; }
-    },
+    }, 
     [pageHeight, topGutterPx, bottomPeekPad, getPAGE_H]
   );
   
@@ -1216,8 +1228,11 @@ export default function ScoreOSMD({
         const currH = outer.clientHeight;
         handledWRef.current = currW; // prime "handled" now, not only at the end
         handledHRef.current = currH;
-        outer.dataset.osmdReflowTargetW = String(currW);
-        outer.dataset.osmdReflowTargetH = String(currH);
+
+        try {
+          outer.dataset.osmdReflowTargetW = "";
+          outer.dataset.osmdReflowTargetH = "";
+        } catch {}
 
         // Spinner on (with unconditional fail-safe)
         {
