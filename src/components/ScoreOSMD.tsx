@@ -585,7 +585,7 @@ export default function ScoreOSMD({
     setBusyMsg(DEFAULT_BUSY);
     await logStep("busy:off"); // or { paint: true } if you want it blocking
   }, []);
-
+/*
   // --- LOG SNAPSHOT (used by zoom/reflow debug logs) ---
   const fmtFlags = useCallback((): string => {
     const w = wrapRef.current?.clientWidth ?? -1;
@@ -606,6 +606,19 @@ export default function ScoreOSMD({
       `phase=${phase}`,
     ].join(" ");
   }, []);
+*/
+  // --- LOG SNAPSHOT (lean) ---
+const fmtFlags = useCallback((): string => {
+  const pages = Math.max(1, pageStartsRef.current.length);
+  const page  = Math.max(1, Math.min(pageIdxRef.current + 1, pages));
+  const queued = reflowAgainRef.current; // "none" | "width" | "height"
+  const zf = (zoomFactorRef.current ?? 1).toFixed(3);
+
+  const parts = [`page=${page}/${pages}`, `zf=${zf}`];
+  if (queued !== "none") parts.push(`queued=${queued}`);
+  return parts.join(" ");
+}, []);
+
 
   // --- MINIMAL TELEMETRY (host/CV/visibility + SVG presence) ---
   const dumpTelemetry = useCallback((label: string): void => {
