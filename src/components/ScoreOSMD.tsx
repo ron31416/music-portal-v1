@@ -1391,7 +1391,7 @@ export default function ScoreOSMD({
         await logStep("reflow:finally:exit");
       }
     },
-    [applyPage, getPAGE_H, hideBusy, renderWithEffectiveWidth, fmtFlags]
+    [applyPage, getPAGE_H, hideBusy, renderWithEffectiveWidth, fmtFlags, nextPerfUID]
   );
 
   // keep ref pointing to latest width-reflow callback
