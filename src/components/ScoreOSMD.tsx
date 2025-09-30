@@ -1263,9 +1263,7 @@ export default function ScoreOSMD({
 
         const prevStarts = pageStartsRef.current.slice();
         const prevPage   = pageIdxRef.current;
-        const oldTopIdx  = prevStarts.length
-          ? (prevStarts[Math.max(0, Math.min(prevPage, prevStarts.length - 1))] ?? 0)
-          : 0;
+        //const oldTopIdx  = prevStarts.length ? (prevStarts[Math.max(0, Math.min(prevPage, prevStarts.length - 1))] ?? 0) : 0;
 
         bandsRef.current = newBands;
 
