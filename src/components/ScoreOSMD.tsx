@@ -2225,11 +2225,15 @@ export default function ScoreOSMD({
     void logStep(`overlay:${visible ? 'shown' : 'hidden'} busy=${busy}`);
   }, [busy]);
 
+  // Auto-clear busy if we linger too long *outside* heavy phases.
+  // Heavy phases are exactly: "render" and "geometry".
   useEffect(() => {
     if (!busy) { return; }
+
     const t = window.setTimeout(() => {
       const phase = wrapRef.current?.dataset.osmdPhase ?? "";
-      const inHeavy = /^(render|post-render|measure)/.test(phase);
+      const inHeavy = phase === "render" || phase === "geometry";
+
       if (!inHeavy) {
         hideBusy();
         void logStep("busy:auto-clear");
@@ -2237,6 +2241,7 @@ export default function ScoreOSMD({
         void logStep(`busy:auto-clear:skipped phase=${phase}`);
       }
     }, 20000);
+
     return () => window.clearTimeout(t);
   }, [busy, hideBusy]);
 
