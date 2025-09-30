@@ -19,7 +19,7 @@ interface Props {
 interface Band { top: number; bottom: number; height: number }
 
 // Type: function stored in a ref
-type ReflowCallback = (resetToFirst?: boolean, reflowCause?: string) => Promise<void>;
+type ReflowCallback = (reflowCause?: string) => Promise<void>;
 
 // Central pagination/masking knobs (tuned for Hi/Lo DPR). Change here, not inline.
 const REFLOW = {
@@ -1062,7 +1062,7 @@ export default function ScoreOSMD({
         reflowQueuedCauseRef.current = "";
 
         if (queued === "width") {
-          window.setTimeout(() => { reflowFnRef.current(true, cause); }, 0);
+          window.setTimeout(() => { reflowFnRef.current(cause); }, 0);
         } else if (queued === "height") {
           window.setTimeout(() => { repagFnRef.current(true, false); }, 0);
         }
@@ -1083,7 +1083,6 @@ export default function ScoreOSMD({
   // Handle a Visual Viewport width change by executing an osmd.render and a re-pagination
   const reflowOnWidthChange = useCallback(
     async function reflowOnWidthChange(
-      resetToFirst: boolean = false,
       reflowCause?: string
     ): Promise<void> {
       const outer = wrapRef.current;
@@ -1098,7 +1097,7 @@ export default function ScoreOSMD({
       const prevFuncTag = outer.dataset.osmdFunc ?? "";
       outer.dataset.osmdFunc = "reflowOnWidthChange";
       outer.dataset.osmdPhase = "reflow";
-      void logStep(`start reset=${resetToFirst} cause=${reflowCause ?? "-"}`);
+      void logStep(`start cause=${reflowCause ?? "-"}`);
 
       let prevVisForReflow: string | null = null;
       let prevCvForReflow: string | null = null;
@@ -1122,7 +1121,7 @@ export default function ScoreOSMD({
         // Always show spinner for width reflow
         const wantSpinner = true;
         void logStep(
-          `reflow:enter reset=${resetToFirst} spin=${wantSpinner} running=${reflowRunningRef.current} repag=${repagRunningRef.current} busy=${busyRef.current}`
+          `reflow:enter spin=${wantSpinner} running=${reflowRunningRef.current} repag=${repagRunningRef.current} busy=${busyRef.current}`
         );
 
         const attempt = Number(outer.dataset.osmdZoomAttempt || "0");
@@ -1151,7 +1150,7 @@ export default function ScoreOSMD({
         outer.dataset.osmdPhase = "start";
         const run = (Number(outer.dataset.osmdRun || "0") + 1);
         outer.dataset.osmdRun = String(run);
-        void logStep(`reflow:start#${run} reset=${resetToFirst} spin=${wantSpinner}`);
+        void logStep(`reflow:start#${run} spin=${wantSpinner}`);
 
         // Spinner on (with unconditional fail-safe)
         {
@@ -1280,16 +1279,18 @@ export default function ScoreOSMD({
         outer.dataset.osmdPhase = `starts:${newStarts.length}`;
         await logStep(`starts:${newStarts.length}`);
 
-        if (resetToFirst) {
-          outer.dataset.osmdPhase = "reset:first";
-          await logStep("start");
-          applyPage(0);
-          await Promise.race([ ap("apply:first"), new Promise<void>((r) => setTimeout(r, 400)) ]);
-          applyPage(0);
-          await logStep("done");
-          return;
-        }
+        outer.dataset.osmdPhase = "apply";
+        await logStep("start");
 
+        perfMark("applyPage:start");
+        applyPage(0);
+        await Promise.race([ ap("apply:first"), new Promise<void>((r) => setTimeout(r, 400)) ]);
+        applyPage(0);
+        perfMark("applyPage:end");
+        perfMeasure("applyPage", "applyPage:start", "applyPage:end");
+
+        await logStep("done");
+/*
         let nearest = 0, best = Number.POSITIVE_INFINITY;
         for (let i = 0; i < newStarts.length; i++) {
           const s = newStarts[i];
@@ -1314,7 +1315,7 @@ export default function ScoreOSMD({
         await logStep(`reflow:done page=${nearest + 1}/${newStarts.length} bands=${newBands.length}`);
         handledWRef.current = outer.clientWidth;
         handledHRef.current = outer.clientHeight;
-
+*/
       } finally {
         try {
           outer.dataset.osmdFunc = prevFuncTag;
@@ -1372,13 +1373,16 @@ export default function ScoreOSMD({
         outer.dataset.osmdReflowTargetH = "";
 
         const queued = reflowAgainRef.current;
+        const cause  = reflowQueuedCauseRef.current || "drain:finally";
         reflowAgainRef.current = "none";
-        await logStep(`reflow:finally:queued=${queued}`);
+        reflowQueuedCauseRef.current = "";
+
+        await logStep(`reflow:finally:queued=${queued} cause=${cause}`);
 
         if (queued === "width") {
           setTimeout(() => {
-            void logStep("reflow:finally:drain:width");
-            reflowFnRef.current(true);
+            void logStep(`reflow:finally:drain:width cause=${cause}`);
+            reflowFnRef.current(cause);
           }, 0);
         } else if (queued === "height") {
           setTimeout(() => {
@@ -1497,7 +1501,7 @@ export default function ScoreOSMD({
             !busyRef.current
           ) {
             reflowAgainRef.current = "none";
-            reflowFnRef.current(true, `zoom:${why}`); // safe to start now (propagate cause)
+            reflowFnRef.current(`zoom:${why}`); // safe to start now (propagate cause)
           }
         }, 0);
       }, 220);
@@ -2017,7 +2021,7 @@ export default function ScoreOSMD({
             (async () => {
               if (widthChangedSinceHandled) {
                 // HORIZONTAL change → full OSMD reflow + reset to page 1
-                await reflowFnRef.current(true, "ro:width-change");
+                await reflowFnRef.current("ro:width-change");
                 handledWRef.current = currW;
                 handledHRef.current = currH;
               } else if (heightChangedSinceHandled) {
@@ -2308,7 +2312,7 @@ export default function ScoreOSMD({
 
         if (widthChanged) {
           // HORIZONTAL change → full OSMD reflow + reset to page 1
-          await reflowFnRef.current(true, "vv:width-change");
+          await reflowFnRef.current("vv:width-change");
           handledWRef.current = currW;
           handledHRef.current = currH;
         } else if (heightChanged) {
@@ -2378,7 +2382,7 @@ export default function ScoreOSMD({
       reflowQueuedCauseRef.current = "";
       window.setTimeout(() => {
         void logStep(`queue:drain:width cause=${cause}`);
-        reflowFnRef.current(true, cause);
+        reflowFnRef.current(cause);
       }, 0);
     } else if (queued === "height") {
       window.setTimeout(() => {
