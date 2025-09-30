@@ -1145,8 +1145,6 @@ export default function ScoreOSMD({
         outer.dataset.osmdReflowTargetW = String(currW);
         outer.dataset.osmdReflowTargetH = String(currH);
 
-        const ap = makeAfterPaint(outer);
-
         // Spinner on (with unconditional fail-safe)
         {
           const token = Symbol("spin");
@@ -1177,9 +1175,6 @@ export default function ScoreOSMD({
 
         outer.dataset.osmdPhase = "render";
 
-        const attemptForRender = Number(outer.dataset.osmdZoomEntered || "0");
-        outer.dataset.osmdRenderAttempt = String(attemptForRender);
-
         const hostForReflow = hostRef.current;
         if (hostForReflow) {
           prevVisForReflow = hostForReflow.style.visibility || "";
@@ -1189,32 +1184,20 @@ export default function ScoreOSMD({
           try { void hostForReflow.getBoundingClientRect().width; } catch {}
         }
 
+        const ap = makeAfterPaint(outer);
+
         await logStep("render:start");
         await new Promise<void>((r) => setTimeout(r, 0)); // macrotask
         await ap("render:yield");                         // one paint opportunity
-
-        // Render watchdog
-        let renderWd: number | null = window.setTimeout(() => {
-          outer.dataset.osmdPhase = "render:watchdog";
-          void logStep("render:watchdog:force-finalize");
-          spinnerOwnerRef.current = null;
-          hideBusy();
-          reflowRunningRef.current = false;
-        }, 20000);
-
-        const t0 = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
 
         perfMark("zoom-render:start");
         await renderWithEffectiveWidth(outer, osmd);
         perfMark("zoom-render:end");
         perfMeasure("zoom-render", "zoom-render:start", "zoom-render:end");
-        await logStep(`[perf] zoom-render ms=${perfLastMs("zoom-render")}`);
-        const t1 = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
-        if (renderWd !== null) { window.clearTimeout(renderWd); renderWd = null; }
 
-        const renderMs = Math.round(t1 - t0);
+        const renderMs = perfLastMs("render");
         outer.dataset.osmdRenderMs = String(renderMs);
-        await logStep(`[render] finished attempt#${attemptForRender} (${renderMs}ms)`);
+        await logStep(`finished (${renderMs}ms)`);
 
         // --------- POST-RENDER: skip wait (non-blocking, like init) ---------
         outer.dataset.osmdPhase = "render:painted";
