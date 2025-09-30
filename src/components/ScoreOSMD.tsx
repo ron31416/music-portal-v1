@@ -467,7 +467,7 @@ export default function ScoreOSMD({
   const busyRef = useRef(false);
   useEffect(() => { busyRef.current = busy; }, [busy]);
 
-  const resizeTimerRef = useRef<number | null>(null); // ResizeObserver debounce
+  //const resizeTimerRef = useRef<number | null>(null); // ResizeObserver debounce
   const vvTimerRef = useRef<number | null>(null);     // visualViewport debounce
 
   const handledWRef = useRef<number>(-1);
@@ -2017,19 +2017,11 @@ export default function ScoreOSMD({
       }
     });
 
-    // Cleanup
-    //const cleanupOuter = wrapRef.current;
-
     return () => {
-      //if (resizeObs) {
-      //  if (cleanupOuter) { resizeObs.unobserve(cleanupOuter); }
-      //  resizeObs.disconnect();
-      // }
-
-      if (resizeTimerRef.current) {
-        window.clearTimeout(resizeTimerRef.current);
-        resizeTimerRef.current = null;
-      }
+      //if (resizeTimerRef.current) {
+      //  window.clearTimeout(resizeTimerRef.current);
+      //  resizeTimerRef.current = null;
+      //}
 
       if (osmdRef.current) {
         osmdRef.current?.clear();
