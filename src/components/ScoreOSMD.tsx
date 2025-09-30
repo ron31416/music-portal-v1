@@ -1357,25 +1357,29 @@ export default function ScoreOSMD({
 
         spinnerOwnerRef.current = null;
 
-        // Set reflowRunning=false BEFORE hideBusy() so the post-busy drain effect
-        // (which triggers when busy -> false) sees we're idle and can drain queued work
-        // immediately instead of bouncing off the reflowRunning guard.
-        // Use 'await hideBusy()' for deterministic log ordering and to avoid racing the drain.
+        // set reflowRunning=false BEFORE we flip busy off so the post-busy drain
+        // sees we're idle and can drain queued work immediately.
         reflowRunningRef.current = false;
-        hideBusy();
 
-        // if a queued width reflow matches the width we just handled, drop it
+        // if a queued width-reflow matches the width we just handled, drop it
         try {
-          const outerNow = wrapRef.current;
-          const wHandled = Number(outer.dataset.osmdReflowTargetW || NaN);
-          const wNow = outerNow?.clientWidth ?? wHandled;
-          if (reflowAgainRef.current === "width" &&
-              Number.isFinite(wHandled) &&
-              Math.abs((wNow ?? wHandled) - wHandled) < 1) {
+          const wHandled = Number(outer.dataset.osmdReflowTargetW ?? NaN);
+          const wNow = wrapRef.current ? (wrapRef.current.clientWidth || 0) : NaN;
+
+          if (
+            reflowAgainRef.current === "width" &&
+            Number.isFinite(wHandled) &&
+            Number.isFinite(wNow) &&
+            Math.abs(wNow - wHandled) < 1 // <= 1px tolerance
+          ) {
             reflowAgainRef.current = "none";
-            await logStep("reflow:finally:drop-queued-width (no delta)");
+            reflowQueuedCauseRef.current = "";
+            await logStep(`dropped queued width reflow: handled=${wHandled}px current=${wNow}px (Δ<1px)`);
           }
         } catch { /* ignore */ }
+
+        // hide overlay next; post-busy drain will see reflowRunning=false and (if dropped) no queued work
+        hideBusy();
 
         // clear breadcrumbs
         outer.dataset.osmdReflowTargetW = "";
@@ -1383,27 +1387,30 @@ export default function ScoreOSMD({
 
         const queued = reflowAgainRef.current;
         const cause  = reflowQueuedCauseRef.current || "drain:finally";
+
+        // clear flags before scheduling to avoid double-drain races
         reflowAgainRef.current = "none";
         reflowQueuedCauseRef.current = "";
 
-        await logStep(`reflow:finally:queued=${queued} cause=${cause}`);
-
+        // Only log/schedule if there's actually something to drain
         if (queued === "width") {
+          await logStep(`draining queued width reflow (cause=${cause})`);
           setTimeout(() => {
-            void logStep(`reflow:finally:drain:width cause=${cause}`);
+            void logStep(`starting queued width reflow (cause=${cause})`);
             reflowFnRef.current(cause);
           }, 0);
         } else if (queued === "height") {
+          await logStep(`draining queued height repagination (cause=${cause})`);
           setTimeout(() => {
-            void logStep("reflow:finally:drain:height");
+            void logStep("starting queued height repagination");
             repagFnRef.current(true, false);
           }, 0);
         }
+        // else: queued === "none" → no log, nothing to schedule
 
         if (spinnerFailSafeRef.current) {
           window.clearTimeout(spinnerFailSafeRef.current);
           spinnerFailSafeRef.current = null;
-          void logStep("reflow:finally:cleared-failsafe");
         }
 
         await logStep("phase finished");
