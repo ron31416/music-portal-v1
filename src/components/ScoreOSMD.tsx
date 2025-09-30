@@ -1181,8 +1181,8 @@ export default function ScoreOSMD({
       outer.dataset.osmdFunc = "reflowOnWidthChange";
       outer.dataset.osmdPhase = "prep";
 
-      void logStep(`phase starting`);
-      void logStep(`reflow cause=${reflowCause ?? "-"}`);
+      await logStep(`phase starting`);
+      await logStep(`reflow cause=${reflowCause ?? "-"}`);
 
       let prevVisForReflow: string | null = null;
       let prevCvForReflow: string | null = null;
@@ -1278,7 +1278,7 @@ export default function ScoreOSMD({
 
         await logStep("phase finished");
         outer.dataset.osmdPhase = "geometry";
-        void logStep("phase starting", { outer });
+        await logStep("phase starting", { outer });
 
         let newBands: Band[] = [];
         {
