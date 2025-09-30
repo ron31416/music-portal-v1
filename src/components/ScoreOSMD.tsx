@@ -151,6 +151,15 @@ async function waitForPaint(timeoutMs = 450): Promise<void> {
 // Flip this to disable all on-page logging in one place.
 const DEBUG_LOG = true;
 
+// Track longest names we've seen so far for pretty, aligned prefixes.
+const __LOG_COLS = { fnW: 0, phaseW: 0 };
+const __MAX_COL = 28; // optional safety cap so a very long tag can't explode alignment
+
+function __fitAndPad(s: string, width: number): string {
+  const trimmed = s.length > __MAX_COL ? s.slice(0, __MAX_COL) : s;
+  return trimmed.padEnd(width, " ");
+}
+
 export async function logStep(
   message: string,
   opts: { paint?: boolean; outer?: HTMLDivElement | null } = {}
@@ -174,7 +183,20 @@ export async function logStep(
       if (typeof dp === "string" && dp.length > 0) { phase = dp; }
     }
 
-    const composed = `[${fn}]${phase && phase !== "(none)" ? ` [${phase}]` : ""} ${message}`;
+    // Update column widths (bounded by __MAX_COL).
+    const fnLen = Math.min(fn.length, __MAX_COL);
+    const phLen = phase !== "(none)" ? Math.min(phase.length, __MAX_COL) : 0;
+    if (fnLen > __LOG_COLS.fnW)   __LOG_COLS.fnW   = fnLen;
+    if (phLen > __LOG_COLS.phaseW) __LOG_COLS.phaseW = phLen;
+
+    // Build aligned prefix.
+    const fnChunk = `[${__fitAndPad(fn, __LOG_COLS.fnW)}]`;
+    const phaseChunk =
+      phase && phase !== "(none)"
+        ? ` [${__fitAndPad(phase, __LOG_COLS.phaseW)}]`
+        : "";
+
+    const composed = `${fnChunk}${phaseChunk} ${message}`;
 
     // eslint-disable-next-line no-console
     console.log(composed);
@@ -1133,11 +1155,6 @@ export default function ScoreOSMD({
         }
         reflowRunningRef.current = true;
 
-        //outer.dataset.osmdPhase = "start";
-        //const run = (Number(outer.dataset.osmdRun || "0") + 1);
-        //outer.dataset.osmdRun = String(run);
-        //void logStep(`reflow:start#${run}`);
-
         // Spinner on (with unconditional fail-safe)
         {
           const token = Symbol("spin");
@@ -1158,14 +1175,14 @@ export default function ScoreOSMD({
           spinnerFailSafeRef.current = window.setTimeout(() => {
             spinnerOwnerRef.current = null;
             hideBusy();
-            void logStep("spinner:failsafe-clear:unconditional");
+            void logStep("Failsafe triggered after 9s; hiding spinner");
           }, 9000);
         }
 
         // --------- HEAVY RENDER ---------
         const attemptForRender = Number(outer.dataset.osmdZoomEntered || "0");
         outer.dataset.osmdRenderAttempt = String(attemptForRender);
-        await logStep(`[render] starting attempt#${attemptForRender}`);
+        await logStep(`attempt#${attemptForRender}`);
 
         const hostForReflow = hostRef.current;
         if (hostForReflow) {
