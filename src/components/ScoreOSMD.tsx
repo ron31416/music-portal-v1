@@ -17,6 +17,8 @@ interface Props {
 }
 
 interface Band { top: number; bottom: number; height: number }
+
+// Type: function stored in a ref
 type ReflowCallback = (resetToFirst?: boolean, reflowCause?: string) => Promise<void>;
 
 // Central pagination/masking knobs (tuned for Hi/Lo DPR). Change here, not inline.
@@ -1081,7 +1083,7 @@ export default function ScoreOSMD({
   }, [recomputePaginationHeightOnly]);
 
 
-  // --- WIDTH REFLOW (OSMD render at new width) ---
+  // Handle a Visual Viewport width change by executing an osmd.render and a re-pagination
   const reflowOnWidthChange = useCallback(
     async function reflowOnWidthChange(
       resetToFirst: boolean = false,
@@ -1090,27 +1092,30 @@ export default function ScoreOSMD({
       const outer = wrapRef.current;
       const osmd  = osmdRef.current;
 
-      let prevVisForReflow: string | null = null;
-      let prevCvForReflow: string | null = null;
-
-      let measureWatchdog: ReturnType<typeof setTimeout> | null = null;
-
-      // 2s logging watchdog (set later; cleared in finally)
-      let wd: number | null = null;
-
-      if (outer) { void logStep("phase:reflowOnWidthChange"); }
-      if (!outer || !osmd) {
-        const o = outer ? "1" : "0";
-        const m = osmd ? "1" : "0";
-        if (outer) { void logStep(`reflow:early-bail outer=${o} osmd=${m}`); }
+      if (!outer) {
+        // eslint-disable-next-line no-console
+        console.warn("[reflowOnWidthChange][reflow] early-bail outer=0 osmd=" + (osmd ? "1" : "0"));
         return;
       }
 
-      // tag function for all logs in this path
-      const prevFuncTag = outer.dataset.osmdFunc ?? "";
+      // Tag this path and set initial phase so logStep prefixes are correct.
+      let prevFuncTag = outer.dataset.osmdFunc ?? "";
       outer.dataset.osmdFunc = "reflowOnWidthChange";
+      outer.dataset.osmdPhase = "reflow";
+      void logStep("start");
+
+      let prevVisForReflow: string | null = null;
+      let prevCvForReflow: string | null = null;
+      let measureWatchdog: ReturnType<typeof setTimeout> | null = null;
+      // 2s logging watchdog (set later; cleared in finally)
+      let wd: number | null = null;
 
       try {
+        if (!osmd) {
+          void logStep("early-bail outer=1 osmd=0");
+          return; // finally will restore prevFuncTag
+        }
+
         const currW = outer.clientWidth;
         const currH = outer.clientHeight;
         handledWRef.current = currW; // prime "handled" now, not only at the end
