@@ -1109,6 +1109,7 @@ export default function ScoreOSMD({
       const prevFuncTag = outer.dataset.osmdFunc ?? "";
       outer.dataset.osmdFunc = "reflowOnWidthChange";
       outer.dataset.osmdPhase = "prep";
+
       void logStep(`start cause=${reflowCause ?? "-"}`);
 
       let prevVisForReflow: string | null = null;
@@ -1121,6 +1122,16 @@ export default function ScoreOSMD({
           return; // finally will restore prevFuncTag
         }
 
+        if (reflowRunningRef.current) {
+          reflowAgainRef.current = "width";
+          const run = Number(outer.dataset.osmdRun || "0");
+          outer.dataset.osmdReflowQueued   = String(run);
+          outer.dataset.osmdReflowQueueWhy = "reflowRunning";
+          outer.dataset.osmdReflowQueuedAt = String(Date.now());
+          void logStep("reflow already in progress; queued follow-up");
+          return;
+        }
+
         const currW = outer.clientWidth;
         const currH = outer.clientHeight;
         handledWRef.current = currW; // prime "handled" now, not only at the end
@@ -1128,22 +1139,14 @@ export default function ScoreOSMD({
         outer.dataset.osmdReflowTargetW = String(currW);
         outer.dataset.osmdReflowTargetH = String(currH);
 
-        const attempt = Number(outer.dataset.osmdZoomAttempt || "0");
-        outer.dataset.osmdZoomEntered   = String(attempt);
-        outer.dataset.osmdZoomEnteredAt = String(Date.now());
-        void logStep(`attempt# ${attempt} • ${fmtFlags()}`);
+        const run = Number(outer.dataset.osmdRun || "0"); // you already set this earlier
+        outer.dataset.osmdReflowEntered   = String(run);
+        outer.dataset.osmdReflowEnteredAt = String(Date.now());
+        void logStep(`run# ${run} • ${fmtFlags()}`);
+
+        reflowRunningRef.current = true;
 
         const ap = makeAfterPaint(outer);
-
-        if (reflowRunningRef.current) {
-          reflowAgainRef.current = "width";
-          outer.dataset.osmdZoomQueued   = String(attempt);
-          outer.dataset.osmdZoomQueueWhy = "reflowRunning";
-          outer.dataset.osmdZoomQueuedAt = String(Date.now());
-          void logStep("reflow already in progress; queued follow-up");
-          return;
-        }
-        reflowRunningRef.current = true;
 
         // Spinner on (with unconditional fail-safe)
         {
@@ -1163,7 +1166,7 @@ export default function ScoreOSMD({
 
           const ov = overlayRef.current;
           const shown = !!ov && ov.style.display !== "none";
-          void logStep(shown ? "Spinner is visible" : "Spinner requested (visibility pending)");
+          void logStep(shown ? "spinner is visible" : "spinner requested (visibility pending)");
 
           if (spinnerFailSafeRef.current) { window.clearTimeout(spinnerFailSafeRef.current); }
           spinnerFailSafeRef.current = window.setTimeout(() => {
@@ -1173,7 +1176,8 @@ export default function ScoreOSMD({
           }, 9000);
         }
 
-        // --------- HEAVY RENDER ---------
+        outer.dataset.osmdPhase = "render";
+
         const attemptForRender = Number(outer.dataset.osmdZoomEntered || "0");
         outer.dataset.osmdRenderAttempt = String(attemptForRender);
 
@@ -1186,7 +1190,6 @@ export default function ScoreOSMD({
           try { void hostForReflow.getBoundingClientRect().width; } catch {}
         }
 
-        outer.dataset.osmdPhase = "render";
         await logStep("render:start");
         await new Promise<void>((r) => setTimeout(r, 0)); // macrotask
         await ap("render:yield");                         // one paint opportunity
