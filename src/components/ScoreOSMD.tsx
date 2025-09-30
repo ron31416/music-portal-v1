@@ -376,46 +376,59 @@ function scanSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[] {
 }
 
 /** Compute page start *indices* so each page shows only full systems */
-function computePageStartIndices(bands: Band[], viewportH: number): number[] {
-  if (bands.length === 0 || viewportH <= 0) {
-    return [0];
-  }
+function computePageStartIndices(
+  bands: Band[],
+  viewportH: number,
+  outer?: HTMLDivElement
+): number[] {
+  const prevFuncTag = outer?.dataset.osmdFunc ?? "";
+  if (outer) { outer.dataset.osmdFunc = "computePageStartIndices"; }
 
-  const starts: number[] = [];
-  let i = 0;
-  const fuseTitle = isTitleLike(bands[0], bands.slice(1));
+  try {
+    if (outer) { void logStep("enter", { outer }); }
 
-  while (i < bands.length) {
-    const current = bands[i];
-    if (!current) {
-      break;
+    if (bands.length === 0 || viewportH <= 0) {
+      if (outer) { void logStep("exit starts=1 (fallback [0])", { outer }); }
+      return [0];
     }
 
-    const startTop = current.top;
-    let last = i;
+    const starts: number[] = [];
+    let i = 0;
+    const fuseTitle = isTitleLike(bands[0], bands.slice(1));
 
-    while (last + 1 < bands.length) {
-      const next = bands[last + 1];
-      if (!next) { break; }
+    while (i < bands.length) {
+      const current = bands[i];
+      if (!current) { break; }
 
-      const isFirstPage = starts.length === 0 && i === 0;
-      const slack = isFirstPage && fuseTitle
-        //? Math.max(12, Math.round(viewportH * 0.06))
-        ? Math.min(28, Math.round(viewportH * 0.035))  // ≤28px or 3.5%
-        : 0;
+      const startTop = current.top;
+      let last = i;
 
-      if (next.bottom - startTop <= viewportH + slack) {
-        last++;
-      } else {
-        break;
+      while (last + 1 < bands.length) {
+        const next = bands[last + 1];
+        if (!next) { break; }
+
+        const isFirstPage = starts.length === 0 && i === 0;
+        const slack = isFirstPage && fuseTitle
+          ? Math.min(28, Math.round(viewportH * 0.035))
+          : 0;
+
+        if (next.bottom - startTop <= viewportH + slack) {
+          last++;
+        } else {
+          break;
+        }
       }
+
+      starts.push(i);
+      i = last + 1;
     }
 
-    starts.push(i);
-    i = last + 1;
+    const out = starts.length ? starts : [0];
+    if (outer) { void logStep(`exit starts=${out.length}`, { outer }); }
+    return out;
+  } finally {
+    if (outer) { try { outer.dataset.osmdFunc = prevFuncTag; } catch {} }
   }
-
-  return starts.length ? starts : [0];
 }
 
 function hasZoomProp(o: unknown): o is { Zoom: number } {
@@ -616,8 +629,7 @@ export default function ScoreOSMD({
         // NEW: let the spinner/host actually paint before we block the main thread
         await waitForPaint(300);
 
-        await logStep(`render:call w=${layoutW} hostW=${hostW} zf=${zf.toFixed(3)} osmd.Zoom=${osmd.Zoom ?? "n/a"}`
-        );
+        await logStep(`w=${layoutW} hostW=${hostW} zf=${zf.toFixed(3)} osmd.Zoom=${osmd.Zoom ?? "n/a"}`);
 
         // NEW: mark + measure the synchronous render
         try { performance.mark("osmd-render:start"); } catch {}
