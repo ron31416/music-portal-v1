@@ -1505,9 +1505,15 @@ export default function ScoreOSMD({
       if (!host || !outer) { return; }
 
       try {
-        const vv = typeof window !== "undefined" ? window.visualViewport : undefined;
-        const hasVV = !!vv && typeof vv.scale === "number";
-        const hasRO = typeof (globalThis as any).ResizeObserver === "function";
+        const hasVV =
+          typeof window !== "undefined" &&
+          !!window.visualViewport &&
+          typeof window.visualViewport.scale === "number";
+
+        const hasRO =
+          typeof window !== "undefined" &&
+          "ResizeObserver" in window &&
+          typeof window.ResizeObserver === "function";
 
         await logStep(
           `capabilities: visualViewport=${hasVV ? "yes" : "no"} resizeObserver=${hasRO ? "yes" : "no"}`
