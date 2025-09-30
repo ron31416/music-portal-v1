@@ -1177,9 +1177,10 @@ export default function ScoreOSMD({
       // Tag this path and set initial phase so logStep prefixes are correct.
       const prevFuncTag = outer.dataset.osmdFunc ?? "";
       outer.dataset.osmdFunc = "reflowOnWidthChange";
+      
       outer.dataset.osmdPhase = "prep";
+      await logStep("phase starting", { outer });
 
-      await logStep(`phase starting`);
       await logStep(`reflow cause=${reflowCause ?? "-"}`);
 
       let prevVisForReflow: string | null = null;
@@ -1246,9 +1247,9 @@ export default function ScoreOSMD({
           }, 9000);
         }
 
-        await logStep("phase finished");
+        await logStep("phase finished", { outer });
         outer.dataset.osmdPhase = "render";
-        await logStep("phase starting");
+        await logStep("phase starting", { outer });
 
         const ap = makeAfterPaint(outer);
         await new Promise<void>((r) => setTimeout(r, 0)); // macrotask
@@ -1278,7 +1279,7 @@ export default function ScoreOSMD({
         await new Promise<void>(r => setTimeout(r, 0));
         await logStep("yielded one task before next phase");
 
-        await logStep("phase finished");
+        await logStep("phase finished", { outer });
         outer.dataset.osmdPhase = "scan";
         await logStep("phase starting", { outer });
 
@@ -1312,10 +1313,9 @@ export default function ScoreOSMD({
         }
         pageStartsRef.current = newStarts;
  
-        await logStep("phase finished");
-
+        await logStep("phase finished", { outer });
         outer.dataset.osmdPhase = "apply";
-        await logStep("phase starting");
+        await logStep("phase starting", { outer });
 
         {
           const uid = nextPerfUID(outer.dataset.osmdRun);
@@ -1333,12 +1333,12 @@ export default function ScoreOSMD({
           await perfBlockAsync(uid, work, after);
         }
 
-        await logStep("phase finished");
+        await logStep("phase finished", { outer });
 
       } finally {
         if (started) {
           try { outer.dataset.osmdPhase = "finally"; } catch {}
-          await logStep("phase starting");
+          await logStep("phase starting", { outer });
 
           // Reveal host now that the page has been applied (or if we bailed)
           try {
@@ -1418,9 +1418,9 @@ export default function ScoreOSMD({
             spinnerFailSafeRef.current = null;
           }
 
-          await logStep("phase finished");
+          await logStep("phase finished", { outer });
         }
-        
+
         try { outer.dataset.osmdFunc = prevFuncTag; } catch {}
       }
     },
@@ -1444,9 +1444,7 @@ export default function ScoreOSMD({
           (gl.getExtension("WEBGL_lose_context") as { loseContext?: () => void }).loseContext?.();
         }
         c.remove();
-      } catch {
-        // noop
-      }
+      } catch {}
     }
   }
 
