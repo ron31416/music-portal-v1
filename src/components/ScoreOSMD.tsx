@@ -438,7 +438,6 @@ function perfLastMs(name: string) {
 // --------- Perf blocks (module-scope; reusable) ---------
 function perfBlock<T>(
   uid: string,
-  logLabel: string,
   work: () => T,
   after?: (ms: number) => void
 ): T {
@@ -452,8 +451,6 @@ function perfBlock<T>(
     perfMark(end);
     perfMeasure(runtime, start, end);
     const ms = perfLastMs(runtime);
-    const label = logLabel && logLabel.trim().length ? `${logLabel} ` : "";
-    void logStep(`[perf] ${label}runtime: (${ms}ms)`);
     try { after?.(ms); } catch {}
     try {
       performance.clearMarks(start);
@@ -465,7 +462,6 @@ function perfBlock<T>(
 
 async function perfBlockAsync<T>(
   uid: string,
-  logLabel: string,
   work: () => Promise<T>,
   after?: (ms: number) => void
 ): Promise<T> {
@@ -479,8 +475,7 @@ async function perfBlockAsync<T>(
     perfMark(end);
     perfMeasure(runtime, start, end);
     const ms = perfLastMs(runtime);
-    const label = logLabel && logLabel.trim().length ? `${logLabel} ` : "";
-    await logStep(`[perf] ${label}runtime: (${ms}ms)`);    try { after?.(ms); } catch {}
+    try { after?.(ms); } catch {}
     try {
       performance.clearMarks(start);
       performance.clearMarks(end);
@@ -1256,12 +1251,14 @@ export default function ScoreOSMD({
 
         {
           const uid = nextPerfUID(outer.dataset.osmdRun);
-          await perfBlockAsync(uid, "", async () => {
+          const work = async () => {
             await renderWithEffectiveWidth(outer, osmd);
-          }, (ms) => {
+          };
+          const after = (ms: number) => {
             outer.dataset.osmdRenderMs = String(ms);
             void logStep(`renderWithEffectiveWidth runtime: (${ms}ms)`);
-          });
+          };
+          await perfBlockAsync(uid, work, after);
         }
 
         await new Promise<void>(r => setTimeout(r, 0));
@@ -1273,10 +1270,12 @@ export default function ScoreOSMD({
         let newBands: Band[] = [];
         {
           const uid = nextPerfUID(outer.dataset.osmdRun);
-          newBands = perfBlock(
-            uid, "", () => withUntransformedSvg(outer, (svg) => scanSystemsPx(outer, svg)) ?? [],
-            (ms) => { void logStep(`scanSystemsPx runtime: (${ms}ms)`); }
-          );
+          const work = () =>
+            withUntransformedSvg(outer, (svg) => scanSystemsPx(outer, svg)) ?? [];
+          const after = (ms: number) => {
+            void logStep(`scanSystemsPx runtime: (${ms}ms)`);
+          };
+          newBands = perfBlock(uid, work, after);
         }
 
         const n = newBands.length;
@@ -1292,10 +1291,11 @@ export default function ScoreOSMD({
         {
           const uid = nextPerfUID(outer.dataset.osmdRun);
           const H = getPAGE_H(outer);
-          newStarts = perfBlock(uid, "", () =>
-            computePageStartIndices(newBands, H)
+          newStarts = perfBlock(
+            uid,
+            () => computePageStartIndices(newBands, H),
+            (ms) => { void logStep(`computePageStartIndices runtime: (${ms}ms) H=${H}`); }
           );
-          await logStep(`computePageStartIndices H=${H}`);
         }
 
         pageStartsRef.current = newStarts;
