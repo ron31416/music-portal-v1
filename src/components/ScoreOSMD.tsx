@@ -452,7 +452,8 @@ function perfBlock<T>(
     perfMark(end);
     perfMeasure(runtime, start, end);
     const ms = perfLastMs(runtime);
-    void logStep(`${logLabel} runtime: (${ms}ms)`);
+    const label = logLabel && logLabel.trim().length ? `${logLabel} ` : "";
+    void logStep(`[perf] ${label}runtime: (${ms}ms)`);
     try { after?.(ms); } catch {}
     try {
       performance.clearMarks(start);
@@ -478,8 +479,8 @@ async function perfBlockAsync<T>(
     perfMark(end);
     perfMeasure(runtime, start, end);
     const ms = perfLastMs(runtime);
-    await logStep(`${logLabel} runtime: (${ms}ms)`);
-    try { after?.(ms); } catch {}
+    const label = logLabel && logLabel.trim().length ? `${logLabel} ` : "";
+    await logStep(`[perf] ${label}runtime: (${ms}ms)`);    try { after?.(ms); } catch {}
     try {
       performance.clearMarks(start);
       performance.clearMarks(end);
@@ -1255,10 +1256,11 @@ export default function ScoreOSMD({
 
         {
           const uid = nextPerfUID(outer.dataset.osmdRun);
-          await perfBlockAsync(uid, "renderWithEffectiveWidth", async () => {
+          await perfBlockAsync(uid, "", async () => {
             await renderWithEffectiveWidth(outer, osmd);
           }, (ms) => {
             outer.dataset.osmdRenderMs = String(ms);
+            void logStep(`renderWithEffectiveWidth runtime: (${ms}ms)`);
           });
         }
 
@@ -1272,9 +1274,8 @@ export default function ScoreOSMD({
         {
           const uid = nextPerfUID(outer.dataset.osmdRun);
           newBands = perfBlock(
-            uid,
-            "scanSystemsPx",
-            () => withUntransformedSvg(outer, (svg) => scanSystemsPx(outer, svg)) ?? []
+            uid, "", () => withUntransformedSvg(outer, (svg) => scanSystemsPx(outer, svg)) ?? [],
+            (ms) => { void logStep(`scanSystemsPx runtime: (${ms}ms)`); }
           );
         }
 
@@ -1291,7 +1292,7 @@ export default function ScoreOSMD({
         {
           const uid = nextPerfUID(outer.dataset.osmdRun);
           const H = getPAGE_H(outer);
-          newStarts = perfBlock(uid, "computePageStartIndices", () =>
+          newStarts = perfBlock(uid, "", () =>
             computePageStartIndices(newBands, H)
           );
           await logStep(`computePageStartIndices H=${H}`);
