@@ -1102,8 +1102,6 @@ export default function ScoreOSMD({
       let prevVisForReflow: string | null = null;
       let prevCvForReflow: string | null = null;
       let measureWatchdog: ReturnType<typeof setTimeout> | null = null;
-      // 2s logging watchdog (set later; cleared in finally)
-      let wd: number | null = null;
 
       try {
         if (!osmd) {
