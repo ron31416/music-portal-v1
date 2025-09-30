@@ -1580,474 +1580,481 @@ export default function ScoreOSMD({
       const outer = wrapRef.current;
       if (!host || !outer) { return; }
 
-      const epoch = ++initEpochRef.current;
-      outer.dataset.osmdInitEpoch = String(epoch);
-      
-      // If a newer init started (src changed), abort this one quietly.
-      const isStale = () => outer.dataset.osmdInitEpoch !== String(epoch);
-
-      // Tag the function for aligned log prefixes and start a simple boot phase.
+      // Match reflowOnWidthChange: capture, set our func-tag + phase, log start.
       const prevFuncTag = outer.dataset.osmdFunc ?? "";
       outer.dataset.osmdFunc = "initOSMD";
       outer.dataset.osmdPhase = "boot";
       await logStep("phase starting", { outer });
 
       try {
-        const hasVV =
-          typeof window !== "undefined" &&
-          !!window.visualViewport &&
-          typeof window.visualViewport.scale === "number";
-
-        const hasRO =
-          typeof window !== "undefined" &&
-          "ResizeObserver" in window &&
-          typeof window.ResizeObserver === "function";
-
-        outer.dataset.osmdCapVv = hasVV ? "1" : "0";
-        outer.dataset.osmdCapRo = hasRO ? "1" : "0";
-
-        outer.dataset.osmdCapVv = hasVV ? "1" : "0";
-        outer.dataset.osmdCapRo = hasRO ? "1" : "0";
-
-        await logStep(`caps vv=${hasVV ? "yes" : "no"} ro=${hasRO ? "yes" : "no"}`, { outer });
-
-        if (!hasVV) {
-          // Hard-fail policy
-          outer.dataset.osmdPhase = "fatal:no-visual-viewport";
-          outer.dataset.osmdFatal = "1";
-          setBusyMsg("This viewer requires the Visual Viewport API for correct zoom & pagination.\nTry a modern browser (Chrome, Edge, Safari 16+).");
-          setBusy(true); // show blocking overlay with the message
-          await logStep("fatal: visualViewport unavailable — aborting init", { outer });
-          return; // stop init right here
-        }
-        if (isStale()) { return; }
-
-    } catch {}
-
-      await logStep("BUILD: ScoreOSMD v10 @ tick+ap-gate");
-
-      // Phase breadcrumb + first log
-      outer.dataset.osmdPhase = "initOSMD";
-      await logStep("boot:mount");
-
-      // Create afterPaint helper *before* heavy steps so we can flush logs/spinner
-      const ap = makeAfterPaint(outer);
-
-      // --- Dynamic import OSMD ---
-      const tImp0 = tnow();
-      await logStep("import:OSMD:start");
-      const { OpenSheetMusicDisplay: OSMDClass } =
-        (await import("opensheetmusicdisplay")) as typeof import("opensheetmusicdisplay");
-      void logStep(`import:OSMD:done ${Math.round(tnow() - tImp0)}ms`);
-
-      // Fresh instance
-      if (osmdRef.current) {
-        osmdRef.current?.clear();
-        (osmdRef.current as { dispose?: () => void } | null)?.dispose?.();
-        osmdRef.current = null;
-      }
-      const osmd = new OSMDClass(host, {
-        backend: "svg" as const,
-        autoResize: false,
-        drawTitle: true,
-        drawSubtitle: true,
-        drawComposer: true,
-        drawLyricist: true,
-        // Dev aid: render numbers each measure if requested to verify continuity
-        drawMeasureNumbers: true,
-        measureNumberInterval: debugShowAllMeasureNumbers ? 1 : undefined,
-      }) as OpenSheetMusicDisplay;
-      osmdRef.current = osmd;
-
-      // Spinner on during boot
-      setBusyMsg(DEFAULT_BUSY);
-      setBusy(true);
-      ap("boot");                           // give the overlay a chance to paint
-
-      // --- Load score (string or API/zip) ---
-      await logStep("load:begin");
-      let loadInput: string | Document | ArrayBuffer | Uint8Array = src;
-
-      if (src.startsWith("/api/")) {
-        const res = await fetch(src, { cache: "no-store" });
-        if (!res.ok) { throw new Error(`HTTP ${res.status}`); }
-
-        const ab = await withTimeout(res.arrayBuffer(), 12000, "fetch:timeout");
-        void logStep(`fetch:bytes:${ab.byteLength}`);
-        await logStep("fetch:done");        // flush before unzip work
-
-        // unzipit import
-        await logStep("zip:lib:import");
-        let unzip!: typeof import("unzipit").unzip;
-        try {
-          const uz = await withTimeout(import("unzipit"), 4000, "zip:lib:import:timeout");
-          ({ unzip } = uz as typeof import("unzipit"));
-          await logStep("zip:lib:ready");
-        } catch (e) {
-          await logStep("zip:lib:error");
-          throw e;
-        }
-
-        // open zip
-        const tZip0 = tnow();
-        await logStep("zip:open");
-        const { entries } = await withTimeout(unzip(ab), 8000, "zip:open:timeout");
-        void logStep(`zip:open: ${Math.round(tnow() - tZip0)}ms`);
-        await logStep("zip:opened");
-
-        // container.xml probe
-        let entryName: string | undefined;
-        await logStep("zip:container:probe");
-        const container = entries["META-INF/container.xml"];
-        if (container) {
-          await logStep("zip:container:read");
-          const containerXml = await withTimeout(container.text(), 6000, "zip:container:timeout");
-
-          await logStep("zip:container:parse");
-          const cdoc = new DOMParser().parseFromString(containerXml, "application/xml");
-          const rootfile = cdoc.querySelector('rootfile[full-path]') || cdoc.querySelector("rootfile");
-          const fullPath =
-            rootfile?.getAttribute("full-path") ||
-            rootfile?.getAttribute("path") ||
-            rootfile?.getAttribute("href") ||
-            undefined;
-
-          if (fullPath && entries[fullPath]) {
-            entryName = fullPath;
-            await logStep(`zip:container:selected:${entryName}`);
-          } else {
-            await logStep("zip:container:no-match");
-          }
-        } else {
-          await logStep("zip:container:missing");
-        }
-
-        // scan fallback
-        if (!entryName) {
-          await logStep("zip:scan:start");
-          const candidates = Object.keys(entries).filter((p) => {
-            const q = p.toLowerCase();
-            return !q.startsWith("meta-inf/") && (q.endsWith(".musicxml") || q.endsWith(".xml"));
-          });
-          void logStep(`zip:scan:found:${candidates.length}`);
-
-          candidates.sort((a, b) => {
-            const aa = a.toLowerCase(), bb = b.toLowerCase();
-            const scoreA = /score|partwise|timewise/.test(aa) ? 0 : 1;
-            const scoreB = /score|partwise|timewise/.test(bb) ? 0 : 1;
-            if (scoreA !== scoreB) { return scoreA - scoreB; }
-            const extA = aa.endsWith(".musicxml") ? 0 : 1;
-            const extB = bb.endsWith(".musicxml") ? 0 : 1;
-            if (extA !== extB) { return extA - extB; }
-            return aa.length - bb.length;
-          });
-
-          entryName = candidates[0];
-          await logStep(`zip:scan:pick:${entryName ?? "(none)"}`);
-        }
-
-        if (!entryName) { throw new Error("zip:no-musicxml-in-archive"); }
-
-        // read + parse XML
-        await logStep("zip:file:read");
-        const entry = entries[entryName];
-        if (!entry) { throw new Error(`zip:file:missing:${entryName}`); }
-
-        const xmlText = await withTimeout(entry.text(), 10000, "zip:file:read:timeout");
-        await logStep("zip:file:read:ok");
-        void logStep(`zip:file:chars:${xmlText.length}`);
-
-        await logStep("xml:parse:start");
-        const xmlDoc = new DOMParser().parseFromString(xmlText, "application/xml");
-        await logStep("xml:parse:done");
-
-        if (xmlDoc.getElementsByTagName("parsererror").length > 0) {
-          throw new Error("MusicXML parse error: XML parsererror");
-        }
-
-        const hasPartwise = xmlDoc.getElementsByTagName("score-partwise").length > 0;
-        const hasTimewise = xmlDoc.getElementsByTagName("score-timewise").length > 0;
-        void logStep(`xml:tags pw=${String(hasPartwise)} tw=${String(hasTimewise)}`);
-        if (!hasPartwise && !hasTimewise) {
-          throw new Error("MusicXML parse error: no score-partwise/score-timewise");
-        }
-
-        const xmlString = new XMLSerializer().serializeToString(xmlDoc);
-        await logStep("load:ready");
-        loadInput = xmlString;
-      } else {
-        loadInput = src;
-      }
-
-      // --- osmd.load (heartbeat + timing) ---
-      await logStep("osmd.load:start");
-      const loadStart = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
-      let loadBeat: number | null = null;
-
-      loadBeat = window.setInterval(() => {
-        const now = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
-        const secs = Math.round((now - loadStart) / 1000);
-        void logStep(`osmd.load:heartbeat +${secs}s`);
-      }, 1000);
-
-      try {
-        await awaitLoad(osmd, loadInput);
-        const durMs = ((typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now()) - loadStart;
-        void logStep(`osmd.load: ${Math.round(durMs)}ms`);
-        await logStep("osmd.load:done");
-      } finally {
-        if (loadBeat !== null) {
-          window.clearInterval(loadBeat);
-          loadBeat = null;
-        }
-      }
-
-      // --- Fonts (bounded wait) ---
-      await logStep("fonts:waiting");
-      await waitForFonts();
-      await logStep("fonts:ready");
-
-      // --- First render ---
-      const attemptForRender = Number(outer.dataset.osmdZoomEntered || "0")
-      outer.dataset.osmdRenderAttempt = String(attemptForRender)
-      void logStep(`[render] starting attempt#${attemptForRender}`)
-
-      // Prevent giant paint during render: hide host, keep layout available
-      const hostForInit = hostRef.current
-      const prevVisForInit = hostForInit?.style.visibility ?? ""
-      const prevCvValueForInit: string =
-        hostForInit ? hostForInit.style.getPropertyValue("content-visibility") : ""
-
-      if (hostForInit) {
-        hostForInit.style.removeProperty("content-visibility");
-        hostForInit.style.visibility = "hidden"
-      }
-
-      // Kick off render immediately (no async gating)
-      outer.dataset.osmdPhase = "render";
-      await logStep("render:start");
-
-      // (optional) prove the event loop is still responsive
-      // NOTE: MessageChannel probe removed as redundant
-      try {
-        queueMicrotask(() => { void logStep("[probe] init:microtask before render", { outer }); });
-      } catch {}
-
-      // Time the actual render call
-      const t0 = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
-      await renderWithEffectiveWidth(outer, osmd);
-      outer.dataset.osmdPhase = "render:return";
-      void logStep("[probe] render returned", { outer });
-
-      const t1 = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
-      const renderMs = Math.round(t1 - t0);
-      outer.dataset.osmdRenderMs = String(renderMs);
-      outer.dataset.osmdRenderEndedAt = String(Date.now());
-      void logStep(`[render] finished attempt#${attemptForRender} (${renderMs}ms)`, { outer });
-
-      // Dev-only: dump all tracked telemetry values (phase, timings, etc.)
-      dumpTelemetry("post-render:init");
-
-      // Normally we would wait for requestAnimationFrame/paint here,
-      // but large scores can throttle timers. Instead, mark "painted"
-      // immediately so downstream steps don't block forever.
-      outer.dataset.osmdPhase = "render:painted";
-      void logStep("post-render:skip-wait (no-yield)");
-
-      // Prepare the rendered SVG subtree for layout calculations.
-      // Similar to the reflow path: strip content-visibility so
-      // the browser actually lays it out, but keep it hidden from
-      // the user until pagination/masking is ready.
-      outer.dataset.osmdPhase = "post-render-prepare";
-      try {
-        const hostX = hostRef.current;
-        if (hostX) {
-          hostX.style.removeProperty("content-visibility");
-          hostX.style.visibility = "hidden";         // keep hidden until ready
-          void hostX.getBoundingClientRect().width;  // force layout
-          void hostX.scrollWidth;                    // ditto
-        }
-      } catch {}
-
-      try {
-        const canvasCount = outer.querySelectorAll("canvas").length
-        void logStep(`purge:probe canvas#=${canvasCount}`)
-        if (canvasCount > 0) {
-          void logStep("purge:queued")
-          window.setTimeout(() => {
-            try { purgeWebGL(outer); void logStep("purge:done") }
-            catch (e) {
-              const err: Error = e instanceof Error ? e : new Error(String(e))
-              void logStep(`purge:error:${err.message}`)
-            }
-          }, 0)
-        } else {
-            void logStep("purge:skip(no-canvas)")
-        }
-
-        outer.dataset.osmdPhase = "scan"
-        void logStep("phase starting", { outer })
-        // (optional breadcrumb)
-        void logStep("scan: no gate", { outer })
-
-      } catch (e) {
-        const err: Error = e instanceof Error ? e : new Error(String(e))
-        void logStep(`MEASURE-ENTRY:exception:${err.message}`)
-      }
-      
-      // Measure immediately — no gate at all.
-      void logStep("measure:gate:none");
-
-      // Safety: if we don’t reach starts/applied quickly, reveal + clear busy anyway.
-      // Idempotent: real path will still run and win.
-      try {
-        // Cancel any older init finalize timer for safety
-        if (initFinalizeTimerRef.current) {
-          window.clearTimeout(initFinalizeTimerRef.current);
-        }
-        initFinalizeTimerRef.current = window.setTimeout(() => {
-          const o = wrapRef.current;
-          if (!o) { return; }
-
-          // Only act if this timeout belongs to the *current* init attempt
-          if (o.dataset.osmdInitEpoch !== String(epoch)) { return; }
-
-          const ph = o.dataset.osmdPhase || "";
-
-          // If first pagination has started/completed, do nothing
-          if (/^starts:/.test(ph) || ph === "apply" || /^applied:/.test(ph)) {
-            return;
-          }
-
-          try {
-            const hostForInitX = hostRef.current;
-            if (hostForInitX) {
-              if (prevCvValueForInit) {
-                hostForInitX.style.setProperty("content-visibility", prevCvValueForInit || "");
-              } else {
-                hostForInitX.style.removeProperty("content-visibility");
-              }
-              hostForInitX.style.visibility = prevVisForInit || "visible";
-            }
-          } catch {}
-
-          o.dataset.osmdPhase = "init:forced-finalize";
-          void logStep("init:forced-finalize");
-          hideBusy();
-        }, 1500);
-      } catch {}
-
-      // --- Measure systems + first pagination ---
-      void outer.getBoundingClientRect(); // layout flush
-
-      dumpTelemetry("pre-measure:init");
-      dumpGeom("pre-measure:init");
-      void logStep("measure:scan:enter");
-
-      // PROBE A (init)
-      try {
-        const host = hostRef.current!;
-        const cs = getComputedStyle(host);
-        void logStep(
-          `pre-measure(init): outerH=${outer.clientHeight} pageH=${getPAGE_H(outer)} ` +
-          `host.vis=${cs.visibility} host.cv=${cs.getPropertyValue('content-visibility')} ` +
-          `host.contain=${cs.getPropertyValue('contain')}`
-        );
-      } catch {}
-
-      const bands =
-        withUntransformedSvg(outer, (svg) =>
-          timeSection("measure:scan", () => scanSystemsPx(outer, svg))
-        ) ?? [];
+        const epoch = ++initEpochRef.current;
+        outer.dataset.osmdInitEpoch = String(epoch);
         
-      void logStep(`measure:scan:exit bands=${bands.length}`);
-      dumpTelemetry(`post-measure:init bands=${bands.length}`);
-      dumpBands("init", bands);
-
-      if (bands.length === 0) {
-        dumpTelemetry("bands==0 before-abort:init");
-        dumpGeom("bands==0 before-abort:init");
-
-        outer.dataset.osmdPhase = "measure:0:init-abort";
-        void logStep("measure:init:0 — aborting first pagination");
+        // If a newer init started (src changed), abort this one quietly.
+        const isStale = () => outer.dataset.osmdInitEpoch !== String(epoch);
 
         try {
-          const svg = getSvg(outer);
-          if (svg) {
-            const vb = svg.getAttribute('viewBox') || '(none)';
-            const sr = svg.getBoundingClientRect();
-            const gs = Array.from(svg.querySelectorAll('g'))
-              .slice(0, 10)
-              .map((g, i) => {
-                const r = (g as SVGGElement).getBoundingClientRect();
-                return `g${i}:{w:${Math.round(r.width)},h:${Math.round(r.height)}}`;
-              }).join(' ');
-            void logStep(`bands==0: svgRect=${Math.round(sr.width)}x${Math.round(sr.height)} viewBox=${vb} sample=[${gs}]`);
-          } else {
-            void logStep('bands==0: svg missing');
+          const hasVV =
+            typeof window !== "undefined" &&
+            !!window.visualViewport &&
+            typeof window.visualViewport.scale === "number";
+
+          const hasRO =
+            typeof window !== "undefined" &&
+            "ResizeObserver" in window &&
+            typeof window.ResizeObserver === "function";
+
+          outer.dataset.osmdCapVv = hasVV ? "1" : "0";
+          outer.dataset.osmdCapRo = hasRO ? "1" : "0";
+
+          outer.dataset.osmdCapVv = hasVV ? "1" : "0";
+          outer.dataset.osmdCapRo = hasRO ? "1" : "0";
+
+          await logStep(`caps vv=${hasVV ? "yes" : "no"} ro=${hasRO ? "yes" : "no"}`, { outer });
+
+          if (!hasVV) {
+            // Hard-fail policy
+            outer.dataset.osmdPhase = "fatal:no-visual-viewport";
+            outer.dataset.osmdFatal = "1";
+            setBusyMsg("This viewer requires the Visual Viewport API for correct zoom & pagination.\nTry a modern browser (Chrome, Edge, Safari 16+).");
+            setBusy(true); // show blocking overlay with the message
+            await logStep("fatal: visualViewport unavailable — aborting init", { outer });
+            return; // stop init right here
           }
-        } catch (e) {
-          void logStep(`bands==0: probe EXC ${(e as Error)?.message ?? e}`);
+          if (isStale()) { return; }
+
+      } catch {}
+
+        await logStep("BUILD: ScoreOSMD v10 @ tick+ap-gate");
+
+        // Phase breadcrumb + first log
+        outer.dataset.osmdPhase = "initOSMD";
+        await logStep("boot:mount");
+
+        // Create afterPaint helper *before* heavy steps so we can flush logs/spinner
+        const ap = makeAfterPaint(outer);
+
+        // --- Dynamic import OSMD ---
+        const tImp0 = tnow();
+        await logStep("import:OSMD:start");
+        const { OpenSheetMusicDisplay: OSMDClass } =
+          (await import("opensheetmusicdisplay")) as typeof import("opensheetmusicdisplay");
+        void logStep(`import:OSMD:done ${Math.round(tnow() - tImp0)}ms`);
+
+        // Fresh instance
+        if (osmdRef.current) {
+          osmdRef.current?.clear();
+          (osmdRef.current as { dispose?: () => void } | null)?.dispose?.();
+          osmdRef.current = null;
+        }
+        const osmd = new OSMDClass(host, {
+          backend: "svg" as const,
+          autoResize: false,
+          drawTitle: true,
+          drawSubtitle: true,
+          drawComposer: true,
+          drawLyricist: true,
+          // Dev aid: render numbers each measure if requested to verify continuity
+          drawMeasureNumbers: true,
+          measureNumberInterval: debugShowAllMeasureNumbers ? 1 : undefined,
+        }) as OpenSheetMusicDisplay;
+        osmdRef.current = osmd;
+
+        // Spinner on during boot
+        setBusyMsg(DEFAULT_BUSY);
+        setBusy(true);
+        ap("boot");                           // give the overlay a chance to paint
+
+        // --- Load score (string or API/zip) ---
+        await logStep("load:begin");
+        let loadInput: string | Document | ArrayBuffer | Uint8Array = src;
+
+        if (src.startsWith("/api/")) {
+          const res = await fetch(src, { cache: "no-store" });
+          if (!res.ok) { throw new Error(`HTTP ${res.status}`); }
+
+          const ab = await withTimeout(res.arrayBuffer(), 12000, "fetch:timeout");
+          void logStep(`fetch:bytes:${ab.byteLength}`);
+          await logStep("fetch:done");        // flush before unzip work
+
+          // unzipit import
+          await logStep("zip:lib:import");
+          let unzip!: typeof import("unzipit").unzip;
+          try {
+            const uz = await withTimeout(import("unzipit"), 4000, "zip:lib:import:timeout");
+            ({ unzip } = uz as typeof import("unzipit"));
+            await logStep("zip:lib:ready");
+          } catch (e) {
+            await logStep("zip:lib:error");
+            throw e;
+          }
+
+          // open zip
+          const tZip0 = tnow();
+          await logStep("zip:open");
+          const { entries } = await withTimeout(unzip(ab), 8000, "zip:open:timeout");
+          void logStep(`zip:open: ${Math.round(tnow() - tZip0)}ms`);
+          await logStep("zip:opened");
+
+          // container.xml probe
+          let entryName: string | undefined;
+          await logStep("zip:container:probe");
+          const container = entries["META-INF/container.xml"];
+          if (container) {
+            await logStep("zip:container:read");
+            const containerXml = await withTimeout(container.text(), 6000, "zip:container:timeout");
+
+            await logStep("zip:container:parse");
+            const cdoc = new DOMParser().parseFromString(containerXml, "application/xml");
+            const rootfile = cdoc.querySelector('rootfile[full-path]') || cdoc.querySelector("rootfile");
+            const fullPath =
+              rootfile?.getAttribute("full-path") ||
+              rootfile?.getAttribute("path") ||
+              rootfile?.getAttribute("href") ||
+              undefined;
+
+            if (fullPath && entries[fullPath]) {
+              entryName = fullPath;
+              await logStep(`zip:container:selected:${entryName}`);
+            } else {
+              await logStep("zip:container:no-match");
+            }
+          } else {
+            await logStep("zip:container:missing");
+          }
+
+          // scan fallback
+          if (!entryName) {
+            await logStep("zip:scan:start");
+            const candidates = Object.keys(entries).filter((p) => {
+              const q = p.toLowerCase();
+              return !q.startsWith("meta-inf/") && (q.endsWith(".musicxml") || q.endsWith(".xml"));
+            });
+            void logStep(`zip:scan:found:${candidates.length}`);
+
+            candidates.sort((a, b) => {
+              const aa = a.toLowerCase(), bb = b.toLowerCase();
+              const scoreA = /score|partwise|timewise/.test(aa) ? 0 : 1;
+              const scoreB = /score|partwise|timewise/.test(bb) ? 0 : 1;
+              if (scoreA !== scoreB) { return scoreA - scoreB; }
+              const extA = aa.endsWith(".musicxml") ? 0 : 1;
+              const extB = bb.endsWith(".musicxml") ? 0 : 1;
+              if (extA !== extB) { return extA - extB; }
+              return aa.length - bb.length;
+            });
+
+            entryName = candidates[0];
+            await logStep(`zip:scan:pick:${entryName ?? "(none)"}`);
+          }
+
+          if (!entryName) { throw new Error("zip:no-musicxml-in-archive"); }
+
+          // read + parse XML
+          await logStep("zip:file:read");
+          const entry = entries[entryName];
+          if (!entry) { throw new Error(`zip:file:missing:${entryName}`); }
+
+          const xmlText = await withTimeout(entry.text(), 10000, "zip:file:read:timeout");
+          await logStep("zip:file:read:ok");
+          void logStep(`zip:file:chars:${xmlText.length}`);
+
+          await logStep("xml:parse:start");
+          const xmlDoc = new DOMParser().parseFromString(xmlText, "application/xml");
+          await logStep("xml:parse:done");
+
+          if (xmlDoc.getElementsByTagName("parsererror").length > 0) {
+            throw new Error("MusicXML parse error: XML parsererror");
+          }
+
+          const hasPartwise = xmlDoc.getElementsByTagName("score-partwise").length > 0;
+          const hasTimewise = xmlDoc.getElementsByTagName("score-timewise").length > 0;
+          void logStep(`xml:tags pw=${String(hasPartwise)} tw=${String(hasTimewise)}`);
+          if (!hasPartwise && !hasTimewise) {
+            throw new Error("MusicXML parse error: no score-partwise/score-timewise");
+          }
+
+          const xmlString = new XMLSerializer().serializeToString(xmlDoc);
+          await logStep("load:ready");
+          loadInput = xmlString;
+        } else {
+          loadInput = src;
         }
 
-        // restore host visibility before returning
+        // --- osmd.load (heartbeat + timing) ---
+        await logStep("osmd.load:start");
+        const loadStart = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
+        let loadBeat: number | null = null;
+
+        loadBeat = window.setInterval(() => {
+          const now = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
+          const secs = Math.round((now - loadStart) / 1000);
+          void logStep(`osmd.load:heartbeat +${secs}s`);
+        }, 1000);
+
         try {
-          const hostForInit3 = hostRef.current;
-          if (hostForInit3) {
-            // restore CV first
-            if (prevCvValueForInit) {
-              hostForInit3.style.setProperty("content-visibility", prevCvValueForInit);
-            } else {
-              hostForInit3.style.removeProperty("content-visibility");
-            }
+          await awaitLoad(osmd, loadInput);
+          const durMs = ((typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now()) - loadStart;
+          void logStep(`osmd.load: ${Math.round(durMs)}ms`);
+          await logStep("osmd.load:done");
+        } finally {
+          if (loadBeat !== null) {
+            window.clearInterval(loadBeat);
+            loadBeat = null;
+          }
+        }
+
+        // --- Fonts (bounded wait) ---
+        await logStep("fonts:waiting");
+        await waitForFonts();
+        await logStep("fonts:ready");
+
+        // --- First render ---
+        const attemptForRender = Number(outer.dataset.osmdZoomEntered || "0")
+        outer.dataset.osmdRenderAttempt = String(attemptForRender)
+        void logStep(`[render] starting attempt#${attemptForRender}`)
+
+        // Prevent giant paint during render: hide host, keep layout available
+        const hostForInit = hostRef.current
+        const prevVisForInit = hostForInit?.style.visibility ?? ""
+        const prevCvValueForInit: string =
+          hostForInit ? hostForInit.style.getPropertyValue("content-visibility") : ""
+
+        if (hostForInit) {
+          hostForInit.style.removeProperty("content-visibility");
+          hostForInit.style.visibility = "hidden"
+        }
+
+        // Kick off render immediately (no async gating)
+        outer.dataset.osmdPhase = "render";
+        await logStep("render:start");
+
+        // (optional) prove the event loop is still responsive
+        // NOTE: MessageChannel probe removed as redundant
+        try {
+          queueMicrotask(() => { void logStep("[probe] init:microtask before render", { outer }); });
+        } catch {}
+
+        // Time the actual render call
+        const t0 = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
+        await renderWithEffectiveWidth(outer, osmd);
+        outer.dataset.osmdPhase = "render:return";
+        void logStep("[probe] render returned", { outer });
+
+        const t1 = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
+        const renderMs = Math.round(t1 - t0);
+        outer.dataset.osmdRenderMs = String(renderMs);
+        outer.dataset.osmdRenderEndedAt = String(Date.now());
+        void logStep(`[render] finished attempt#${attemptForRender} (${renderMs}ms)`, { outer });
+
+        // Dev-only: dump all tracked telemetry values (phase, timings, etc.)
+        dumpTelemetry("post-render:init");
+
+        // Normally we would wait for requestAnimationFrame/paint here,
+        // but large scores can throttle timers. Instead, mark "painted"
+        // immediately so downstream steps don't block forever.
+        outer.dataset.osmdPhase = "render:painted";
+        void logStep("post-render:skip-wait (no-yield)");
+
+        // Prepare the rendered SVG subtree for layout calculations.
+        // Similar to the reflow path: strip content-visibility so
+        // the browser actually lays it out, but keep it hidden from
+        // the user until pagination/masking is ready.
+        outer.dataset.osmdPhase = "post-render-prepare";
+        try {
+          const hostX = hostRef.current;
+          if (hostX) {
+            hostX.style.removeProperty("content-visibility");
+            hostX.style.visibility = "hidden";         // keep hidden until ready
+            void hostX.getBoundingClientRect().width;  // force layout
+            void hostX.scrollWidth;                    // ditto
           }
         } catch {}
-        hideBusy();
-        return;
-      }
-      bandsRef.current = bands;
 
-      outer.dataset.osmdSvg = String(!!getSvg(outer));
-      outer.dataset.osmdBands = String(bands.length);
-
-      const __startsInit = timeSection(
-        "starts:compute",
-        () => computePageStartIndices(outer, bands, getPAGE_H(outer))
-      );
-      pageStartsRef.current = __startsInit;
-      outer.dataset.osmdPages = String(pageStartsRef.current.length);
-      void logStep(`starts:init: ${pageStartsRef.current.join(",")}`);
-
-      pageIdxRef.current = 0;
-      timeSection("apply:first", () => { applyPage(0); });
-      await ap("apply:first", 450);
-
-      // Reveal host now that first page is applied
-      try {
-        const hostForInit2 = hostRef.current;
-        if (hostForInit2) {
-          if (prevCvValueForInit) {
-            hostForInit2.style.setProperty("content-visibility", prevCvValueForInit || "");
+        try {
+          const canvasCount = outer.querySelectorAll("canvas").length
+          void logStep(`purge:probe canvas#=${canvasCount}`)
+          if (canvasCount > 0) {
+            void logStep("purge:queued")
+            window.setTimeout(() => {
+              try { purgeWebGL(outer); void logStep("purge:done") }
+              catch (e) {
+                const err: Error = e instanceof Error ? e : new Error(String(e))
+                void logStep(`purge:error:${err.message}`)
+              }
+            }, 0)
           } else {
-            hostForInit2.style.removeProperty("content-visibility");
+              void logStep("purge:skip(no-canvas)")
           }
-          hostForInit2.style.visibility = prevVisForInit || "visible";
+
+          outer.dataset.osmdPhase = "scan"
+          void logStep("phase starting", { outer })
+          // (optional breadcrumb)
+          void logStep("scan: no gate", { outer })
+
+        } catch (e) {
+          const err: Error = e instanceof Error ? e : new Error(String(e))
+          void logStep(`MEASURE-ENTRY:exception:${err.message}`)
         }
-      } catch {}
+        
+        // Measure immediately — no gate at all.
+        void logStep("measure:gate:none");
 
-      // Quick snapshot
-      void logStep(`init: svg=${outer.dataset.osmdSvg} bands=${outer.dataset.osmdBands} pages=${outer.dataset.osmdPages}`);
+        // Safety: if we don’t reach starts/applied quickly, reveal + clear busy anyway.
+        // Idempotent: real path will still run and win.
+        try {
+          // Cancel any older init finalize timer for safety
+          if (initFinalizeTimerRef.current) {
+            window.clearTimeout(initFinalizeTimerRef.current);
+          }
+          initFinalizeTimerRef.current = window.setTimeout(() => {
+            const o = wrapRef.current;
+            if (!o) { return; }
 
-      // Height-only repagination (no spinner) after first paint
-      recomputePaginationHeightOnly(true /* resetToFirst */, false /* no spinner */);
-      void logStep("repag:init:scheduled");
+            // Only act if this timeout belongs to the *current* init attempt
+            if (o.dataset.osmdInitEpoch !== String(epoch)) { return; }
 
-      // record current handled dimensions
-      handledWRef.current = outer.clientWidth;
-      handledHRef.current = outer.clientHeight;
+            const ph = o.dataset.osmdPhase || "";
 
-      readyRef.current = true;
-      hideBusy();
+            // If first pagination has started/completed, do nothing
+            if (/^starts:/.test(ph) || ph === "apply" || /^applied:/.test(ph)) {
+              return;
+            }
+
+            try {
+              const hostForInitX = hostRef.current;
+              if (hostForInitX) {
+                if (prevCvValueForInit) {
+                  hostForInitX.style.setProperty("content-visibility", prevCvValueForInit || "");
+                } else {
+                  hostForInitX.style.removeProperty("content-visibility");
+                }
+                hostForInitX.style.visibility = prevVisForInit || "visible";
+              }
+            } catch {}
+
+            o.dataset.osmdPhase = "init:forced-finalize";
+            void logStep("init:forced-finalize");
+            hideBusy();
+          }, 1500);
+        } catch {}
+
+        // --- Measure systems + first pagination ---
+        void outer.getBoundingClientRect(); // layout flush
+
+        dumpTelemetry("pre-measure:init");
+        dumpGeom("pre-measure:init");
+        void logStep("measure:scan:enter");
+
+        // PROBE A (init)
+        try {
+          const host = hostRef.current!;
+          const cs = getComputedStyle(host);
+          void logStep(
+            `pre-measure(init): outerH=${outer.clientHeight} pageH=${getPAGE_H(outer)} ` +
+            `host.vis=${cs.visibility} host.cv=${cs.getPropertyValue('content-visibility')} ` +
+            `host.contain=${cs.getPropertyValue('contain')}`
+          );
+        } catch {}
+
+        const bands =
+          withUntransformedSvg(outer, (svg) =>
+            timeSection("measure:scan", () => scanSystemsPx(outer, svg))
+          ) ?? [];
+          
+        void logStep(`measure:scan:exit bands=${bands.length}`);
+        dumpTelemetry(`post-measure:init bands=${bands.length}`);
+        dumpBands("init", bands);
+
+        if (bands.length === 0) {
+          dumpTelemetry("bands==0 before-abort:init");
+          dumpGeom("bands==0 before-abort:init");
+
+          outer.dataset.osmdPhase = "measure:0:init-abort";
+          void logStep("measure:init:0 — aborting first pagination");
+
+          try {
+            const svg = getSvg(outer);
+            if (svg) {
+              const vb = svg.getAttribute('viewBox') || '(none)';
+              const sr = svg.getBoundingClientRect();
+              const gs = Array.from(svg.querySelectorAll('g'))
+                .slice(0, 10)
+                .map((g, i) => {
+                  const r = (g as SVGGElement).getBoundingClientRect();
+                  return `g${i}:{w:${Math.round(r.width)},h:${Math.round(r.height)}}`;
+                }).join(' ');
+              void logStep(`bands==0: svgRect=${Math.round(sr.width)}x${Math.round(sr.height)} viewBox=${vb} sample=[${gs}]`);
+            } else {
+              void logStep('bands==0: svg missing');
+            }
+          } catch (e) {
+            void logStep(`bands==0: probe EXC ${(e as Error)?.message ?? e}`);
+          }
+
+          // restore host visibility before returning
+          try {
+            const hostForInit3 = hostRef.current;
+            if (hostForInit3) {
+              // restore CV first
+              if (prevCvValueForInit) {
+                hostForInit3.style.setProperty("content-visibility", prevCvValueForInit);
+              } else {
+                hostForInit3.style.removeProperty("content-visibility");
+              }
+            }
+          } catch {}
+          hideBusy();
+          return;
+        }
+        bandsRef.current = bands;
+
+        outer.dataset.osmdSvg = String(!!getSvg(outer));
+        outer.dataset.osmdBands = String(bands.length);
+
+        const __startsInit = timeSection(
+          "starts:compute",
+          () => computePageStartIndices(outer, bands, getPAGE_H(outer))
+        );
+        pageStartsRef.current = __startsInit;
+        outer.dataset.osmdPages = String(pageStartsRef.current.length);
+        void logStep(`starts:init: ${pageStartsRef.current.join(",")}`);
+
+        pageIdxRef.current = 0;
+        timeSection("apply:first", () => { applyPage(0); });
+        await ap("apply:first", 450);
+
+        // Reveal host now that first page is applied
+        try {
+          const hostForInit2 = hostRef.current;
+          if (hostForInit2) {
+            if (prevCvValueForInit) {
+              hostForInit2.style.setProperty("content-visibility", prevCvValueForInit || "");
+            } else {
+              hostForInit2.style.removeProperty("content-visibility");
+            }
+            hostForInit2.style.visibility = prevVisForInit || "visible";
+          }
+        } catch {}
+
+        // Quick snapshot
+        void logStep(`init: svg=${outer.dataset.osmdSvg} bands=${outer.dataset.osmdBands} pages=${outer.dataset.osmdPages}`);
+
+        // Height-only repagination (no spinner) after first paint
+        recomputePaginationHeightOnly(true /* resetToFirst */, false /* no spinner */);
+        void logStep("repag:init:scheduled");
+
+        // record current handled dimensions
+        handledWRef.current = outer.clientWidth;
+        handledHRef.current = outer.clientHeight;
+
+        readyRef.current = true;
+        hideBusy();
+
+      } finally {
+      // Restore previous func-tag (exactly like reflowOnWidthChange).
+      try { outer.dataset.osmdFunc = prevFuncTag; } catch {}
+    }
+
 
     })().catch((err: unknown) => {
       hideBusy();
