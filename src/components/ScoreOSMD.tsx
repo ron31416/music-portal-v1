@@ -186,8 +186,8 @@ export async function logStep(
     // Update column widths (bounded by __MAX_COL).
     const fnLen = Math.min(fn.length, __MAX_COL);
     const phLen = phase !== "(none)" ? Math.min(phase.length, __MAX_COL) : 0;
-    if (fnLen > __LOG_COLS.fnW)   __LOG_COLS.fnW   = fnLen;
-    if (phLen > __LOG_COLS.phaseW) __LOG_COLS.phaseW = phLen;
+    if (fnLen > __LOG_COLS.fnW) { __LOG_COLS.fnW   = fnLen; }
+    if (phLen > __LOG_COLS.phaseW) { __LOG_COLS.phaseW = phLen; }
 
     // Build aligned prefix.
     const fnChunk = `[${__fitAndPad(fn, __LOG_COLS.fnW)}]`;
