@@ -1181,7 +1181,8 @@ export default function ScoreOSMD({
       outer.dataset.osmdFunc = "reflowOnWidthChange";
       outer.dataset.osmdPhase = "prep";
 
-      void logStep(`start cause=${reflowCause ?? "-"}`);
+      void logStep(`phase starting`);
+      void logStep(`reflow cause=${reflowCause ?? "-"}`);
 
       let prevVisForReflow: string | null = null;
       let prevCvForReflow: string | null = null;
@@ -1243,8 +1244,9 @@ export default function ScoreOSMD({
           }, 9000);
         }
 
+        await logStep("phase finished");
         outer.dataset.osmdPhase = "render";
-        await logStep("start");
+        await logStep("phase starting");
 
         const ap = makeAfterPaint(outer);
         await new Promise<void>((r) => setTimeout(r, 0)); // macrotask
@@ -1274,8 +1276,9 @@ export default function ScoreOSMD({
         await new Promise<void>(r => setTimeout(r, 0));
         await logStep("yielded one task before geometry phase");
 
+        await logStep("phase finished");
         outer.dataset.osmdPhase = "geometry";
-        void logStep("start", { outer });
+        void logStep("phase starting", { outer });
 
         let newBands: Band[] = [];
         {
@@ -1287,14 +1290,12 @@ export default function ScoreOSMD({
           };
           newBands = perfBlock(uid, work, after);
         }
-
         const n = newBands.length;
         outer.dataset.osmdBands = String(n);
         if (n === 0) {
           await logStep("0 bands — abort");
           return;
         }
-
         bandsRef.current = newBands;
 
         let newStarts: number[] = [];
@@ -1307,22 +1308,30 @@ export default function ScoreOSMD({
             (ms) => { void logStep(`computePageStartIndices runtime: (${ms}ms) H=${H}`); }
           );
         }
-
         pageStartsRef.current = newStarts;
-        outer.dataset.osmdPhase = `starts:${newStarts.length}`;
-        await logStep(`starts:${newStarts.length}`);
+ 
+        await logStep("phase finished");
 
         outer.dataset.osmdPhase = "apply";
-        await logStep("start");
+        await logStep("phase starting");
 
-        perfMark("applyPage:start");
-        applyPage(0);
-        await Promise.race([ ap("apply:first"), new Promise<void>((r) => setTimeout(r, 400)) ]);
-        applyPage(0);
-        perfMark("applyPage:end");
-        perfMeasure("applyPage", "applyPage:start", "applyPage:end");
+        {
+          const uid = nextPerfUID(outer.dataset.osmdRun);
+          const work = async () => {
+            applyPage(0);
+            await Promise.race([
+              ap("one paint opportunity after first apply"),
+              new Promise<void>((r) => setTimeout(r, 400)),
+            ]);
+            applyPage(0);
+          };
+          const after = (ms: number) => {
+            void logStep(`applyPage(0) (two calls + gate) runtime: (${ms}ms)`);
+          };
+          await perfBlockAsync(uid, work, after);
+        }
 
-        await logStep("done");
+        await logStep("phase finished");
 
       } finally {
         try {
