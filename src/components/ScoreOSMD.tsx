@@ -1217,12 +1217,11 @@ export default function ScoreOSMD({
           } catch {}
         }
 
-        // --------- POST-RENDER: skip wait (non-blocking, like init) ---------
-        outer.dataset.osmdPhase = "render:painted";
-        await logStep("post-render:skip-wait (no-yield)");
         try {
-          await new Promise<void>((r) => setTimeout(r, 0)); // tiny macrotask
+          await new Promise<void>((r) => setTimeout(r, 0)); 
         } catch {}
+        await logStep("yielded one task before measure");
+
 
         // --------- MEASURE ---------
         outer.dataset.osmdPhase = "measure";
