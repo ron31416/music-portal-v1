@@ -522,6 +522,9 @@ export default function ScoreOSMD({
       const host = hostRef.current;
       if (!host || !outer) { return; }
 
+      const prevFuncTag = outer.dataset.osmdFunc ?? "";
+      outer.dataset.osmdFunc = "renderWithEffectiveWidth";
+
       // Use our zoom source of truth
       applyZoomFromRef();
       const zf = Math.min(3, Math.max(0.5, zoomFactorRef.current || 1));
@@ -570,6 +573,8 @@ export default function ScoreOSMD({
         void logStep(`render:error ${(e as Error)?.message ?? e}`);
         throw e;
       } finally {
+        try { outer.dataset.osmdFunc = prevFuncTag; } catch {}
+
         try { window.clearInterval(beat); } catch {}
         // Always restore styles
         host.style.left  = "";
