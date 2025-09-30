@@ -655,10 +655,7 @@ export default function ScoreOSMD({
   }, []);
 
   // ---- callback ref proxies (used by queued window.setTimeouts) ----
-  const reflowFnRef = useRef<ReflowCallback>(async function noopReflow(
-    _resetToFirst?: boolean,
-    _reflowCause?: string
-  ): Promise<void> {
+  const reflowFnRef = useRef<ReflowCallback>(async function noopReflow(): Promise<void> {
     return;
   });
   
@@ -1093,16 +1090,15 @@ export default function ScoreOSMD({
       const osmd  = osmdRef.current;
 
       if (!outer) {
-        // eslint-disable-next-line no-console
         console.warn("[reflowOnWidthChange][reflow] early-bail outer=0 osmd=" + (osmd ? "1" : "0"));
         return;
       }
 
       // Tag this path and set initial phase so logStep prefixes are correct.
-      let prevFuncTag = outer.dataset.osmdFunc ?? "";
+      const prevFuncTag = outer.dataset.osmdFunc ?? "";
       outer.dataset.osmdFunc = "reflowOnWidthChange";
       outer.dataset.osmdPhase = "reflow";
-      void logStep("start");
+      void logStep(`start reset=${resetToFirst} cause=${reflowCause ?? "-"}`);
 
       let prevVisForReflow: string | null = null;
       let prevCvForReflow: string | null = null;
