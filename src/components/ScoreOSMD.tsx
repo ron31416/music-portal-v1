@@ -402,9 +402,9 @@ function measureSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[]
       for (const g of allG) {
         try {
           const r = g.getBoundingClientRect();
-          if (!Number.isFinite(r.top) || !Number.isFinite(r.height) || !Number.isFinite(r.width)) continue;
-          if (r.height < MIN_H) continue;
-          if (r.width  < MIN_W) continue;
+          if (!Number.isFinite(r.top) || !Number.isFinite(r.height) || !Number.isFinite(r.width)) { continue; }
+          if (r.height < MIN_H) { continue; }
+          if (r.width  < MIN_W) { continue; }
 
           boxes.push({
             top: r.top - hostTop,
