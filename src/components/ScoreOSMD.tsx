@@ -1274,10 +1274,10 @@ export default function ScoreOSMD({
         }
 
         await new Promise<void>(r => setTimeout(r, 0));
-        await logStep("yielded one task before geometry phase");
+        await logStep("yielded one task before next phase");
 
         await logStep("phase finished");
-        outer.dataset.osmdPhase = "geometry";
+        outer.dataset.osmdPhase = "scan";
         await logStep("phase starting", { outer });
 
         let newBands: Band[] = [];
@@ -1334,37 +1334,37 @@ export default function ScoreOSMD({
         await logStep("phase finished");
 
       } finally {
-        try {
-          outer.dataset.osmdFunc = prevFuncTag;
-        } catch {}
+        try { outer.dataset.osmdPhase = "finally"; } catch {}
+        await logStep("phase starting");
 
         // Reveal host now that the page has been applied (or if we bailed)
         try {
           const hostNow = hostRef.current;
           if (hostNow) {
+            // restore content-visibility
             if (prevCvForReflow) {
               hostNow.style.setProperty("content-visibility", prevCvForReflow);
             } else {
               hostNow.style.removeProperty("content-visibility");
             }
-            hostNow.style.visibility = prevVisForReflow || "visible";
+
+            // restore visibility
+            if (prevVisForReflow) {
+              hostNow.style.visibility = prevVisForReflow;
+            } else {
+              hostNow.style.removeProperty("visibility");
+            }
           }
         } catch {}
 
-        await logStep("reflow:finally:enter", { paint: true });
-
-        outer.dataset.osmdZoomExited   = outer.dataset.osmdZoomEntered || "0";
-        outer.dataset.osmdZoomExitedAt = String(Date.now());
-        await logStep(`[reflow] EXIT attempt#${outer.dataset.osmdZoomExited} • ${fmtFlags()}`);
-
-        outer.dataset.osmdPhase = "finally";
-        await logStep("finally");
-
         spinnerOwnerRef.current = null;
-        hideBusy();
-        await logStep("reflow:finally:hid-spinner");
 
+        // Set reflowRunning=false BEFORE hideBusy() so the post-busy drain effect
+        // (which triggers when busy -> false) sees we're idle and can drain queued work
+        // immediately instead of bouncing off the reflowRunning guard.
+        // Use 'await hideBusy()' for deterministic log ordering and to avoid racing the drain.
         reflowRunningRef.current = false;
+        await hideBusy();
 
         // if a queued width reflow matches the width we just handled, drop it
         try {
@@ -1408,7 +1408,9 @@ export default function ScoreOSMD({
           void logStep("reflow:finally:cleared-failsafe");
         }
 
-        await logStep("reflow:finally:exit");
+        await logStep("phase finished");
+
+        try { outer.dataset.osmdFunc = prevFuncTag; } catch {}
       }
     },
     [applyPage, getPAGE_H, hideBusy, renderWithEffectiveWidth, fmtFlags, nextPerfUID]
@@ -2310,13 +2312,13 @@ export default function ScoreOSMD({
   }, [busy]);
 
   // Auto-clear busy if we linger too long *outside* heavy phases.
-  // Heavy phases are exactly: "render" and "geometry".
+  // Heavy phases are exactly: "render" and "scan".
   useEffect(() => {
     if (!busy) { return; }
 
     const t = window.setTimeout(() => {
       const phase = wrapRef.current?.dataset.osmdPhase ?? "";
-      const inHeavy = phase === "render" || phase === "geometry";
+      const inHeavy = phase === "render" || phase === "scan";
 
       if (!inHeavy) {
         hideBusy();
