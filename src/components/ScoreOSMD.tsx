@@ -615,7 +615,7 @@ const fmtFlags = useCallback((): string => {
   const zf = (zoomFactorRef.current ?? 1).toFixed(3);
 
   const parts = [`page=${page}/${pages}`, `zf=${zf}`];
-  if (queued !== "none") parts.push(`queued=${queued}`);
+  if (queued !== "none") { parts.push(`queued=${queued}`); }
   return parts.join(" ");
 }, []);
 
