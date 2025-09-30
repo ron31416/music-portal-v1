@@ -312,7 +312,7 @@ function isTitleLike(first: Band | undefined, rest: Band[]): boolean {
   } // handles strict noUncheckedIndexedAccess
   return first.height < Math.max(36, 0.6 * median);
 }
-
+/*
 function measureSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[] {
   // Page roots (unchanged)
   const pageRoots = Array.from(
@@ -372,6 +372,70 @@ function measureSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[]
   }
   
   return bands;
+}
+*/
+
+function measureSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[] {
+  // ⬇️ NEW: temporarily retag for readable prefixes
+  const prevFuncTag = outer.dataset.osmdFunc ?? "";
+  outer.dataset.osmdFunc = "measureSystemsPx";
+  try {
+    void logStep("enter", { outer }); // one breadcrumb so calls are visible
+
+    // --- existing code unchanged below ---
+    const pageRoots = Array.from(
+      svgRoot.querySelectorAll<SVGGElement>(
+        'g[id^="osmdCanvasPage"], g[id^="Page"], g[class*="Page"], g[class*="page"]'
+      )
+    );
+    const roots: Array<SVGGElement | SVGSVGElement> = pageRoots.length ? pageRoots : [svgRoot];
+
+    const hostTop = outer.getBoundingClientRect().top;
+
+    interface Box { top: number; bottom: number; height: number; width: number }
+    const boxes: Box[] = [];
+    const MIN_H = 2;
+    const MIN_W = 8;
+
+    for (const root of roots) {
+      const allG = Array.from(root.querySelectorAll<SVGGElement>("g"));
+      for (const g of allG) {
+        try {
+          const r = g.getBoundingClientRect();
+          if (!Number.isFinite(r.top) || !Number.isFinite(r.height) || !Number.isFinite(r.width)) continue;
+          if (r.height < MIN_H) continue;
+          if (r.width  < MIN_W) continue;
+
+          boxes.push({
+            top: r.top - hostTop,
+            bottom: r.bottom - hostTop,
+            height: r.height,
+            width: r.width,
+          });
+        } catch {/* noop */}
+      }
+    }
+
+    boxes.sort((a, b) => a.top - b.top);
+
+    const GAP = dynamicBandGapPx(outer);
+    const bands: Band[] = [];
+    for (const b of boxes) {
+      const last = bands.length ? bands[bands.length - 1] : undefined;
+      if (!last || b.top - last.bottom > GAP) {
+        bands.push({ top: b.top, bottom: b.bottom, height: b.height });
+      } else {
+        last.top = Math.min(last.top, b.top);
+        last.bottom = Math.max(last.bottom, b.bottom);
+        last.height = last.bottom - last.top;
+      }
+    }
+
+    void logStep(`exit bands=${bands.length}`, { outer }); // ⬅️ NEW: one-line summary
+    return bands;
+  } finally {
+    try { outer.dataset.osmdFunc = prevFuncTag; } catch {}
+  }
 }
 
 /** Compute page start *indices* so each page shows only full systems */
