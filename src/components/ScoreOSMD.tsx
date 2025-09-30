@@ -1132,19 +1132,18 @@ export default function ScoreOSMD({
           return;
         }
 
+        reflowRunningRef.current = true;
+
+        const run = (Number(outer.dataset.osmdRun || "0") + 1);
+        outer.dataset.osmdRun = String(run);
+        void logStep(`run# ${run} • ${fmtFlags()}`);
+
         const currW = outer.clientWidth;
         const currH = outer.clientHeight;
         handledWRef.current = currW; // prime "handled" now, not only at the end
         handledHRef.current = currH;
         outer.dataset.osmdReflowTargetW = String(currW);
         outer.dataset.osmdReflowTargetH = String(currH);
-
-        const run = Number(outer.dataset.osmdRun || "0"); // you already set this earlier
-        outer.dataset.osmdReflowEntered   = String(run);
-        outer.dataset.osmdReflowEnteredAt = String(Date.now());
-        void logStep(`run# ${run} • ${fmtFlags()}`);
-
-        reflowRunningRef.current = true;
 
         const ap = makeAfterPaint(outer);
 
@@ -1172,7 +1171,7 @@ export default function ScoreOSMD({
           spinnerFailSafeRef.current = window.setTimeout(() => {
             spinnerOwnerRef.current = null;
             hideBusy();
-            void logStep("Failsafe triggered after 9s; hiding spinner");
+            void logStep("failsafe triggered after 9s; hiding spinner");
           }, 9000);
         }
 
