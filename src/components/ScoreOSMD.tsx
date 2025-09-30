@@ -1118,14 +1118,10 @@ export default function ScoreOSMD({
         outer.dataset.osmdReflowTargetW = String(currW);
         outer.dataset.osmdReflowTargetH = String(currH);
 
-        // Always show spinner for width reflow
-        //const wantSpinner = true;
-        //void logStep(`reflow:enter spin=${wantSpinner} running=${reflowRunningRef.current} repag=${repagRunningRef.current} busy=${busyRef.current}`);
-
         const attempt = Number(outer.dataset.osmdZoomAttempt || "0");
         outer.dataset.osmdZoomEntered   = String(attempt);
         outer.dataset.osmdZoomEnteredAt = String(Date.now());
-        void logStep(`[reflow] ENTER attempt#${attempt} • ${fmtFlags()}`);
+        void logStep(`attempt#${attempt} • ${fmtFlags()}`);
 
         const ap = makeAfterPaint(outer);
 
@@ -1134,21 +1130,15 @@ export default function ScoreOSMD({
           outer.dataset.osmdZoomQueued   = String(attempt);
           outer.dataset.osmdZoomQueueWhy = "reflowRunning";
           outer.dataset.osmdZoomQueuedAt = String(Date.now());
-          void logStep(`[reflow] QUEUED attempt#${attempt} • why=reflowRunning • ${fmtFlags()}`);
+          void logStep(`attempt#${attempt} • why=reflowRunning • ${fmtFlags()}`);
           return;
         }
         reflowRunningRef.current = true;
 
-        // start 2s logging watchdog (uses the wd declared near the top of the function)
-        wd = window.setInterval(() => {
-          const el = wrapRef.current;
-          void logStep(`watchdog: phase=${el?.dataset.osmdPhase ?? "unset"}`);
-        }, 2000);
-
-        outer.dataset.osmdPhase = "start";
-        const run = (Number(outer.dataset.osmdRun || "0") + 1);
-        outer.dataset.osmdRun = String(run);
-        void logStep(`reflow:start#${run}`);
+        //outer.dataset.osmdPhase = "start";
+        //const run = (Number(outer.dataset.osmdRun || "0") + 1);
+        //outer.dataset.osmdRun = String(run);
+        //void logStep(`reflow:start#${run}`);
 
         // Spinner on (with unconditional fail-safe)
         {
@@ -1158,9 +1148,6 @@ export default function ScoreOSMD({
           setBusyMsg(DEFAULT_BUSY);
           setBusy(true);
 
-          outer.dataset.osmdPhase = "spinner-requested";
-          void logStep("spinner-requested");
-
           await new Promise<void>((r) => setTimeout(r, 0));
           if (document.visibilityState === "visible") {
             await Promise.race([
@@ -1168,9 +1155,6 @@ export default function ScoreOSMD({
               new Promise<void>((r) => setTimeout(r, 120)),
             ]);
           }
-
-          outer.dataset.osmdPhase = "spinner-on";
-          void logStep("spinner-on");
 
           if (spinnerFailSafeRef.current) { window.clearTimeout(spinnerFailSafeRef.current); }
           spinnerFailSafeRef.current = window.setTimeout(() => {
@@ -1309,12 +1293,6 @@ export default function ScoreOSMD({
 
         outer.dataset.osmdPhase = "finally";
         await logStep("finally");
-
-        // Clear the 2s logging watchdog, if it was started
-        if (wd !== null) {
-          window.clearInterval(wd);
-          wd = null;
-        }
 
         spinnerOwnerRef.current = null;
         hideBusy();
