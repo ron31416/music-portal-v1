@@ -585,40 +585,18 @@ export default function ScoreOSMD({
     setBusyMsg(DEFAULT_BUSY);
     await logStep("busy:off"); // or { paint: true } if you want it blocking
   }, []);
-/*
-  // --- LOG SNAPSHOT (used by zoom/reflow debug logs) ---
-  const fmtFlags = useCallback((): string => {
-    const w = wrapRef.current?.clientWidth ?? -1;
-    const h = wrapRef.current?.clientHeight ?? -1;
-    const pages = pageStartsRef.current.length;
-    const page  = Math.max(0, Math.min(pageIdxRef.current, Math.max(0, pages - 1)));
-    const phase = wrapRef.current?.dataset.osmdPhase ?? "(none)";
-    return [
-      `ready=${String(readyRef.current)}`,
-      `busy=${String(busyRef.current)}`,
-      `reflowRunning=${String(reflowRunningRef.current)}`,
-      `repagRunning=${String(repagRunningRef.current)}`,
-      `queued=${reflowAgainRef.current}`,
-      `osmd=${String(!!osmdRef.current)}`,
-      `zf=${(zoomFactorRef.current ?? 0).toFixed(3)}`,
-      `W×H=${w}×${h}`,
-      `page=${page+1}/${Math.max(1, pages)}`,
-      `phase=${phase}`,
-    ].join(" ");
-  }, []);
-*/
+
   // --- LOG SNAPSHOT (lean) ---
-const fmtFlags = useCallback((): string => {
-  const pages = Math.max(1, pageStartsRef.current.length);
-  const page  = Math.max(1, Math.min(pageIdxRef.current + 1, pages));
-  const queued = reflowAgainRef.current; // "none" | "width" | "height"
-  const zf = (zoomFactorRef.current ?? 1).toFixed(3);
+  const fmtFlags = useCallback((): string => {
+    const pages = Math.max(1, pageStartsRef.current.length);
+    const page  = Math.max(1, Math.min(pageIdxRef.current + 1, pages));
+    const queued = reflowAgainRef.current; // "none" | "width" | "height"
+    const zf = (zoomFactorRef.current ?? 1).toFixed(3);
 
-  const parts = [`page=${page}/${pages}`, `zf=${zf}`];
-  if (queued !== "none") { parts.push(`queued=${queued}`); }
-  return parts.join(" ");
-}, []);
-
+    const parts = [`page=${page}/${pages}`, `zf=${zf}`];
+    if (queued !== "none") { parts.push(`queued=${queued}`); }
+    return parts.join(" ");
+  }, []);
 
   // --- MINIMAL TELEMETRY (host/CV/visibility + SVG presence) ---
   const dumpTelemetry = useCallback((label: string): void => {
@@ -1123,14 +1101,14 @@ const fmtFlags = useCallback((): string => {
       const osmd  = osmdRef.current;
 
       if (!outer) {
-        console.warn("[reflowOnWidthChange][reflow] early-bail outer=0 osmd=" + (osmd ? "1" : "0"));
+        console.warn("[reflowOnWidthChange][prep] early-bail outer=0 osmd=" + (osmd ? "1" : "0"));
         return;
       }
 
       // Tag this path and set initial phase so logStep prefixes are correct.
       const prevFuncTag = outer.dataset.osmdFunc ?? "";
       outer.dataset.osmdFunc = "reflowOnWidthChange";
-      outer.dataset.osmdPhase = "reflow";
+      outer.dataset.osmdPhase = "prep";
       void logStep(`start cause=${reflowCause ?? "-"}`);
 
       let prevVisForReflow: string | null = null;
@@ -1153,7 +1131,7 @@ const fmtFlags = useCallback((): string => {
         const attempt = Number(outer.dataset.osmdZoomAttempt || "0");
         outer.dataset.osmdZoomEntered   = String(attempt);
         outer.dataset.osmdZoomEnteredAt = String(Date.now());
-        void logStep(`attempt#${attempt} • ${fmtFlags()}`);
+        void logStep(`attempt# ${attempt} • ${fmtFlags()}`);
 
         const ap = makeAfterPaint(outer);
 
@@ -1162,7 +1140,7 @@ const fmtFlags = useCallback((): string => {
           outer.dataset.osmdZoomQueued   = String(attempt);
           outer.dataset.osmdZoomQueueWhy = "reflowRunning";
           outer.dataset.osmdZoomQueuedAt = String(Date.now());
-          void logStep(`attempt#${attempt} • why=reflowRunning • ${fmtFlags()}`);
+          void logStep("reflow already in progress; queued follow-up");
           return;
         }
         reflowRunningRef.current = true;
@@ -1183,6 +1161,10 @@ const fmtFlags = useCallback((): string => {
             ]);
           }
 
+          const ov = overlayRef.current;
+          const shown = !!ov && ov.style.display !== "none";
+          void logStep(shown ? "Spinner is visible" : "Spinner requested (visibility pending)");
+
           if (spinnerFailSafeRef.current) { window.clearTimeout(spinnerFailSafeRef.current); }
           spinnerFailSafeRef.current = window.setTimeout(() => {
             spinnerOwnerRef.current = null;
@@ -1194,7 +1176,6 @@ const fmtFlags = useCallback((): string => {
         // --------- HEAVY RENDER ---------
         const attemptForRender = Number(outer.dataset.osmdZoomEntered || "0");
         outer.dataset.osmdRenderAttempt = String(attemptForRender);
-        await logStep(`attempt#${attemptForRender}`);
 
         const hostForReflow = hostRef.current;
         if (hostForReflow) {
