@@ -1101,8 +1101,7 @@ export default function ScoreViewer({
 
 
   // Unified: render → scan → compute starts → apply(first page)
-  // NOTE: now tags logs with [renderScanApply] and adds enter/exit breadcrumbs.
-  const renderScanApply = useCallback(async (
+  const layoutViewer = useCallback(async (
     outer: HTMLDivElement,
     osmd: OpenSheetMusicDisplay,
     opts?: {
@@ -1113,9 +1112,8 @@ export default function ScoreViewer({
   ): Promise<{ bands: Band[]; starts: number[] }> => {
     const { gateLabel = "apply:first", gateMs = 400, doubleApply = true } = opts ?? {};
 
-    // func-tag so log prefixes show renderScanApply instead of the caller
     const prevFuncTag = outer.dataset.osmdFunc ?? "";
-    outer.dataset.osmdFunc = "renderScanApply";
+    outer.dataset.osmdFunc = "layoutViewer";
     outer.dataset.osmdPhase = "render";
     await logStep("phase starting", { outer });
 
@@ -1315,15 +1313,15 @@ export default function ScoreViewer({
 
         await spinBegin(outer, { message: DEFAULT_BUSY, gatePaint: true });
 
-        await logStep("phase finished", { outer });
-
-        const { bands, starts } = await renderScanApply(outer, osmd, {
+        const { bands, starts } = await layoutViewer(outer, osmd, {
           gateLabel: "one paint opportunity after first apply",
           gateMs: 400,
           doubleApply: true,
         });
         outer.dataset.osmdBands = String(bands.length);
         outer.dataset.osmdPages = String(starts.length);
+
+        await logStep("phase finished", { outer });
 
       } finally {
         if (started) {
@@ -1360,7 +1358,7 @@ export default function ScoreViewer({
       }
 
     },
-    [renderScanApply, fmtFlags, spinBegin, spinEnd]
+    [layoutViewer, fmtFlags, spinBegin, spinEnd]
   );
 
   // keep ref pointing to latest width-reflow callback
@@ -1579,18 +1577,12 @@ export default function ScoreViewer({
             (ms) => { void logStep(`unzip() runtime: (${ms}ms)`); }
           );
 
-          // --- STRICT MXL container handling (no fallback scan) ---
-          // Optional: tag a sub-phase; drop this line if you prefer to keep "load"
-          outer.dataset.osmdPhase = "mxl:container";
-
-          // 4) container.xml (required)
           const container = entries["META-INF/container.xml"];
           if (!container) {
             await logStep("container.xml missing → abort");
             throw new Error("MXL error: META-INF/container.xml missing");
           }
 
-          // 5) Read + parse container.xml
           const containerXml = await perfBlockAsync(
             nextPerfUID(outer.dataset.osmdRun),
             async () => {
@@ -1610,7 +1602,6 @@ export default function ScoreViewer({
             (ms) => { void logStep(`DOMParser().parseFromString() runtime: (${ms}ms)`); }
           );
 
-          // 6) Resolve rootfile path (full-path|path|href)
           const rootEl =
             cdoc.querySelector('rootfile[full-path]') ||
             cdoc.querySelector('rootfile[path]') ||
@@ -1632,7 +1623,6 @@ export default function ScoreViewer({
             throw new Error(`MXL error: rootfile entry not found in archive: ${fullPath}`);
           }
 
-          // 7) Read chosen MusicXML (timed)
           const entry = entries[fullPath]!;
           const xmlText = await perfBlockAsync(
             nextPerfUID(outer.dataset.osmdRun),
@@ -1642,7 +1632,6 @@ export default function ScoreViewer({
           outer.dataset.osmdZipChosen = fullPath;
           outer.dataset.osmdZipChars = String(xmlText.length);
 
-          // 8) Parse XML (timed) + validate
           const xmlDoc = await perfBlockAsync(
             nextPerfUID(outer.dataset.osmdRun),
             async () => new DOMParser().parseFromString(xmlText, "application/xml"),
@@ -1661,7 +1650,6 @@ export default function ScoreViewer({
             throw new Error("xmlDoc.getElementsByTagName() no partwise or timewise");
           }
 
-          // 9) Serialize and hand off to OSMD.load(...)
           {
             let s = "";
             s = perfBlock(
@@ -1675,7 +1663,12 @@ export default function ScoreViewer({
 
 
         } else {
-          // Non-API source: use as-is
+          // Non-API source: pass `src` straight to OSMD.load(...)
+          // - If `src` is a URL/path to a plain MusicXML file (e.g. "/scores/foo.musicxml" or "https://…"),
+          //   OSMD.load(...) will fetch it internally.
+          // - If `src` is already a MusicXML XML string, OSMD.load(...) will parse it directly.
+          // - (We only take the manual fetch + unzip path for "/api/*" endpoints that return MXL/ZIP content.)
+          // In other words: non-API = plain MusicXML, so no special handling here.
           loadInput = src;
         }
 
@@ -1697,7 +1690,7 @@ export default function ScoreViewer({
 
         await logStep("phase finished", { outer });
 
-        const { bands, starts } = await renderScanApply(outer, osmd, {
+        const { bands, starts } = await layoutViewer(outer, osmd, {
           gateLabel: "apply:first",
           gateMs: 450,
           doubleApply: false, // // init: single apply; we’ll repaginate on height next
@@ -1713,7 +1706,7 @@ export default function ScoreViewer({
 
         // Record the dimensions we just handled. The VisualViewport listener compares
         // future vv events against these to decide:
-        //   - width changed -> full reflow (renderScanApply via reflowViewer)
+        //   - width changed -> full reflow (layoutViewer via reflowViewer)
         //   - height only   -> quick repagination
         // We capture them here once at the end of init; the width-reflow path updates
         // these itself at the start of each run.
