@@ -1742,7 +1742,7 @@ export default function ScoreOSMD({
               const res = await fetch(src, { cache: "no-store" });
               if (!res.ok) { throw new Error(`HTTP ${res.status}`); }
 
-              const buf = await withTimeout(res.arrayBuffer(), 12000, "fetch:timeout");
+              const buf = await withTimeout(res.arrayBuffer(), 12000, "fetch timeout");
               // stash for the after() logger
               outer.dataset.osmdZipBytes = String(buf.byteLength);
               return buf;
@@ -1756,7 +1756,7 @@ export default function ScoreOSMD({
           // 2) Import unzipit (timed)
           const uzMod = await perfBlockAsync(
             nextPerfUID(outer.dataset.osmdRun),
-            async () => await withTimeout(import("unzipit"), 4000, "zip:lib:import:timeout"),
+            async () => await withTimeout(import("unzipit"), 4000, "unzipit timeout"),
             (ms) => { void logStep(`unzipit runtime: (${ms}ms)`); }
           );
           const { unzip } = uzMod as typeof import("unzipit");
@@ -1775,17 +1775,22 @@ export default function ScoreOSMD({
             const containerXml = await perfBlockAsync(
               nextPerfUID(outer.dataset.osmdRun),
               async () => {
-                const s = await withTimeout(container.text(), 6000, "read container timeout");
+                const s = await withTimeout(container.text(), 6000, "container.text timeout");
                 outer.dataset.osmdContainerChars = String(s.length);
                 return s;
               },
               (ms) => {
                 const chars = outer.dataset.osmdContainerChars ?? "?";
-                void logStep(`read container runtime: (${ms}ms) chars:${chars}`);
+                void logStep(`container.text runtime: (${ms}ms) chars:${chars}`);
               }
             );
 
-            const cdoc = new DOMParser().parseFromString(containerXml, "application/xml");
+            const cdoc = perfBlock(
+              nextPerfUID(outer.dataset.osmdRun),
+              () => new DOMParser().parseFromString(containerXml, "application/xml"),
+              (ms) => { void logStep(`container.parse runtime: (${ms}ms)`); }
+            );
+
             const rootfile =
               cdoc.querySelector('rootfile[full-path]') || cdoc.querySelector("rootfile");
             const fullPath =
@@ -1796,22 +1801,21 @@ export default function ScoreOSMD({
 
             if (fullPath && entries[fullPath]) {
               entryName = fullPath;
-              await logStep(`zip:container:selected:${entryName}`);
+              await logStep(`containter selected:${entryName}`);
             } else {
-              await logStep("zip:container:no-match");
+              await logStep("containter not found");
             }
           } else {
-            await logStep("zip:container:missing");
+            await logStep("container missing");
           }
 
           // 5) Fallback scan if container.xml didn’t resolve a score
           if (!entryName) {
-            await logStep("zip:scan:start");
             const candidates = Object.keys(entries).filter((p) => {
               const q = p.toLowerCase();
               return !q.startsWith("meta-inf/") && (q.endsWith(".musicxml") || q.endsWith(".xml"));
             });
-            void logStep(`zip:scan:found:${candidates.length}`);
+            void logStep(`candidates length${candidates.length}`);
 
             candidates.sort((a, b) => {
               const aa = a.toLowerCase(), bb = b.toLowerCase();
@@ -1825,19 +1829,19 @@ export default function ScoreOSMD({
             });
 
             entryName = candidates[0];
-            await logStep(`zip:scan:pick:${entryName ?? "(none)"}`);
+            await logStep(`entry name ${entryName ?? "(none)"}`);
           }
 
-          if (!entryName) { throw new Error("zip:no-musicxml-in-archive"); }
+          if (!entryName) { throw new Error("entry name missing"); }
 
           // 6) Read chosen file (timed)
           const entry = entries[entryName];
-          if (!entry) { throw new Error(`zip:file:missing:${entryName}`); }
+          if (!entry) { throw new Error(`entry missing:${entryName}`); }
 
           const xmlText = await perfBlockAsync(
             nextPerfUID(outer.dataset.osmdRun),
-            async () => await withTimeout(entry.text(), 10000, "zip:file:read:timeout"),
-            (ms) => { void logStep(`zip:file:read runtime: (${ms}ms)`); }
+            async () => await withTimeout(entry.text(), 10000, "entry.text() timeout"),
+            (ms) => { void logStep(`entry.text() runtime: (${ms}ms)`); }
           );
 
           await logStep("zip:file:read:ok");
@@ -1848,49 +1852,62 @@ export default function ScoreOSMD({
           const xmlDoc = await perfBlockAsync(
             nextPerfUID(outer.dataset.osmdRun),
             async () => new DOMParser().parseFromString(xmlText, "application/xml"),
-            (ms) => { void logStep(`xml:parse runtime: (${ms}ms)`); }
+            (ms) => { void logStep(`DOMParser().parseFromString runtime: (${ms}ms)`); }
           );
 
           if (xmlDoc.getElementsByTagName("parsererror").length > 0) {
-            throw new Error("MusicXML parse error: XML parsererror");
+            throw new Error("xmlDoc.getElementsByTagName parsererror");
           }
           const hasPartwise = xmlDoc.getElementsByTagName("score-partwise").length > 0;
           const hasTimewise = xmlDoc.getElementsByTagName("score-timewise").length > 0;
           await logStep(`xml:tags pw=${String(hasPartwise)} tw=${String(hasTimewise)}`);
           if (!hasPartwise && !hasTimewise) {
-            throw new Error("MusicXML parse error: no score-partwise/score-timewise");
+            throw new Error("xmlDoc.getElementsByTagName no partwise or timewise");
           }
 
           // 8) Hand off to OSMD.load(...)
-          loadInput = new XMLSerializer().serializeToString(xmlDoc);
-          await logStep("load:ready");
+
+          {
+            let s = "";
+            s = perfBlock(
+              nextPerfUID(outer.dataset.osmdRun),
+              () => new XMLSerializer().serializeToString(xmlDoc),
+              (ms) => { void logStep(`XMLSerializer().serializeToString runtime: (${ms}ms) chars=${s.length}`); }
+            );
+            outer.dataset.osmdXmlChars = String(s.length);
+            loadInput = s;
+          }
         } else {
           // Non-API source: use as-is
           loadInput = src;
         }
 
-        // --- osmd.load (heartbeat + timing) ---
-        await logStep("osmd.load:start");
-        const loadStart = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
-        let loadBeat: number | null = null;
+        // --- OSMD.load (timed, lazy heartbeat) ---
+        await perfBlockAsync(
+          nextPerfUID(outer.dataset.osmdRun),
+          async () => {
+            const t0 = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
 
-        loadBeat = window.setInterval(() => {
-          const now = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
-          const secs = Math.round((now - loadStart) / 1000);
-          void logStep(`osmd.load:heartbeat +${secs}s`);
-        }, 1000);
+            // only start a heartbeat if the load is slow (cuts log noise)
+            let hb: number | null = null;
+            let arm: number | null = window.setTimeout(() => {
+              arm = null;
+              hb = window.setInterval(() => {
+                const now = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
+                const secs = Math.round((now - t0) / 1000);
+                void logStep(`osmd.load heartbeat +${secs}s`, { outer });
+              }, 1000);
+            }, 700);
 
-        try {
-          await awaitLoad(osmd, loadInput);
-          const durMs = ((typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now()) - loadStart;
-          void logStep(`osmd.load: ${Math.round(durMs)}ms`);
-          await logStep("osmd.load:done");
-        } finally {
-          if (loadBeat !== null) {
-            window.clearInterval(loadBeat);
-            loadBeat = null;
-          }
-        }
+            try {
+              await awaitLoad(osmd, loadInput);
+            } finally {
+              if (arm !== null) { window.clearTimeout(arm); }
+              if (hb !== null) { window.clearInterval(hb); }
+            }
+          },
+          (ms) => { void logStep(`osmd.load runtime: (${ms}ms)`); }
+        );
 
         // --- Fonts (bounded wait) ---
         await logStep("fonts:waiting");
