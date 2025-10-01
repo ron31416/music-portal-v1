@@ -1907,10 +1907,11 @@ export default function ScoreOSMD({
           (ms) => { void logStep(`osmd.load runtime: (${ms}ms)`); }
         );
 
-        // --- Fonts (bounded wait) ---
-        await logStep("fonts:waiting");
-        await waitForFonts();
-        await logStep("fonts:ready");
+        await perfBlockAsync(
+          nextPerfUID(outer.dataset.osmdRun),
+          async () => { await waitForFonts(); },
+          (ms) => { void logStep(`waitForFonts() runtime: (${ms}ms)`); }
+        );
 
         outer.dataset.osmdPhase = "render";
         await logStep("starting phase");
