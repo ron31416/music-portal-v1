@@ -1086,6 +1086,107 @@ export default function ScoreOSMD({
     [pageHeight, topGutterPx, bottomPeekPad, getPAGE_H]
   );
 
+  // Hide the SVG host while we do heavy work, then restore previous styles.
+  const withHostHidden = useCallback(async <T,>(
+    outer: HTMLDivElement,
+    work: () => Promise<T>
+  ): Promise<T> => {
+    const host = hostRef.current;
+    let prevVis = "";
+    let prevCv = "";
+    if (host) {
+      prevVis = host.style.visibility || "";
+      prevCv = host.style.getPropertyValue("content-visibility") || "";
+      host.style.removeProperty("content-visibility");
+      host.style.visibility = "hidden";
+      try { void host.getBoundingClientRect().width; } catch { /* layout flush */ }
+    }
+    try {
+      return await work();
+    } finally {
+      if (host) {
+        if (prevCv) { host.style.setProperty("content-visibility", prevCv); }
+        else { host.style.removeProperty("content-visibility"); }
+        if (prevVis) { host.style.visibility = prevVis; }
+        else { host.style.removeProperty("visibility"); }
+      }
+    }
+  }, []);
+
+  // Unified: render → scan → compute starts → apply(first page)
+  const renderScanApply = useCallback(async (
+    outer: HTMLDivElement,
+    osmd: OpenSheetMusicDisplay,
+    opts?: {
+      gateLabel?: string;     // label for after-paint breadcrumb
+      gateMs?: number;        // paint gate timeout
+      doubleApply?: boolean;  // whether to applyPage(0) twice (reflow=yes, init=no)
+    }
+  ): Promise<{ bands: Band[]; starts: number[] }> => {
+    const { gateLabel = "apply:first", gateMs = 400, doubleApply = true } = opts ?? {};
+    const ap = makeAfterPaint(outer);
+
+    // --- RENDER ---
+    await logStep("phase finished", { outer });
+    outer.dataset.osmdPhase = "render";
+    await logStep("phase starting", { outer });
+
+    await withHostHidden(outer, async () => {
+      const uid = nextPerfUID(outer.dataset.osmdRun);
+      await perfBlockAsync(
+        uid,
+        async () => { await renderWithEffectiveWidth(outer, osmd); },
+        (ms) => { outer.dataset.osmdRenderMs = String(ms); void logStep(`renderWithEffectiveWidth runtime: (${ms}ms)`); }
+      );
+    });
+
+    await new Promise<void>((r) => setTimeout(r, 0)); // yield one task
+
+    // --- SCAN ---
+    await logStep("phase finished", { outer });
+    outer.dataset.osmdPhase = "scan";
+    await logStep("phase starting", { outer });
+
+    const bands = perfBlock(
+      nextPerfUID(outer.dataset.osmdRun),
+      () => withUntransformedSvg(outer, (svg) => scanSystemsPx(outer, svg)) ?? [],
+      (ms) => { void logStep(`scanSystemsPx runtime: (${ms}ms)`); }
+    );
+    outer.dataset.osmdBands = String(bands.length);
+    if (bands.length === 0) {
+      await logStep("0 bands — abort");
+      return { bands: [], starts: [0] };
+    }
+
+    const H = getPAGE_H(outer);
+    const starts = perfBlock(
+      nextPerfUID(outer.dataset.osmdRun),
+      () => computePageStartIndices(outer, bands, H),
+      (ms) => { void logStep(`computePageStartIndices runtime: (${ms}ms) H=${H}`); }
+    );
+
+    // --- APPLY (first page) ---
+    await logStep("phase finished", { outer });
+    outer.dataset.osmdPhase = "apply";
+    await logStep("phase starting", { outer });
+
+    pageStartsRef.current = starts;
+    bandsRef.current = bands;
+    pageIdxRef.current = 0;
+
+    await perfBlockAsync(
+      nextPerfUID(outer.dataset.osmdRun),
+      async () => {
+        applyPage(0);
+        await Promise.race([ap(gateLabel, gateMs), new Promise<void>((r) => setTimeout(r, gateMs))]);
+        if (doubleApply) { applyPage(0); }
+      },
+      (ms) => { void logStep(`applyPage(0) runtime: (${ms}ms)`); }
+    );
+
+    return { bands, starts };
+  }, [nextPerfUID, renderWithEffectiveWidth, withHostHidden, getPAGE_H, applyPage]);
+
   // --- HEIGHT-ONLY REPAGINATION (no OSMD re-init) ---
   const recomputePaginationHeightOnly = useCallback(
     (resetToFirst: boolean = false, withSpinner: boolean = false): void => {
@@ -1192,8 +1293,10 @@ export default function ScoreOSMD({
 
       await logStep(`reflow cause=${reflowCause ?? "-"}`);
 
-      let prevVisForReflow: string | null = null;
-      let prevCvForReflow: string | null = null;
+      // Capture host & its current styles once; we'll restore these in `finally`
+      // const hostForReflow = hostRef.current;
+      // const prevVisForReflow: string = hostForReflow?.style.visibility ?? "";
+      // const prevCvForReflow: string = hostForReflow?.style.getPropertyValue("content-visibility") ?? "";
 
       let started = false;
 
@@ -1234,183 +1337,229 @@ export default function ScoreOSMD({
         await spinBegin(outer, { message: DEFAULT_BUSY, gatePaint: true });
 
         await logStep("phase finished", { outer });
-        outer.dataset.osmdPhase = "render";
-        await logStep("phase starting", { outer });
+        /*        
+                outer.dataset.osmdPhase = "render";
+                await logStep("phase starting", { outer });
+        
+                const ap = makeAfterPaint(outer);
+                await new Promise<void>((r) => setTimeout(r, 0)); // macrotask
+                await ap("one paint opportunity before heavy render");
+        
+                const hostForReflow = hostRef.current;
+                if (hostForReflow) {
+                  prevVisForReflow = hostForReflow.style.visibility || "";
+                  prevCvForReflow = hostForReflow.style.getPropertyValue("content-visibility") || "";
+                  hostForReflow.style.removeProperty("content-visibility");
+                  hostForReflow.style.visibility = "hidden";
+                  try { void hostForReflow.getBoundingClientRect().width; } catch { }
+                }
+        
+                {
+                  const uid = nextPerfUID(outer.dataset.osmdRun);
+                  const work = async () => {
+                    await renderWithEffectiveWidth(outer, osmd);
+                  };
+                  const after = (ms: number) => {
+                    outer.dataset.osmdRenderMs = String(ms);
+                    void logStep(`renderWithEffectiveWidth runtime: (${ms}ms)`);
+                  };
+                  await perfBlockAsync(uid, work, after);
+                }
+        
+                await new Promise<void>(r => setTimeout(r, 0));
+                await logStep("yielded one task before next phase");
+        
+                await logStep("phase finished", { outer });
+                outer.dataset.osmdPhase = "scan";
+                await logStep("phase starting", { outer });
+        
+                let newBands: Band[] = [];
+                {
+                  const uid = nextPerfUID(outer.dataset.osmdRun);
+                  const work = () =>
+                    withUntransformedSvg(outer, (svg) => scanSystemsPx(outer, svg)) ?? [];
+                  const after = (ms: number) => {
+                    void logStep(`scanSystemsPx runtime: (${ms}ms)`);
+                  };
+                  newBands = perfBlock(uid, work, after);
+                }
+                const n = newBands.length;
+                outer.dataset.osmdBands = String(n);
+                if (n === 0) {
+                  await logStep("0 bands — abort");
+                  return;
+                }
+                bandsRef.current = newBands;
+        
+                let newStarts: number[] = [];
+                {
+                  const uid = nextPerfUID(outer.dataset.osmdRun);
+                  const H = getPAGE_H(outer);
+                  newStarts = perfBlock(
+                    uid,
+                    () => computePageStartIndices(outer, newBands, H),
+                    (ms) => { void logStep(`computePageStartIndices runtime: (${ms}ms) H=${H}`); }
+                  );
+                }
+                pageStartsRef.current = newStarts;
+        
+                await logStep("phase finished", { outer });
+                outer.dataset.osmdPhase = "apply";
+                await logStep("phase starting", { outer });
+        
+                {
+                  const uid = nextPerfUID(outer.dataset.osmdRun);
+                  const work = async () => {
+                    applyPage(0);
+                    await Promise.race([
+                      ap("one paint opportunity after first apply"),
+                      new Promise<void>((r) => setTimeout(r, 400)),
+                    ]);
+                    applyPage(0);
+                  };
+                  const after = (ms: number) => {
+                    void logStep(`applyPage(0) (two calls + gate) runtime: (${ms}ms)`);
+                  };
+                  await perfBlockAsync(uid, work, after);
+                }
+        
+                await logStep("phase finished", { outer });
+        */
 
-        const ap = makeAfterPaint(outer);
-        await new Promise<void>((r) => setTimeout(r, 0)); // macrotask
-        await ap("one paint opportunity before heavy render");
-
-        const hostForReflow = hostRef.current;
-        if (hostForReflow) {
-          prevVisForReflow = hostForReflow.style.visibility || "";
-          prevCvForReflow = hostForReflow.style.getPropertyValue("content-visibility") || "";
-          hostForReflow.style.removeProperty("content-visibility");
-          hostForReflow.style.visibility = "hidden";
-          try { void hostForReflow.getBoundingClientRect().width; } catch { }
-        }
-
-        {
-          const uid = nextPerfUID(outer.dataset.osmdRun);
-          const work = async () => {
-            await renderWithEffectiveWidth(outer, osmd);
-          };
-          const after = (ms: number) => {
-            outer.dataset.osmdRenderMs = String(ms);
-            void logStep(`renderWithEffectiveWidth runtime: (${ms}ms)`);
-          };
-          await perfBlockAsync(uid, work, after);
-        }
-
-        await new Promise<void>(r => setTimeout(r, 0));
-        await logStep("yielded one task before next phase");
-
-        await logStep("phase finished", { outer });
-        outer.dataset.osmdPhase = "scan";
-        await logStep("phase starting", { outer });
-
-        let newBands: Band[] = [];
-        {
-          const uid = nextPerfUID(outer.dataset.osmdRun);
-          const work = () =>
-            withUntransformedSvg(outer, (svg) => scanSystemsPx(outer, svg)) ?? [];
-          const after = (ms: number) => {
-            void logStep(`scanSystemsPx runtime: (${ms}ms)`);
-          };
-          newBands = perfBlock(uid, work, after);
-        }
-        const n = newBands.length;
-        outer.dataset.osmdBands = String(n);
-        if (n === 0) {
-          await logStep("0 bands — abort");
-          return;
-        }
-        bandsRef.current = newBands;
-
-        let newStarts: number[] = [];
-        {
-          const uid = nextPerfUID(outer.dataset.osmdRun);
-          const H = getPAGE_H(outer);
-          newStarts = perfBlock(
-            uid,
-            () => computePageStartIndices(outer, newBands, H),
-            (ms) => { void logStep(`computePageStartIndices runtime: (${ms}ms) H=${H}`); }
-          );
-        }
-        pageStartsRef.current = newStarts;
-
-        await logStep("phase finished", { outer });
-        outer.dataset.osmdPhase = "apply";
-        await logStep("phase starting", { outer });
-
-        {
-          const uid = nextPerfUID(outer.dataset.osmdRun);
-          const work = async () => {
-            applyPage(0);
-            await Promise.race([
-              ap("one paint opportunity after first apply"),
-              new Promise<void>((r) => setTimeout(r, 400)),
-            ]);
-            applyPage(0);
-          };
-          const after = (ms: number) => {
-            void logStep(`applyPage(0) (two calls + gate) runtime: (${ms}ms)`);
-          };
-          await perfBlockAsync(uid, work, after);
-        }
-
-        await logStep("phase finished", { outer });
+        const { bands, starts } = await renderScanApply(outer, osmd, {
+          gateLabel: "one paint opportunity after first apply",
+          gateMs: 400,
+          doubleApply: true,
+        });
+        outer.dataset.osmdBands = String(bands.length);
+        outer.dataset.osmdPages = String(starts.length);
+        /*
+              } finally {
+                if (started) {
+                  try { outer.dataset.osmdPhase = "finally"; } catch { }
+                  await logStep("phase starting", { outer });
+        
+                  // Reveal host now that the page has been applied (or if we bailed)
+                  try {
+                    const hostNow = hostRef.current;
+                    if (hostNow) {
+                      // restore content-visibility
+                      if (prevCvForReflow) {
+                        hostNow.style.setProperty("content-visibility", prevCvForReflow);
+                      } else {
+                        hostNow.style.removeProperty("content-visibility");
+                      }
+        
+                      // restore visibility
+                      if (prevVisForReflow) {
+                        hostNow.style.visibility = prevVisForReflow;
+                      } else {
+                        hostNow.style.removeProperty("visibility");
+                      }
+                    }
+                  } catch { }
+        
+        
+                  //spinnerOwnerRef.current = null;
+        
+        
+                  // set reflowRunning=false BEFORE we flip busy off so the post-busy drain
+                  // sees we're idle and can drain queued work immediately.
+                  reflowRunningRef.current = false;
+        
+                  // if a queued width-reflow matches the width we just handled, drop it
+                  try {
+                    const wHandled = Number(outer.dataset.osmdReflowTargetW ?? NaN);
+                    const wNow = wrapRef.current ? (wrapRef.current.clientWidth || 0) : NaN;
+        
+                    if (
+                      reflowAgainRef.current === "width" &&
+                      Number.isFinite(wHandled) &&
+                      Number.isFinite(wNow) &&
+                      Math.abs(wNow - wHandled) < 1 // <= 1px tolerance
+                    ) {
+                      reflowAgainRef.current = "none";
+                      reflowQueuedCauseRef.current = "";
+                      await logStep(`dropped queued width reflow: handled=${wHandled}px current=${wNow}px (Δ<1px)`);
+                    }
+                  } catch {}
+        
+        
+                  // hide overlay next; post-busy drain will see reflowRunning=false and (if dropped) no queued work
+                  //hideBusy();
+        
+                  await spinEnd(outer);
+        
+                  // clear breadcrumbs
+                  outer.dataset.osmdReflowTargetW = "";
+                  outer.dataset.osmdReflowTargetH = "";
+        
+                  const queued = reflowAgainRef.current;
+                  const cause = reflowQueuedCauseRef.current || "drain:finally";
+        
+                  // clear flags before scheduling to avoid double-drain races
+                  reflowAgainRef.current = "none";
+                  reflowQueuedCauseRef.current = "";
+        
+                  // Only log/schedule if there's actually something to drain
+                  if (queued === "width") {
+                    await logStep(`draining queued width reflow (cause=${cause})`);
+                    setTimeout(() => {
+                      void logStep(`starting queued width reflow (cause=${cause})`);
+                      reflowFnRef.current(cause);
+                    }, 0);
+                  } else if (queued === "height") {
+                    await logStep(`draining queued height repagination (cause=${cause})`);
+                    setTimeout(() => {
+                      void logStep("starting queued height repagination");
+                      repagFnRef.current(true, false);
+                    }, 0);
+                  }
+                  // else: queued === "none" → no log, nothing to schedule
+        
+                  await logStep("phase finished", { outer });
+                }
+        
+                try { outer.dataset.osmdFunc = prevFuncTag; } catch { }
+              }
+              */
 
       } finally {
         if (started) {
           try { outer.dataset.osmdPhase = "finally"; } catch { }
           await logStep("phase starting", { outer });
 
-          // Reveal host now that the page has been applied (or if we bailed)
-          try {
-            const hostNow = hostRef.current;
-            if (hostNow) {
-              // restore content-visibility
-              if (prevCvForReflow) {
-                hostNow.style.setProperty("content-visibility", prevCvForReflow);
-              } else {
-                hostNow.style.removeProperty("content-visibility");
-              }
-
-              // restore visibility
-              if (prevVisForReflow) {
-                hostNow.style.visibility = prevVisForReflow;
-              } else {
-                hostNow.style.removeProperty("visibility");
-              }
-            }
-          } catch { }
-
-
-          //spinnerOwnerRef.current = null;
-
-
-          // set reflowRunning=false BEFORE we flip busy off so the post-busy drain
-          // sees we're idle and can drain queued work immediately.
+          // we finished a run; drop the guard before hiding spinner
           reflowRunningRef.current = false;
 
-          // if a queued width-reflow matches the width we just handled, drop it
-          try {
-            const wHandled = Number(outer.dataset.osmdReflowTargetW ?? NaN);
-            const wNow = wrapRef.current ? (wrapRef.current.clientWidth || 0) : NaN;
-
-            if (
-              reflowAgainRef.current === "width" &&
-              Number.isFinite(wHandled) &&
-              Number.isFinite(wNow) &&
-              Math.abs(wNow - wHandled) < 1 // <= 1px tolerance
-            ) {
-              reflowAgainRef.current = "none";
-              reflowQueuedCauseRef.current = "";
-              await logStep(`dropped queued width reflow: handled=${wHandled}px current=${wNow}px (Δ<1px)`);
-            }
-          } catch { /* ignore */ }
-
-
-          // hide overlay next; post-busy drain will see reflowRunning=false and (if dropped) no queued work
-          //hideBusy();
-
+          // spinner end + small paint gate
           await spinEnd(outer);
 
           // clear breadcrumbs
           outer.dataset.osmdReflowTargetW = "";
           outer.dataset.osmdReflowTargetH = "";
 
+          // drain any queued work
           const queued = reflowAgainRef.current;
           const cause = reflowQueuedCauseRef.current || "drain:finally";
-
-          // clear flags before scheduling to avoid double-drain races
           reflowAgainRef.current = "none";
           reflowQueuedCauseRef.current = "";
 
-          // Only log/schedule if there's actually something to drain
           if (queued === "width") {
             await logStep(`draining queued width reflow (cause=${cause})`);
-            setTimeout(() => {
-              void logStep(`starting queued width reflow (cause=${cause})`);
-              reflowFnRef.current(cause);
-            }, 0);
+            setTimeout(() => { reflowFnRef.current(cause); }, 0);
           } else if (queued === "height") {
             await logStep(`draining queued height repagination (cause=${cause})`);
-            setTimeout(() => {
-              void logStep("starting queued height repagination");
-              repagFnRef.current(true, false);
-            }, 0);
+            setTimeout(() => { repagFnRef.current(true, false); }, 0);
           }
-          // else: queued === "none" → no log, nothing to schedule
 
           await logStep("phase finished", { outer });
         }
-
         try { outer.dataset.osmdFunc = prevFuncTag; } catch { }
       }
+
     },
-    [applyPage, getPAGE_H, renderWithEffectiveWidth, fmtFlags, nextPerfUID, spinBegin, spinEnd]
+    [renderScanApply, fmtFlags, spinBegin, spinEnd]
   );
 
   // keep ref pointing to latest width-reflow callback
@@ -1565,7 +1714,7 @@ export default function ScoreOSMD({
         } catch { }
 
         // Create afterPaint helper *before* heavy steps so we can flush logs/spinner
-        const ap = makeAfterPaint(outer);
+        //const ap = makeAfterPaint(outer);
 
         // --- Dynamic import OSMD ---
         const mod = await perfBlockAsync(
@@ -1766,152 +1915,165 @@ export default function ScoreOSMD({
         );
 
         await logStep("phase finished", { outer });
-        outer.dataset.osmdPhase = "render";
-        await logStep("phase starting");
+        /*        
+                outer.dataset.osmdPhase = "render";
+                await logStep("phase starting");
+        
+                // Prevent giant paint during render: hide host, keep layout available
+                const hostForInit = hostRef.current
+                const prevVisForInit = hostForInit?.style.visibility ?? ""
+                const prevCvValueForInit: string =
+                  hostForInit ? hostForInit.style.getPropertyValue("content-visibility") : ""
+        
+                if (hostForInit) {
+                  hostForInit.style.removeProperty("content-visibility");
+                  hostForInit.style.visibility = "hidden"
+                }
+        
+                await perfBlockAsync(
+                  nextPerfUID(outer.dataset.osmdRun),
+                  async () => { await renderWithEffectiveWidth(outer, osmd); },
+                  (ms) => { void logStep(`renderWithEffectiveWidth runtime: (${ms}ms)`); }
+                );
+        
+                await logStep("phase finished", { outer });
+                outer.dataset.osmdPhase = "scan";
+                await logStep("phase starting");
+        
+                // Prepare the rendered SVG subtree for layout calculations.
+                // Similar to the reflow path: strip content-visibility so
+                // the browser actually lays it out, but keep it hidden from
+                // the user until pagination/masking is ready.
+                try {
+                  const hostX = hostRef.current;
+                  if (hostX) {
+                    hostX.style.removeProperty("content-visibility");
+                    hostX.style.visibility = "hidden";         // keep hidden until ready
+                    void hostX.getBoundingClientRect().width;  // force layout
+                    void hostX.scrollWidth;                    // ditto
+                  }
+                } catch { }
+        
+                // --- Measure systems + first pagination ---
+                void outer.getBoundingClientRect(); // layout flush
+        
+                // PROBE A (init)
+                try {
+                  const host = hostRef.current!;
+                  const cs = getComputedStyle(host);
+                  void logStep(
+                    `pre-measure(init): outerH=${outer.clientHeight} pageH=${getPAGE_H(outer)} ` +
+                    `host.vis=${cs.visibility} host.cv=${cs.getPropertyValue('content-visibility')} ` +
+                    `host.contain=${cs.getPropertyValue('contain')}`
+                  );
+                } catch { }
+        
+                const bands =
+                  withUntransformedSvg(outer, (svg) =>
+                    timeSection("measure:scan", () => scanSystemsPx(outer, svg))
+                  ) ?? [];
+        
+                void logStep(`measure:scan:exit bands=${bands.length}`);
+        
+                if (bands.length === 0) {
+                  outer.dataset.osmdPhase = "measure:0:init-abort";
+                  void logStep("measure:init:0 — aborting first pagination");
+        
+                  try {
+                    const svg = getSvg(outer);
+                    if (svg) {
+                      const vb = svg.getAttribute('viewBox') || '(none)';
+                      const sr = svg.getBoundingClientRect();
+                      const gs = Array.from(svg.querySelectorAll('g'))
+                        .slice(0, 10)
+                        .map((g, i) => {
+                          const r = (g as SVGGElement).getBoundingClientRect();
+                          return `g${i}:{w:${Math.round(r.width)},h:${Math.round(r.height)}}`;
+                        }).join(' ');
+                      void logStep(`bands==0: svgRect=${Math.round(sr.width)}x${Math.round(sr.height)} viewBox=${vb} sample=[${gs}]`);
+                    } else {
+                      void logStep('bands==0: svg missing');
+                    }
+                  } catch (e) {
+                    void logStep(`bands==0: probe EXC ${(e as Error)?.message ?? e}`);
+                  }
+        
+                  // restore host visibility before returning
+                  try {
+                    const hostForInit3 = hostRef.current;
+                    if (hostForInit3) {
+                      // restore CV first
+                      if (prevCvValueForInit) {
+                        hostForInit3.style.setProperty("content-visibility", prevCvValueForInit);
+                      } else {
+                        hostForInit3.style.removeProperty("content-visibility");
+                      }
+                    }
+                  } catch { }
+                  await spinEnd(outer);
+                  return;
+                }
+                bandsRef.current = bands;
+        
+                outer.dataset.osmdSvg = String(!!getSvg(outer));
+                outer.dataset.osmdBands = String(bands.length);
+        
+                const __startsInit = timeSection(
+                  "starts:compute",
+                  () => computePageStartIndices(outer, bands, getPAGE_H(outer))
+                );
+                pageStartsRef.current = __startsInit;
+                outer.dataset.osmdPages = String(pageStartsRef.current.length);
+                void logStep(`starts:init: ${pageStartsRef.current.join(",")}`);
+        
+                await logStep("phase finished", { outer });
+                outer.dataset.osmdPhase = "apply";
+                await logStep("phase starting", { outer });
+        
+                pageIdxRef.current = 0;
+                timeSection("apply:first", () => { applyPage(0); });
+                await ap("apply:first", 450);
+        
+                // Reveal host now that first page is applied
+                try {
+                  const hostForInit2 = hostRef.current;
+                  if (hostForInit2) {
+                    if (prevCvValueForInit) {
+                      hostForInit2.style.setProperty("content-visibility", prevCvValueForInit || "");
+                    } else {
+                      hostForInit2.style.removeProperty("content-visibility");
+                    }
+                    hostForInit2.style.visibility = prevVisForInit || "visible";
+                  }
+                } catch { }
+        
+                // Quick snapshot
+                void logStep(`init: svg=${outer.dataset.osmdSvg} bands=${outer.dataset.osmdBands} pages=${outer.dataset.osmdPages}`);
+        
+                // Height-only repagination (no spinner) after first paint
+                recomputePaginationHeightOnly(true, false);
+                void logStep("repag:init:scheduled");
+        
+                // record current handled dimensions
+                handledWRef.current = outer.clientWidth;
+                handledHRef.current = outer.clientHeight;
+        
+                readyRef.current = true;
+                await spinEnd(outer);
+        
+                await logStep("phase finished", { outer });
+        */
 
-        // Prevent giant paint during render: hide host, keep layout available
-        const hostForInit = hostRef.current
-        const prevVisForInit = hostForInit?.style.visibility ?? ""
-        const prevCvValueForInit: string =
-          hostForInit ? hostForInit.style.getPropertyValue("content-visibility") : ""
-
-        if (hostForInit) {
-          hostForInit.style.removeProperty("content-visibility");
-          hostForInit.style.visibility = "hidden"
-        }
-
-        await perfBlockAsync(
-          nextPerfUID(outer.dataset.osmdRun),
-          async () => { await renderWithEffectiveWidth(outer, osmd); },
-          (ms) => { void logStep(`renderWithEffectiveWidth runtime: (${ms}ms)`); }
-        );
-
-        await logStep("phase finished", { outer });
-        outer.dataset.osmdPhase = "scan";
-        await logStep("phase starting");
-
-        // Prepare the rendered SVG subtree for layout calculations.
-        // Similar to the reflow path: strip content-visibility so
-        // the browser actually lays it out, but keep it hidden from
-        // the user until pagination/masking is ready.
-        try {
-          const hostX = hostRef.current;
-          if (hostX) {
-            hostX.style.removeProperty("content-visibility");
-            hostX.style.visibility = "hidden";         // keep hidden until ready
-            void hostX.getBoundingClientRect().width;  // force layout
-            void hostX.scrollWidth;                    // ditto
-          }
-        } catch { }
-
-        // --- Measure systems + first pagination ---
-        void outer.getBoundingClientRect(); // layout flush
-
-        // PROBE A (init)
-        try {
-          const host = hostRef.current!;
-          const cs = getComputedStyle(host);
-          void logStep(
-            `pre-measure(init): outerH=${outer.clientHeight} pageH=${getPAGE_H(outer)} ` +
-            `host.vis=${cs.visibility} host.cv=${cs.getPropertyValue('content-visibility')} ` +
-            `host.contain=${cs.getPropertyValue('contain')}`
-          );
-        } catch { }
-
-        const bands =
-          withUntransformedSvg(outer, (svg) =>
-            timeSection("measure:scan", () => scanSystemsPx(outer, svg))
-          ) ?? [];
-
-        void logStep(`measure:scan:exit bands=${bands.length}`);
-
-        if (bands.length === 0) {
-          outer.dataset.osmdPhase = "measure:0:init-abort";
-          void logStep("measure:init:0 — aborting first pagination");
-
-          try {
-            const svg = getSvg(outer);
-            if (svg) {
-              const vb = svg.getAttribute('viewBox') || '(none)';
-              const sr = svg.getBoundingClientRect();
-              const gs = Array.from(svg.querySelectorAll('g'))
-                .slice(0, 10)
-                .map((g, i) => {
-                  const r = (g as SVGGElement).getBoundingClientRect();
-                  return `g${i}:{w:${Math.round(r.width)},h:${Math.round(r.height)}}`;
-                }).join(' ');
-              void logStep(`bands==0: svgRect=${Math.round(sr.width)}x${Math.round(sr.height)} viewBox=${vb} sample=[${gs}]`);
-            } else {
-              void logStep('bands==0: svg missing');
-            }
-          } catch (e) {
-            void logStep(`bands==0: probe EXC ${(e as Error)?.message ?? e}`);
-          }
-
-          // restore host visibility before returning
-          try {
-            const hostForInit3 = hostRef.current;
-            if (hostForInit3) {
-              // restore CV first
-              if (prevCvValueForInit) {
-                hostForInit3.style.setProperty("content-visibility", prevCvValueForInit);
-              } else {
-                hostForInit3.style.removeProperty("content-visibility");
-              }
-            }
-          } catch { }
-          await spinEnd(outer);
-          return;
-        }
-        bandsRef.current = bands;
-
-        outer.dataset.osmdSvg = String(!!getSvg(outer));
+        const { bands, starts } = await renderScanApply(outer, osmd, {
+          gateLabel: "apply:first",
+          gateMs: 450,
+          doubleApply: false, // init does single apply; you repag right after
+        });
         outer.dataset.osmdBands = String(bands.length);
+        outer.dataset.osmdPages = String(starts.length);
 
-        const __startsInit = timeSection(
-          "starts:compute",
-          () => computePageStartIndices(outer, bands, getPAGE_H(outer))
-        );
-        pageStartsRef.current = __startsInit;
-        outer.dataset.osmdPages = String(pageStartsRef.current.length);
-        void logStep(`starts:init: ${pageStartsRef.current.join(",")}`);
-
-        await logStep("phase finished", { outer });
-        outer.dataset.osmdPhase = "apply";
-        await logStep("phase starting", { outer });
-
-        pageIdxRef.current = 0;
-        timeSection("apply:first", () => { applyPage(0); });
-        await ap("apply:first", 450);
-
-        // Reveal host now that first page is applied
-        try {
-          const hostForInit2 = hostRef.current;
-          if (hostForInit2) {
-            if (prevCvValueForInit) {
-              hostForInit2.style.setProperty("content-visibility", prevCvValueForInit || "");
-            } else {
-              hostForInit2.style.removeProperty("content-visibility");
-            }
-            hostForInit2.style.visibility = prevVisForInit || "visible";
-          }
-        } catch { }
-
-        // Quick snapshot
-        void logStep(`init: svg=${outer.dataset.osmdSvg} bands=${outer.dataset.osmdBands} pages=${outer.dataset.osmdPages}`);
-
-        // Height-only repagination (no spinner) after first paint
+        // keep your existing: snapshot log, schedule height-only repag, set handledW/H, readyRef, etc.
         recomputePaginationHeightOnly(true /* resetToFirst */, false /* no spinner */);
-        void logStep("repag:init:scheduled");
-
-        // record current handled dimensions
-        handledWRef.current = outer.clientWidth;
-        handledHRef.current = outer.clientHeight;
-
-        readyRef.current = true;
-        await spinEnd(outer);
-
-        await logStep("phase finished", { outer });
 
       } finally {
         try { outer.dataset.osmdPhase = "finally"; } catch { }
@@ -1927,7 +2089,7 @@ export default function ScoreOSMD({
       // If init crashed after spinBegin, close the spinner immediately.
       // (Fatal no-visualViewport path never sets spinnerOwnerRef, so it stays up.)
       if (spinnerOwnerRef.current) {
-        try { await spinEnd(wrapRef.current!); } catch { /* ignore */ }
+        try { await spinEnd(wrapRef.current!); } catch { }
       } else {
         hideBusy(); // fallback for any older/non-spinner busy state
       }
