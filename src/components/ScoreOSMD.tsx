@@ -209,16 +209,6 @@ export async function logStep(
     }
   } catch { }
 }
-
-// --- DIAGNOSTIC: tiny timing helper (no behavior change) ---
-function timeSection<T>(label: string, fn: () => T): T {
-  const t0 = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
-  const out = fn();
-  const t1 = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
-  void logStep(`${label}: ${Math.round(t1 - t0)}ms`);
-  return out;
-}
-
 /** Wait for web fonts to be ready (bounded; prevents rare long hangs) */
 async function waitForFonts(): Promise<void> {
   try {
@@ -1196,76 +1186,71 @@ export default function ScoreOSMD({
 
 
   // --- HEIGHT-ONLY REPAGINATION (no OSMD re-init) ---
-  // Always resets to page 1. No spinner. Minimal, neutral logging.
   const recomputePaginationHeightOnly = useCallback((): void => {
     const outer = wrapRef.current;
     if (!outer) { return; }
 
-    // Neutral tagging while we run; restore at the end.
-    const prevFuncTag = outer.dataset.osmdFunc ?? "";
-    const prevPhaseTag = outer.dataset.osmdPhase ?? "";
-    outer.dataset.osmdFunc = "recomputePaginationHeightOnly";
-    outer.dataset.osmdPhase = ""; // not part of render/scan/apply
+    // Prevent overlap
+    if (repagRunningRef.current) { return; }
+    repagRunningRef.current = true;
 
-    let started = false;
+    // Preserve caller’s func/phase; make logs show this function name; keep phase blank
+    const prevFuncTag = outer.dataset.osmdFunc ?? "";
+    const prevPhase = outer.dataset.osmdPhase ?? "";
+    outer.dataset.osmdFunc = "recomputePaginationHeightOnly";
+    outer.dataset.osmdPhase = "";
 
     try {
-      if (repagRunningRef.current) {
-        void logStep("recompute:skip (already running)", { outer });
-        return;
-      }
-      repagRunningRef.current = true;
-      started = true;
-
       outer.dataset.osmdRecompute = String(Date.now());
 
       const bands = bandsRef.current;
       if (bands.length === 0) {
-        void logStep("recompute:abort (0 bands)", { outer });
+        void logStep("exiting: 0 bands", { outer });
         return;
       }
 
-      // Compute fresh page starts at the unified page height.
       const H = getPAGE_H(outer);
-      const starts = timeSection("starts:compute", () =>
-        computePageStartIndices(outer, bands, H)
+
+      // Recompute page starts for the current *unified* page height
+      const starts = perfBlock(
+        nextPerfUID(outer.dataset.osmdRun),
+        () => computePageStartIndices(outer, bands, H),
+        (ms) => { void logStep(`computePageStartIndices runtime: (${ms}ms) H=${H}`); }
       );
 
       pageStartsRef.current = starts;
       outer.dataset.osmdPages = String(starts.length);
 
-      // Always reset to the first page after repagination.
-      timeSection("apply:first", () => {
-        pageIdxRef.current = 0;
-        applyPage(0);
-      });
-      void logStep(`recompute:applied page 1/${starts.length} H=${H}`, { outer });
+      // Always reset to page 1 after repagination
+      perfBlock(
+        nextPerfUID(outer.dataset.osmdRun),
+        () => { applyPage(0); },
+        (ms) => { void logStep(`applyPage runtime: (${ms}ms)`); }
+      );
 
     } finally {
-      if (started) {
-        // Drain any queued work that arrived during repagination.
-        const queued = reflowAgainRef.current;
-        reflowAgainRef.current = "none";
-        reflowQueuedCauseRef.current = "";
+      // Drain any queued work that accumulated while we were repaginating
+      const queued = reflowAgainRef.current;
+      reflowAgainRef.current = "none";
+      reflowQueuedCauseRef.current = "";
 
-        if (queued === "width") {
-          setTimeout(() => { reflowFnRef.current(); }, 0);
-          void logStep("recompute:drain queued width reflow", { outer });
-        } else if (queued === "height") {
-          setTimeout(() => { repagFnRef.current(); }, 0);
-          void logStep("recompute:drain queued height repagination", { outer });
-        }
-
-        // Record the handled visible height after this pass and release the guard.
-        handledHRef.current = outer.clientHeight || handledHRef.current;
-        repagRunningRef.current = false;
+      if (queued === "width") {
+        setTimeout(() => { reflowFnRef.current(); }, 0);
+      } else if (queued === "height") {
+        setTimeout(() => { repagFnRef.current(); }, 0);
       }
 
-      // Restore caller’s tags.
+      // Update “handled” height so future VV height changes compare against it
+      handledHRef.current = outer.clientHeight || handledHRef.current;
+
+      repagRunningRef.current = false;
+
+      // Restore caller’s func/phase so subsequent logs tag correctly
       outer.dataset.osmdFunc = prevFuncTag;
-      outer.dataset.osmdPhase = prevPhaseTag;
+      outer.dataset.osmdPhase = prevPhase;
     }
-  }, [applyPage, getPAGE_H]);
+  }, [applyPage, getPAGE_H, nextPerfUID]);
+
 
   // keep ref pointing to latest repagination callback
   useEffect(() => {
