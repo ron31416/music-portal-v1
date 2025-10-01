@@ -20,7 +20,7 @@ interface Props {
 interface Band { top: number; bottom: number; height: number }
 
 // Type: function stored in a ref
-type ReflowCallback = (reflowCause?: string) => Promise<void>;
+type ReflowCallback = () => Promise<void>;
 
 // Central pagination/masking knobs (tuned for Hi/Lo DPR). Change here, not inline.
 const REFLOW = {
@@ -165,7 +165,6 @@ export async function logStep(
   const { paint = false, outer = null } = opts;
 
   // ---- Fixed column widths (tweak as needed) ----
-  // 32 comfortably fits "recomputePaginationHeightOnly" (~30 chars) and similar.
   const FN_COL = 32;
   // You suggested 8 for phase; note some phases like "post-render-prepare" are longer
   // and will be cleanly truncated to 8 here.
@@ -761,13 +760,9 @@ export default function ScoreOSMD({
   }, []);
 
   // ---- callback ref proxies (used by queued window.setTimeouts) ----
-  const reflowFnRef = useRef<ReflowCallback>(async function noopReflow(): Promise<void> {
-    return;
-  });
+  const reflowFnRef = useRef<ReflowCallback>(async () => { });
 
-  const repagFnRef = useRef<
-    (resetToFirst?: boolean, showBusy?: boolean) => void
-  >(() => { });
+  const repagFnRef = useRef<() => void>(() => { });
 
   const vpHRef = useVisibleViewportHeight();
 
@@ -1201,82 +1196,76 @@ export default function ScoreOSMD({
 
 
   // --- HEIGHT-ONLY REPAGINATION (no OSMD re-init) ---
-  const recomputePaginationHeightOnly = useCallback(
-    (resetToFirst: boolean = false, withSpinner: boolean = false): void => {
-      const outer = wrapRef.current;
-      if (!outer) { return; }
+  // Always resets to page 1. No spinner. Minimal, neutral logging.
+  const recomputePaginationHeightOnly = useCallback((): void => {
+    const outer = wrapRef.current;
+    if (!outer) { return; }
 
-      if (repagRunningRef.current) { return; }   // prevent overlap
+    // Neutral tagging while we run; restore at the end.
+    const prevFuncTag = outer.dataset.osmdFunc ?? "";
+    const prevPhaseTag = outer.dataset.osmdPhase ?? "";
+    outer.dataset.osmdFunc = "recomputePaginationHeightOnly";
+    outer.dataset.osmdPhase = ""; // not part of render/scan/apply
+
+    let started = false;
+
+    try {
+      if (repagRunningRef.current) {
+        void logStep("recompute:skip (already running)", { outer });
+        return;
+      }
       repagRunningRef.current = true;
+      started = true;
 
       outer.dataset.osmdRecompute = String(Date.now());
+
       const bands = bandsRef.current;
       if (bands.length === 0) {
-        outer.dataset.osmdPhase = 'measure:0:repag-abort';
-        void logStep('repag: measured 0 bands — abort');
-        repagRunningRef.current = false;
+        void logStep("recompute:abort (0 bands)", { outer });
         return;
       }
 
-      try {
-        if (withSpinner) {
-          setBusyMsg(DEFAULT_BUSY);
-          setBusy(true);
-        }
+      // Compute fresh page starts at the unified page height.
+      const H = getPAGE_H(outer);
+      const starts = timeSection("starts:compute", () =>
+        computePageStartIndices(outer, bands, H)
+      );
 
-        const H = getPAGE_H(outer);
-        const starts = timeSection("starts:compute", () => computePageStartIndices(outer, bands, H));
-        const oldStarts = pageStartsRef.current;
+      pageStartsRef.current = starts;
+      outer.dataset.osmdPages = String(starts.length);
 
-        void logStep(`recompute h=${H} bands=${bands.length} old=${oldStarts.join(',')} new=${starts.join(',')} page=${pageIdxRef.current}`
-        );
+      // Always reset to the first page after repagination.
+      timeSection("apply:first", () => {
+        pageIdxRef.current = 0;
+        applyPage(0);
+      });
+      void logStep(`recompute:applied page 1/${starts.length} H=${H}`, { outer });
 
-        pageStartsRef.current = starts;
-        outer.dataset.osmdPages = String(starts.length);
-
-        if (resetToFirst) {
-          timeSection("apply:first", () => { applyPage(0); });
-          void logStep(`recompute: applied page 1 pages=${starts.length}`);
-          return;
-        }
-
-        const oldPage = pageIdxRef.current;
-        const oldStartIdx = oldStarts.length
-          ? (oldStarts[Math.max(0, Math.min(oldPage, oldStarts.length - 1))] ?? 0)
-          : 0;
-
-        let nearest = 0, best = Number.POSITIVE_INFINITY;
-        for (let i = 0; i < starts.length; i++) {
-          const s = starts[i]; if (s === undefined) { continue; }
-          const d = Math.abs(s - oldStartIdx);
-          if (d < best) { best = d; nearest = i; }
-        }
-
-        timeSection("apply:nearest", () => { applyPage(nearest); }); //?
-        // applyPage(nearest);
-
-      } finally {
-        if (withSpinner) {
-          hideBusy();
-        }
-
+    } finally {
+      if (started) {
+        // Drain any queued work that arrived during repagination.
         const queued = reflowAgainRef.current;
-        const cause = reflowQueuedCauseRef.current || "drain:after-repag";
         reflowAgainRef.current = "none";
         reflowQueuedCauseRef.current = "";
 
         if (queued === "width") {
-          window.setTimeout(() => { reflowFnRef.current(cause); }, 0);
+          setTimeout(() => { reflowFnRef.current(); }, 0);
+          void logStep("recompute:drain queued width reflow", { outer });
         } else if (queued === "height") {
-          window.setTimeout(() => { repagFnRef.current(true, false); }, 0);
+          setTimeout(() => { repagFnRef.current(); }, 0);
+          void logStep("recompute:drain queued height repagination", { outer });
         }
 
+        // Record the handled visible height after this pass and release the guard.
         handledHRef.current = outer.clientHeight || handledHRef.current;
         repagRunningRef.current = false;
       }
-    },
-    [applyPage, getPAGE_H, hideBusy]
-  );
+
+      // Restore caller’s tags.
+      outer.dataset.osmdFunc = prevFuncTag;
+      outer.dataset.osmdPhase = prevPhaseTag;
+    }
+  }, [applyPage, getPAGE_H]);
 
   // keep ref pointing to latest repagination callback
   useEffect(() => {
@@ -1286,9 +1275,7 @@ export default function ScoreOSMD({
 
   // Handle a Visual Viewport width change by executing an osmd.render and a re-pagination
   const reflowOnWidthChange = useCallback(
-    async function reflowOnWidthChange(
-      reflowCause?: string
-    ): Promise<void> {
+    async function reflowOnWidthChange(): Promise<void> {
       const outer = wrapRef.current;
       const osmd = osmdRef.current;
 
@@ -1303,8 +1290,6 @@ export default function ScoreOSMD({
 
       outer.dataset.osmdPhase = "prep";
       await logStep("phase starting", { outer });
-
-      await logStep(`reflow cause=${reflowCause ?? "-"}`);
 
       let started = false;
 
@@ -1377,10 +1362,10 @@ export default function ScoreOSMD({
 
           if (queued === "width") {
             await logStep(`draining queued width reflow (cause=${cause})`);
-            setTimeout(() => { reflowFnRef.current(cause); }, 0);
+            setTimeout(() => { reflowFnRef.current(); }, 0);
           } else if (queued === "height") {
             await logStep(`draining queued height repagination (cause=${cause})`);
-            setTimeout(() => { repagFnRef.current(true, false); }, 0);
+            setTimeout(() => { repagFnRef.current(); }, 0);
           }
 
           await logStep("phase finished", { outer });
@@ -1458,7 +1443,7 @@ export default function ScoreOSMD({
             !busyRef.current
           ) {
             reflowAgainRef.current = "none";
-            reflowFnRef.current(`zoom:${why}`); // safe to start now (propagate cause)
+            reflowFnRef.current();
           }
         }, 0);
       }, 220);
@@ -1754,7 +1739,7 @@ export default function ScoreOSMD({
         // Why: on first load, the browser/UI chrome (URL/tool bars) can settle a frame
         // or two later. This cheap pass does height-only pagination (no OSMD render),
         // resets to page 1, and ensures we’re not showing a split system at the bottom.
-        recomputePaginationHeightOnly(true, false);
+        recomputePaginationHeightOnly();
 
         // Record the dimensions we just handled. The VisualViewport listener compares
         // future vv events against these to decide:
@@ -2044,7 +2029,7 @@ export default function ScoreOSMD({
           // Only log when we're going to act; keeps noise down long-term.
           if (widthChanged || heightChanged) {
             await logStep(
-              `onVisualViewportChange wrap=${wrapW}×${wrapH} vv=${vvW}×${vvH} scale=${vvScale.toFixed(3)} ` +
+              `wrap=${wrapW}×${wrapH} vv=${vvW}×${vvH} scale=${vvScale.toFixed(3)} ` +
               `handled=${handledWrapW}×${handledWrapH} ΔW=${widthChanged} ΔH=${heightChanged}`,
               { outer: outerNow }
             );
@@ -2073,12 +2058,12 @@ export default function ScoreOSMD({
           // Do the work
           if (widthChanged) {
             // Horizontal change → full OSMD reflow + reset to page 1
-            await reflowFnRef.current("vv:width-change");
+            await reflowFnRef.current();
             handledWRef.current = wrapW;
             handledHRef.current = wrapH;
           } else {
             // Vertical-only change → cheap repagination (no spinner) + reset to page 1
-            repagFnRef.current(true /* resetToFirst */, false /* no spinner */);
+            repagFnRef.current();
             handledHRef.current = wrapH;
           }
         } finally {
@@ -2133,12 +2118,12 @@ export default function ScoreOSMD({
       reflowQueuedCauseRef.current = "";
       window.setTimeout(() => {
         void logStep(`queue:drain:width cause=${cause}`);
-        reflowFnRef.current(cause);
+        reflowFnRef.current();
       }, 0);
     } else if (queued === "height") {
       window.setTimeout(() => {
         void logStep("queue:drain:height");
-        repagFnRef.current(true, false);
+        repagFnRef.current();
       }, 0);
     }
   }, [busy]);
