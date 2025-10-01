@@ -1100,7 +1100,12 @@ export default function ScoreViewer({
   }, []);
 
 
-  // Unified: render → scan → compute starts → apply(first page)
+  /** layoutViewer
+   * Full layout pipeline:
+   *   renderViewer()  → scanSystemsPx() → computePageStartIndices() → applyPage(0)
+   * Optionally double-applies page 1 to settle masking; bounded by a paint gate.
+   * Returns {bands, starts} for callers to stash.
+   */
   const layoutViewer = useCallback(async (
     outer: HTMLDivElement,
     osmd: OpenSheetMusicDisplay,
@@ -1185,7 +1190,7 @@ export default function ScoreViewer({
 
 
   // --- HEIGHT-ONLY REPAGINATION (no OSMD re-init) ---
-  const recomputePaginationHeightOnly = useCallback((): void => {
+  const paginateViewer = useCallback((): void => {
     const outer = wrapRef.current;
     if (!outer) { return; }
 
@@ -1196,7 +1201,7 @@ export default function ScoreViewer({
     // Preserve caller’s func/phase; make logs show this function name; keep phase blank
     const prevFuncTag = outer.dataset.osmdFunc ?? "";
     const prevPhase = outer.dataset.osmdPhase ?? "";
-    outer.dataset.osmdFunc = "recomputePaginationHeightOnly";
+    outer.dataset.osmdFunc = "paginateViewer";
     outer.dataset.osmdPhase = "";
 
     try {
@@ -1253,11 +1258,15 @@ export default function ScoreViewer({
 
   // keep ref pointing to latest repagination callback
   useEffect(() => {
-    repagFnRef.current = recomputePaginationHeightOnly;
-  }, [recomputePaginationHeightOnly]);
+    repagFnRef.current = paginateViewer;
+  }, [paginateViewer]);
 
 
-  // Handle a Visual Viewport width change by executing an osmd.render and a re-pagination
+  /** reflowViewer
+   * Heavy path for when effective layout width changes (width/zoom/DPR etc.).
+   * Shows spinner, bumps run#, calls layoutViewer(), drains any queued work.
+   * Concurrency-safe via reflowRunningRef; may queue a follow-up if invoked again mid-run.
+   */
   const reflowViewer = useCallback(
     async function reflowViewer(): Promise<void> {
       const outer = wrapRef.current;
@@ -1461,8 +1470,13 @@ export default function ScoreViewer({
     };
   }, [computeZoomFactor]);
 
-
-  /** Init OSMD */
+  /** initViewer
+   * One-time boot for the component:
+   * - feature checks, dynamic import of OSMD
+   * - load MusicXML (MXL/URL), wait for fonts
+   * - first layout via layoutViewer, then height-only repagination
+   * - marks ready & clears the spinner
+   */
   useEffect(function initViewer() {
     (async () => {
       const host = hostRef.current;
@@ -1702,7 +1716,7 @@ export default function ScoreViewer({
         // Why: on first load, the browser/UI chrome (URL/tool bars) can settle a frame
         // or two later. This cheap pass does height-only pagination (no OSMD render),
         // resets to page 1, and ensures we’re not showing a split system at the bottom.
-        recomputePaginationHeightOnly();
+        paginateViewer();
 
         // Record the dimensions we just handled. The VisualViewport listener compares
         // future vv events against these to decide:
@@ -1953,7 +1967,7 @@ export default function ScoreViewer({
     const vv = typeof window !== "undefined" ? window.visualViewport : undefined;
     if (!vv) { return; }
 
-    const onVisualViewportChange = () => {
+    const onViewportChange = () => {
       if (!readyRef.current) { return; }
 
       // debounce vv events
@@ -1967,7 +1981,7 @@ export default function ScoreViewer({
         // Tag logs with function name; clear phase since this isn't a render/scan/apply phase
         const prevFuncTag = outerNow.dataset.osmdFunc ?? "";
         const prevPhase = outerNow.dataset.osmdPhase ?? "";
-        outerNow.dataset.osmdFunc = "onVisualViewportChange";
+        outerNow.dataset.osmdFunc = "onViewportChange";
         outerNow.dataset.osmdPhase = "";
 
         try {
@@ -2037,11 +2051,11 @@ export default function ScoreViewer({
       }, 200);
     };
 
-    vv.addEventListener("resize", onVisualViewportChange);
-    vv.addEventListener("scroll", onVisualViewportChange);
+    vv.addEventListener("resize", onViewportChange);
+    vv.addEventListener("scroll", onViewportChange);
     return () => {
-      vv.removeEventListener("resize", onVisualViewportChange);
-      vv.removeEventListener("scroll", onVisualViewportChange);
+      vv.removeEventListener("resize", onViewportChange);
+      vv.removeEventListener("scroll", onViewportChange);
       if (vvTimerRef.current) {
         window.clearTimeout(vvTimerRef.current);
         vvTimerRef.current = null;
