@@ -1497,7 +1497,7 @@ export default function ScoreOSMD({
           outer.dataset.osmdCapVv = hasVV ? "1" : "0";
           outer.dataset.osmdCapRo = hasRO ? "1" : "0";
 
-          await logStep(`caps vv=${hasVV ? "yes" : "no"} ro=${hasRO ? "yes" : "no"}`, { outer });
+          await logStep(`hasVV: ${hasVV ? "yes" : "no"} hasRO: ${hasRO ? "yes" : "no"}`, { outer });
 
           if (!hasVV) {
             // Hard-fail policy
@@ -1602,7 +1602,7 @@ export default function ScoreOSMD({
             const cdoc = perfBlock(
               nextPerfUID(outer.dataset.osmdRun),
               () => new DOMParser().parseFromString(containerXml, "application/xml"),
-              (ms) => { void logStep(`container.parse runtime: (${ms}ms)`); }
+              (ms) => { void logStep(`DOMParser().parseFromString runtime: (${ms}ms)`); }
             );
 
             const rootfile =
@@ -1655,7 +1655,7 @@ export default function ScoreOSMD({
           const xmlText = await perfBlockAsync(
             nextPerfUID(outer.dataset.osmdRun),
             async () => await withTimeout(entry.text(), 10000, "entry.text() timeout"),
-            (ms) => { void logStep(`entry.text() runtime: (${ms}ms)`); }
+            (ms) => { void logStep(`entry().text runtime: (${ms}ms)`); }
           );
           outer.dataset.osmdZipChosen = entryName;
           outer.dataset.osmdZipChars = String(xmlText.length);
