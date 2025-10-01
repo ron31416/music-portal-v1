@@ -1743,38 +1743,48 @@ export default function ScoreOSMD({
               if (!res.ok) { throw new Error(`HTTP ${res.status}`); }
 
               const buf = await withTimeout(res.arrayBuffer(), 12000, "fetch:timeout");
+              // stash for the after() logger
               outer.dataset.osmdZipBytes = String(buf.byteLength);
               return buf;
             },
-            (ms) => { void logStep(`fetch runtime: (${ms}ms)`); }
+            (ms) => {
+              const bytes = outer.dataset.osmdZipBytes ?? "?";
+              void logStep(`fetch runtime: (${ms}ms) bytes:${bytes}`);
+            }
           );
-
-          await logStep(`fetch:bytes:${ab.byteLength}`);
-          await logStep("fetch:done"); // small breadcrumb before zip work
 
           // 2) Import unzipit (timed)
           const uzMod = await perfBlockAsync(
             nextPerfUID(outer.dataset.osmdRun),
             async () => await withTimeout(import("unzipit"), 4000, "zip:lib:import:timeout"),
-            (ms) => { void logStep(`zip:lib:import runtime: (${ms}ms)`); }
+            (ms) => { void logStep(`unzipit runtime: (${ms}ms)`); }
           );
           const { unzip } = uzMod as typeof import("unzipit");
 
           // 3) Open zip (timed)
           const { entries } = await perfBlockAsync(
             nextPerfUID(outer.dataset.osmdRun),
-            async () => await withTimeout(unzip(ab), 8000, "zip:open:timeout"),
-            (ms) => { void logStep(`zip:open runtime: (${ms}ms)`); }
+            async () => await withTimeout(unzip(ab), 8000, "unzip timeout"),
+            (ms) => { void logStep(`unzip runtime: (${ms}ms)`); }
           );
 
           // 4) container.xml probe (optional fast path)
           let entryName: string | undefined;
           const container = entries["META-INF/container.xml"];
           if (container) {
-            await logStep("zip:container:read");
-            const containerXml = await withTimeout(container.text(), 6000, "zip:container:timeout");
+            const containerXml = await perfBlockAsync(
+              nextPerfUID(outer.dataset.osmdRun),
+              async () => {
+                const s = await withTimeout(container.text(), 6000, "read container timeout");
+                outer.dataset.osmdContainerChars = String(s.length);
+                return s;
+              },
+              (ms) => {
+                const chars = outer.dataset.osmdContainerChars ?? "?";
+                void logStep(`read container runtime: (${ms}ms) chars:${chars}`);
+              }
+            );
 
-            await logStep("zip:container:parse");
             const cdoc = new DOMParser().parseFromString(containerXml, "application/xml");
             const rootfile =
               cdoc.querySelector('rootfile[full-path]') || cdoc.querySelector("rootfile");
