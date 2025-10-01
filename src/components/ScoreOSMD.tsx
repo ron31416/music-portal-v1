@@ -1751,10 +1751,8 @@ export default function ScoreOSMD({
         }) as OpenSheetMusicDisplay;
         osmdRef.current = osmd;
 
-        // Spinner on during boot
-        setBusyMsg(DEFAULT_BUSY);
-        setBusy(true);
-        ap("boot");                           // give the overlay a chance to paint
+        // Spinner on during boot (unified with reflow)
+        await spinBegin(outer, { message: DEFAULT_BUSY, gatePaint: true });
 
         // --- Load score (string or API/zip) ---
         await logStep("load:begin");
@@ -2025,7 +2023,7 @@ export default function ScoreOSMD({
 
             o.dataset.osmdPhase = "init:forced-finalize";
             void logStep("init:forced-finalize");
-            hideBusy();
+            void spinEnd(o);
           }, 1500);
         } catch { }
 
@@ -2094,7 +2092,7 @@ export default function ScoreOSMD({
               }
             }
           } catch { }
-          hideBusy();
+          await spinEnd(outer);
           return;
         }
         bandsRef.current = bands;
@@ -2139,7 +2137,7 @@ export default function ScoreOSMD({
         handledHRef.current = outer.clientHeight;
 
         readyRef.current = true;
-        hideBusy();
+        await spinEnd(outer);
 
       } finally {
         // Restore previous func-tag (exactly like reflowOnWidthChange).
