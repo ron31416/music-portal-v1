@@ -1519,22 +1519,6 @@ export default function ScoreOSMD({
     reflowFnRef.current = reflowOnWidthChange;
   }, [reflowOnWidthChange]);
 
-  // WebGL purge
-  function purgeWebGL(node: HTMLElement): void {
-    for (const c of Array.from(node.querySelectorAll("canvas"))) {
-      try {
-        const gl =
-          (c.getContext("webgl") as WebGLRenderingContext | null) ||
-          (c.getContext("experimental-webgl") as WebGLRenderingContext | null) ||
-          (c.getContext("webgl2") as WebGL2RenderingContext | null);
-        if (gl?.getExtension("WEBGL_lose_context")) {
-          (gl.getExtension("WEBGL_lose_context") as { loseContext?: () => void }).loseContext?.();
-        }
-        c.remove();
-      } catch { }
-    }
-  }
-
   useEffect(() => {
     const el = wrapRef.current;
     if (!el) { return; }
