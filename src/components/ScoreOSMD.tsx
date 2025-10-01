@@ -1114,28 +1114,26 @@ export default function ScoreOSMD({
     // func-tag so log prefixes show renderScanApply instead of the caller
     const prevFuncTag = outer.dataset.osmdFunc ?? "";
     outer.dataset.osmdFunc = "renderScanApply";
-    await logStep("enter", { outer });
+    outer.dataset.osmdPhase = "render";
+    await logStep("phase starting", { outer });
 
     try {
       const ap = makeAfterPaint(outer);
-
-      // --- RENDER ---
-      await logStep("phase finished", { outer });
-      outer.dataset.osmdPhase = "render";
-      await logStep("phase starting", { outer });
 
       await withHostHidden(outer, async () => {
         const uid = nextPerfUID(outer.dataset.osmdRun);
         await perfBlockAsync(
           uid,
           async () => { await renderWithEffectiveWidth(outer, osmd); },
-          (ms) => { outer.dataset.osmdRenderMs = String(ms); void logStep(`renderWithEffectiveWidth runtime: (${ms}ms)`); }
+          (ms) => {
+            outer.dataset.osmdRenderMs = String(ms);
+            void logStep(`renderWithEffectiveWidth() runtime: (${ms}ms)`);
+          }
         );
       });
 
       await new Promise<void>((r) => setTimeout(r, 0)); // yield one task
 
-      // --- SCAN ---
       await logStep("phase finished", { outer });
       outer.dataset.osmdPhase = "scan";
       await logStep("phase starting", { outer });
@@ -1143,7 +1141,7 @@ export default function ScoreOSMD({
       const bands = perfBlock(
         nextPerfUID(outer.dataset.osmdRun),
         () => withUntransformedSvg(outer, (svg) => scanSystemsPx(outer, svg)) ?? [],
-        (ms) => { void logStep(`scanSystemsPx runtime: (${ms}ms)`); }
+        (ms) => { void logStep(`scanSystemsPx() runtime: (${ms}ms)`); }
       );
       outer.dataset.osmdBands = String(bands.length);
       if (bands.length === 0) {
@@ -1155,10 +1153,9 @@ export default function ScoreOSMD({
       const starts = perfBlock(
         nextPerfUID(outer.dataset.osmdRun),
         () => computePageStartIndices(outer, bands, H),
-        (ms) => { void logStep(`computePageStartIndices runtime: (${ms}ms) H=${H}`); }
+        (ms) => { void logStep(`computePageStartIndices() runtime: (${ms}ms) H=${H}`); }
       );
 
-      // --- APPLY (first page) ---
       await logStep("phase finished", { outer });
       outer.dataset.osmdPhase = "apply";
       await logStep("phase starting", { outer });
@@ -1177,10 +1174,12 @@ export default function ScoreOSMD({
         (ms) => { void logStep(`applyPage() runtime: (${ms}ms)`); }
       );
 
-      await logStep(`exit bands=${bands.length} pages=${starts.length}`, { outer });
+      await logStep(`bands=${bands.length} pages=${starts.length}`, { outer });
+
       return { bands, starts };
+
     } finally {
-      try { outer.dataset.osmdFunc = prevFuncTag; } catch { /* noop */ }
+      try { outer.dataset.osmdFunc = prevFuncTag; } catch { }
     }
   }, [nextPerfUID, renderWithEffectiveWidth, withHostHidden, getPAGE_H, applyPage]);
 
@@ -1655,7 +1654,7 @@ export default function ScoreOSMD({
           const xmlText = await perfBlockAsync(
             nextPerfUID(outer.dataset.osmdRun),
             async () => await withTimeout(entry.text(), 10000, "entry.text() timeout"),
-            (ms) => { void logStep(`withTimeout() runtime: (${ms}ms)`); }
+            (ms) => { void logStep(`entry.text() runtime: (${ms}ms)`); }
           );
           outer.dataset.osmdZipChosen = entryName;
           outer.dataset.osmdZipChars = String(xmlText.length);
