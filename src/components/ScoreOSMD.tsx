@@ -761,76 +761,6 @@ export default function ScoreOSMD({
     return parts.join(" ");
   }, []);
 
-  /*
-  // --- MINIMAL TELEMETRY (host/CV/visibility + SVG presence) ---
-  const dumpTelemetry = useCallback((label: string): void => {
-    const outer = wrapRef.current;
-    const host = hostRef.current;
-    const svg = outer ? getSvg(outer) : null;
-
-    const phase = outer?.dataset.osmdPhase ?? "(none)";
-    //const hostHiddenAttr = outer?.dataset.osmdHostHidden ?? "(unset)";
-    const busyAttr = outer?.dataset.osmdBusy ?? "(unset)";
-    const overlayShown = !!overlayRef.current && overlayRef.current.style.display !== "none";
-
-    let cvInline = "(unset)", cvComputed = "(n/a)", visInline = "(unset)", visComputed = "(n/a)";
-    try {
-      if (host) {
-        const cs = getComputedStyle(host);
-        cvInline = host.style.getPropertyValue("content-visibility") || "(unset)";
-        cvComputed = cs.getPropertyValue("content-visibility") || "(n/a)";
-        visInline = host.style.visibility || "(unset)";
-        visComputed = cs.visibility || "(n/a)";
-      }
-    } catch { }
-
-    const gCount = svg ? svg.querySelectorAll("g").length : 0;
-
-    void logStep(
-      `[telemetry] ${label} ` +
-      `phase=${phase} host=${Boolean(host)} svg=${Boolean(svg)} g#=${gCount} ` +
-      `busy=${busyRef.current} busyAttr=${busyAttr} overlayShown=${overlayShown} ` +
-      `cv:inline=${cvInline} cv:computed=${cvComputed} vis:inline=${visInline} vis:computed=${visComputed}`
-    );
-  }, []);
-
-  // --- GEOMETRY SNAPSHOT (outer/host/svg sizes, viewBox, layoutW, zf) ---
-  const dumpGeom = useCallback((label: string): void => {
-    const outer = wrapRef.current;
-    const host = hostRef.current;
-    const svg = outer ? getSvg(outer) : null;
-
-    const ow = outer?.clientWidth ?? 0;
-    const oh = outer?.clientHeight ?? 0;
-
-    const hb = host ? host.getBoundingClientRect() : null;
-    const sb = svg ? svg.getBoundingClientRect() : null;
-
-    const viewBox = svg?.getAttribute("viewBox") || "(none)";
-    const layoutW = outer?.dataset.osmdLayoutW ?? "(unset)";
-    const zf = outer?.dataset.osmdZf ?? String(zoomFactorRef.current ?? 1);
-
-    void logStep(
-      `[geom] ${label} ` +
-      `outer=${ow}x${oh} ` +
-      `host=${hb ? `${Math.round(hb.width)}x${Math.round(hb.height)}` : "(none)"} ` +
-      `svgRect=${sb ? `${Math.round(sb.width)}x${Math.round(sb.height)}` : "(none)"} ` +
-      `viewBox=${viewBox} layoutW=${layoutW} zf=${zf}`
-    );
-  }, []);
-
-  // --- BAND SNAPSHOT (count + a few heights to spot odd clustering) ---
-  const dumpBands = useCallback((label: string, bands: Band[]): void => {
-    const n = bands.length;
-    const sample = bands.slice(0, Math.min(5, n))
-      .map(b => Math.round(b.height))
-      .join(",");
-    const firstTop = n ? Math.round(bands[0]!.top) : -1;
-    const lastBot = n ? Math.round(bands[n - 1]!.bottom) : -1;
-    void logStep(`[bands] ${label} n=${n} sampleH=[${sample}] firstTop=${firstTop} lastBottom=${lastBot}`);
-  }, []);
-*/
-
   // ---- callback ref proxies (used by queued window.setTimeouts) ----
   const reflowFnRef = useRef<ReflowCallback>(async function noopReflow(): Promise<void> {
     return;
@@ -878,27 +808,6 @@ export default function ScoreOSMD({
     (outer: HTMLDivElement) => pageHeight(outer) + REFLOW.PAGE_FILL_SLOP_PX,
     [pageHeight]
   );
-
-  // ---- On-demand debug dump (no keyboard needed)
-  const dumpDebug = useCallback((): void => {
-    const outer = wrapRef.current;
-    if (!outer) { return; }
-
-    const zf = zoomFactorRef.current ?? 1;
-    const layoutW = Number(outer.dataset.osmdLayoutW || NaN);
-    const w = outer.clientWidth || 0;
-    const h = outer.clientHeight || 0;
-    const phase = outer.dataset.osmdPhase || "(none)";
-    const busyNow = busyRef.current;
-
-    void logStep(`debug:data zf=${zf.toFixed(3)} layoutW=${Number.isNaN(layoutW) ? "?" : layoutW} W×H=${w}×${h} busy=${busyNow} phase=${phase}`);
-
-    const measured = withUntransformedSvg(outer, (svg) => scanSystemsPx(outer, svg)) ?? [];
-    const H = getPAGE_H(outer);
-    const starts = computePageStartIndices(outer, measured, H);
-
-    void logStep(`debug:probe measured bands=${measured.length} H=${H} starts=${starts.join(",") || "(none)"}`);
-  }, [getPAGE_H]);
 
 
   // Apply the chosen page to the viewport: translate the SVG to its start and mask/cut to hide any next-page peek.
@@ -1495,13 +1404,6 @@ export default function ScoreOSMD({
           }
           // else: queued === "none" → no log, nothing to schedule
 
-
-          // if (spinnerFailSafeRef.current) {
-          //   window.clearTimeout(spinnerFailSafeRef.current);
-          //   spinnerFailSafeRef.current = null;
-          // }
-
-
           await logStep("phase finished", { outer });
         }
 
@@ -1530,19 +1432,6 @@ export default function ScoreOSMD({
     const initial = (vv && typeof vv.scale === "number") ? vv.scale : (window.devicePixelRatio || 1);
     baseScaleRef.current = initial || 1;
     zoomFactorRef.current = 1;
-  }, []);
-
-  useEffect(() => {
-    const onVis = () => {
-      const outer = wrapRef.current;
-      if (outer) {
-        outer.dataset.osmdVisibility = document.visibilityState;
-        void logStep(`visibility:${document.visibilityState}`);
-      }
-    };
-    document.addEventListener("visibilitychange", onVis);
-    onVis();
-    return () => document.removeEventListener("visibilitychange", onVis);
   }, []);
 
   // Reflow only for actual zoom; never start immediately, just queue safely.
@@ -2025,8 +1914,13 @@ export default function ScoreOSMD({
         await logStep("phase finished", { outer });
 
       } finally {
+        try { outer.dataset.osmdPhase = "finally"; } catch { }
+        await logStep("phase starting", { outer });
+
         // Restore previous func-tag (exactly like reflowOnWidthChange).
         try { outer.dataset.osmdFunc = prevFuncTag; } catch { }
+
+        await logStep("phase finished", { outer });
       }
 
     })().catch(async (err: unknown) => {
@@ -2366,47 +2260,6 @@ export default function ScoreOSMD({
     }
   }, [busy]);
 
-  // Auto-dump once if we linger in render:painted (no keys required)
-  useEffect(() => {
-    const outer = wrapRef.current;
-    if (!outer) { return; }
-
-    let timer: number | null = null;
-    let armed = false;
-
-    const arm = (): void => {
-      if (timer !== null) { window.clearTimeout(timer); }
-      timer = window.setTimeout(() => {
-        const now = wrapRef.current;
-        if (now && now.dataset.osmdPhase === "render:painted" && !armed) {
-          armed = true;
-          dumpDebug();
-        }
-      }, 1200);
-    };
-
-    const mo = new MutationObserver(() => {
-      const now = wrapRef.current;
-      const ph = now?.dataset.osmdPhase;
-      if (now && (ph === "render:painted" || ph === "post-render-wait")) {
-        arm();
-      } else {
-        if (timer !== null) { window.clearTimeout(timer); timer = null; }
-      }
-    });
-
-    mo.observe(outer, { attributes: true, attributeFilter: ["data-osmd-phase"] });
-
-    // If we're already in one of the phases, arm immediately
-    if (outer.dataset.osmdPhase === "render:painted" || outer.dataset.osmdPhase === "post-render-wait") {
-      arm();
-    }
-
-    return (): void => {
-      mo.disconnect();
-      if (timer !== null) { window.clearTimeout(timer); }
-    };
-  }, [dumpDebug]);
 
   /* ---------- Styles ---------- */
 
