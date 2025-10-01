@@ -764,6 +764,7 @@ export default function ScoreOSMD({
     return parts.join(" ");
   }, []);
 
+  /*
   // --- MINIMAL TELEMETRY (host/CV/visibility + SVG presence) ---
   const dumpTelemetry = useCallback((label: string): void => {
     const outer = wrapRef.current;
@@ -831,6 +832,7 @@ export default function ScoreOSMD({
     const lastBot = n ? Math.round(bands[n - 1]!.bottom) : -1;
     void logStep(`[bands] ${label} n=${n} sampleH=[${sample}] firstTop=${firstTop} lastBottom=${lastBot}`);
   }, []);
+*/
 
   // ---- callback ref proxies (used by queued window.setTimeouts) ----
   const reflowFnRef = useRef<ReflowCallback>(async function noopReflow(): Promise<void> {
@@ -1933,9 +1935,6 @@ export default function ScoreOSMD({
           (ms) => { void logStep(`renderWithEffectiveWidth runtime: (${ms}ms)`); }
         );
 
-        // Dev-only: dump all tracked telemetry values (phase, timings, etc.)
-        dumpTelemetry("post-render:init");
-
         // Normally we would wait for requestAnimationFrame/paint here,
         // but large scores can throttle timers. Instead, mark "painted"
         // immediately so downstream steps don't block forever.
@@ -2028,8 +2027,6 @@ export default function ScoreOSMD({
         // --- Measure systems + first pagination ---
         void outer.getBoundingClientRect(); // layout flush
 
-        dumpTelemetry("pre-measure:init");
-        dumpGeom("pre-measure:init");
         void logStep("measure:scan:enter");
 
         // PROBE A (init)
@@ -2049,13 +2046,8 @@ export default function ScoreOSMD({
           ) ?? [];
 
         void logStep(`measure:scan:exit bands=${bands.length}`);
-        dumpTelemetry(`post-measure:init bands=${bands.length}`);
-        dumpBands("init", bands);
 
         if (bands.length === 0) {
-          dumpTelemetry("bands==0 before-abort:init");
-          dumpGeom("bands==0 before-abort:init");
-
           outer.dataset.osmdPhase = "measure:0:init-abort";
           void logStep("measure:init:0 — aborting first pagination");
 
