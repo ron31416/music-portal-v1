@@ -1314,36 +1314,6 @@ export default function ScoreOSMD({
           outer.dataset.osmdReflowTargetH = String(currH);
         } catch { }
 
-        /*
-                // Spinner on (with unconditional fail-safe)
-                {
-                  const token = Symbol("spin");
-                  spinnerOwnerRef.current = token;
-        
-                  setBusyMsg(DEFAULT_BUSY);
-                  setBusy(true);
-        
-                  await new Promise<void>((r) => setTimeout(r, 0));
-                  if (document.visibilityState === "visible") {
-                    await Promise.race([
-                      new Promise<void>((r) => requestAnimationFrame(() => r())),
-                      new Promise<void>((r) => setTimeout(r, 120)),
-                    ]);
-                  }
-        
-                  const ov = overlayRef.current;
-                  const shown = !!ov && ov.style.display !== "none";
-                  void logStep(shown ? "spinner is visible" : "spinner requested (visibility pending)");
-        
-                  if (spinnerFailSafeRef.current) { window.clearTimeout(spinnerFailSafeRef.current); }
-                  spinnerFailSafeRef.current = window.setTimeout(() => {
-                    spinnerOwnerRef.current = null;
-                    hideBusy();
-                    void logStep("failsafe triggered after 9s; hiding spinner");
-                  }, 9000);
-                }
-        */
-
         await spinBegin(outer, { message: DEFAULT_BUSY, gatePaint: true });
 
         await logStep("phase finished", { outer });
@@ -1716,21 +1686,17 @@ export default function ScoreOSMD({
 
         } catch { }
 
-        await logStep("BUILD: ScoreOSMD v10 @ tick+ap-gate");
-
-        // Phase breadcrumb + first log
-        outer.dataset.osmdPhase = "initOSMD";
-        await logStep("boot:mount");
-
         // Create afterPaint helper *before* heavy steps so we can flush logs/spinner
         const ap = makeAfterPaint(outer);
 
         // --- Dynamic import OSMD ---
-        const tImp0 = tnow();
-        await logStep("import:OSMD:start");
+        const mod = await perfBlockAsync(
+          nextPerfUID(outer.dataset.osmdRun),
+          async () => await import("opensheetmusicdisplay"),
+          (ms) => { void logStep(`import opensheetmusicdisplay runtime: (${ms}ms)`); }
+        );
         const { OpenSheetMusicDisplay: OSMDClass } =
-          (await import("opensheetmusicdisplay")) as typeof import("opensheetmusicdisplay");
-        void logStep(`import:OSMD:done ${Math.round(tnow() - tImp0)}ms`);
+          mod as typeof import("opensheetmusicdisplay");
 
         // Fresh instance
         if (osmdRef.current) {
@@ -2144,15 +2110,19 @@ export default function ScoreOSMD({
         try { outer.dataset.osmdFunc = prevFuncTag; } catch { }
       }
 
-
-    })().catch((err: unknown) => {
-      hideBusy();
+    })().catch(async (err: unknown) => {
+      // If init crashed after spinBegin, close the spinner immediately.
+      // (Fatal no-visualViewport path never sets spinnerOwnerRef, so it stays up.)
+      if (spinnerOwnerRef.current) {
+        try { await spinEnd(wrapRef.current!); } catch { /* ignore */ }
+      } else {
+        hideBusy(); // fallback for any older/non-spinner busy state
+      }
 
       const outerNow = wrapRef.current;
-      const msg =
-        err instanceof Error ? err.message :
-          typeof err === "string" ? err :
-            JSON.stringify(err);
+      const msg = err instanceof Error ? err.message :
+        typeof err === "string" ? err :
+          JSON.stringify(err);
 
       if (outerNow) {
         outerNow.setAttribute("data-osmd-step", "init-crash");
