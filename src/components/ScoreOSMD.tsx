@@ -2075,6 +2075,15 @@ export default function ScoreOSMD({
         // keep your existing: snapshot log, schedule height-only repag, set handledW/H, readyRef, etc.
         recomputePaginationHeightOnly(true /* resetToFirst */, false /* no spinner */);
 
+        // after renderScanApply(...) + recomputePaginationHeightOnly(...)
+        handledWRef.current = outer.clientWidth;
+        handledHRef.current = outer.clientHeight;
+
+        readyRef.current = true;                 // ← enables the zoom listeners
+        await spinEnd(outer);                    // ← clears busy overlay immediately
+
+        await logStep("init:ready", { outer }); // optional breadcrumb
+
       } finally {
         try { outer.dataset.osmdPhase = "finally"; } catch { }
         await logStep("phase starting", { outer });
