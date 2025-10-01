@@ -1,3 +1,4 @@
+/* eslint curly: ["error", "all"] */
 // src/components/ScoreOSMD.tsx
 "use client";
 
@@ -52,7 +53,7 @@ async function withTimeout<T>(p: Promise<T>, ms: number, tag: string): Promise<T
   return new Promise<T>((resolve, reject) => {
     const t = window.setTimeout(() => reject(new Error(tag)), ms);
     p.then(v => { window.clearTimeout(t); resolve(v); },
-           e => { window.clearTimeout(t); reject(e); });
+      e => { window.clearTimeout(t); reject(e); });
   });
 }
 
@@ -95,14 +96,14 @@ function makeAfterPaint(outer: HTMLDivElement) {
           outer.dataset.osmdAfterpaintMs = String(ms);
 
           void logStep(`[ap] ${label ?? ""} -> ${why} (${ms}ms)`);
-        } catch {}
+        } catch { }
         resolve();
       }
       try {
         window.requestAnimationFrame(() => {
           window.requestAnimationFrame(() => finish("raf"));
         });
-      } catch {}
+      } catch { }
 
       // Primary watchdog: if rendering takes longer than timeoutMs, force-finish
       window.setTimeout(() => finish("timeout"), timeoutMs);
@@ -149,7 +150,7 @@ async function waitForPaint(timeoutMs = 450): Promise<void> {
         new Promise<void>(r => window.setTimeout(r, timeoutMs)),
       ]);
     }
-  } catch {}
+  } catch { }
 }
 
 // Flip this to disable all on-page logging in one place.
@@ -190,7 +191,7 @@ export async function logStep(
     // Update column widths (bounded by __MAX_COL).
     const fnLen = Math.min(fn.length, __MAX_COL);
     const phLen = phase !== "(none)" ? Math.min(phase.length, __MAX_COL) : 0;
-    if (fnLen > __LOG_COLS.fnW) { __LOG_COLS.fnW   = fnLen; }
+    if (fnLen > __LOG_COLS.fnW) { __LOG_COLS.fnW = fnLen; }
     if (phLen > __LOG_COLS.phaseW) { __LOG_COLS.phaseW = phLen; }
 
     // Build aligned prefix.
@@ -345,7 +346,7 @@ function scanSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[] {
           const r = g.getBoundingClientRect();
           if (!Number.isFinite(r.top) || !Number.isFinite(r.height) || !Number.isFinite(r.width)) { continue; }
           if (r.height < MIN_H) { continue; }
-          if (r.width  < MIN_W) { continue; }
+          if (r.width < MIN_W) { continue; }
 
           boxes.push({
             top: r.top - hostTop,
@@ -353,7 +354,7 @@ function scanSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[] {
             height: r.height,
             width: r.width,
           });
-        } catch {}
+        } catch { }
       }
     }
 
@@ -372,10 +373,10 @@ function scanSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[] {
       }
     }
 
-    void logStep(`exit bands=${bands.length}`, { outer }); 
+    void logStep(`exit bands=${bands.length}`, { outer });
     return bands;
   } finally {
-    try { outer.dataset.osmdFunc = prevFuncTag; } catch {}
+    try { outer.dataset.osmdFunc = prevFuncTag; } catch { }
   }
 }
 
@@ -423,7 +424,7 @@ function computePageStartIndices(outer: HTMLDivElement, bands: Band[], viewportH
     void logStep(`exit starts=${out.length}`, { outer });
     return out;
   } finally {
-    try { outer.dataset.osmdFunc = prevFuncTag; } catch {}
+    try { outer.dataset.osmdFunc = prevFuncTag; } catch { }
   }
 }
 
@@ -433,10 +434,10 @@ function hasZoomProp(o: unknown): o is { Zoom: number } {
   return typeof maybe.Zoom === "number";
 }
 
-function perfMark(n: string) { try { performance.mark(n); } catch {} }
+function perfMark(n: string) { try { performance.mark(n); } catch { } }
 
 function perfMeasure(n: string, a: string, b: string) {
-  try { performance.measure(n, { start: a, end: b }); } catch {}
+  try { performance.measure(n, { start: a, end: b }); } catch { }
 }
 
 function perfLastMs(name: string) {
@@ -450,8 +451,8 @@ function perfBlock<T>(
   work: () => T,
   after?: (ms: number) => void
 ): T {
-  const start   = `${uid} start`;
-  const end     = `${uid} end`;
+  const start = `${uid} start`;
+  const end = `${uid} end`;
   const runtime = `${uid} runtime`;
   perfMark(start);
   try {
@@ -460,12 +461,12 @@ function perfBlock<T>(
     perfMark(end);
     perfMeasure(runtime, start, end);
     const ms = perfLastMs(runtime);
-    try { after?.(ms); } catch {}
+    try { after?.(ms); } catch { }
     try {
       performance.clearMarks(start);
       performance.clearMarks(end);
       performance.clearMeasures(runtime);
-    } catch {}
+    } catch { }
   }
 }
 
@@ -474,8 +475,8 @@ async function perfBlockAsync<T>(
   work: () => Promise<T>,
   after?: (ms: number) => void
 ): Promise<T> {
-  const start   = `${uid} start`;
-  const end     = `${uid} end`;
+  const start = `${uid} start`;
+  const end = `${uid} end`;
   const runtime = `${uid} runtime`;
   perfMark(start);
   try {
@@ -484,12 +485,12 @@ async function perfBlockAsync<T>(
     perfMark(end);
     perfMeasure(runtime, start, end);
     const ms = perfLastMs(runtime);
-    try { after?.(ms); } catch {}
+    try { after?.(ms); } catch { }
     try {
       performance.clearMarks(start);
       performance.clearMarks(end);
       performance.clearMeasures(runtime);
-    } catch {}
+    } catch { }
   }
 }
 
@@ -507,7 +508,7 @@ export default function ScoreOSMD({
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const hostRef = useRef<HTMLDivElement | null>(null);
   const osmdRef = useRef<OpenSheetMusicDisplay | null>(null);
-  
+
   const bandsRef = useRef<Band[]>([]);
   const pageStartsRef = useRef<number[]>([0]);
   const pageIdxRef = useRef<number>(0);
@@ -578,7 +579,7 @@ export default function ScoreOSMD({
     if (hasZoomProp(inst)) {
       const curr = inst.Zoom;
       if (!Number.isFinite(curr) || Math.abs(curr - clamped) > 0.001) {
-        try { inst.Zoom = clamped; } catch {}
+        try { inst.Zoom = clamped; } catch { }
       }
     }
   }, []);
@@ -633,22 +634,22 @@ export default function ScoreOSMD({
         await logStep(`w=${layoutW} hostW=${hostW} zf=${zf.toFixed(3)} osmd.Zoom=${osmd.Zoom ?? "n/a"}`);
 
         // NEW: mark + measure the synchronous render
-        try { performance.mark("osmd-render:start"); } catch {}
+        try { performance.mark("osmd-render:start"); } catch { }
         osmd.render(); // synchronous & heavy
         try {
           performance.mark("osmd-render:end");
           performance.measure("osmd-render", "osmd-render:start", "osmd-render:end");
-        } catch {}
+        } catch { }
       } catch (e) {
         void logStep(`render:error ${(e as Error)?.message ?? e}`);
         throw e;
       } finally {
-        try { await logStep("exit", { outer }); } catch {}
-        try { outer.dataset.osmdFunc = prevFuncTag; } catch {}
+        try { await logStep("exit", { outer }); } catch { }
+        try { outer.dataset.osmdFunc = prevFuncTag; } catch { }
 
-        try { window.clearInterval(beat); } catch {}
+        try { window.clearInterval(beat); } catch { }
         // Always restore styles
-        host.style.left  = "";
+        host.style.left = "";
         host.style.right = "";
         host.style.width = "";
         const svg = getSvg(outer);
@@ -663,10 +664,89 @@ export default function ScoreOSMD({
     setBusyMsg(DEFAULT_BUSY);
   }, []);
 
+
+  // Spinner helpers config (used by both init + reflow)
+  const SPINNER_FAILSAFE_MS = 9000 as const;
+
+  const spinBegin = useCallback(
+    async (
+      outer: HTMLDivElement,
+      opts?: string | { message?: string; gatePaint?: boolean }
+    ): Promise<void> => {
+      const msg =
+        typeof opts === "string" || opts === undefined
+          ? (opts ?? DEFAULT_BUSY)
+          : (opts.message ?? DEFAULT_BUSY);
+
+      const gatePaint =
+        typeof opts === "object" && opts !== null
+          ? Boolean(opts.gatePaint)
+          : true;
+
+      const token = Symbol("spin");
+      spinnerOwnerRef.current = token;
+
+      setBusyMsg(msg);
+      setBusy(true);
+
+      // Optionally give the overlay a chance to paint
+      if (gatePaint) {
+        await new Promise<void>((r) => setTimeout(r, 0));
+        if (document.visibilityState === "visible") {
+          await Promise.race([
+            new Promise<void>((r) => requestAnimationFrame(() => r())),
+            new Promise<void>((r) => setTimeout(r, 120)),
+          ]);
+        }
+      }
+
+      const ov = overlayRef.current;
+      const shown = !!ov && ov.style.display !== "none";
+      void logStep(
+        shown ? "spinner is visible" : "spinner requested (visibility pending)",
+        { outer }
+      );
+
+      if (spinnerFailSafeRef.current) {
+        window.clearTimeout(spinnerFailSafeRef.current);
+      }
+      spinnerFailSafeRef.current = window.setTimeout(() => {
+        spinnerOwnerRef.current = null;
+        hideBusy();
+        void logStep("failsafe triggered after 9s; hiding spinner", { outer });
+      }, SPINNER_FAILSAFE_MS);
+    },
+    [hideBusy]
+  );
+
+  const spinEnd = useCallback(
+    async (outer: HTMLDivElement): Promise<void> => {
+      spinnerOwnerRef.current = null;
+      if (spinnerFailSafeRef.current) {
+        window.clearTimeout(spinnerFailSafeRef.current);
+        spinnerFailSafeRef.current = null;
+      }
+
+      hideBusy();
+
+      // Let the UI repaint a tick (helps test flakiness)
+      await new Promise<void>((r) => setTimeout(r, 0));
+      if (document.visibilityState === "visible") {
+        await Promise.race([
+          new Promise<void>((r) => requestAnimationFrame(() => r())),
+          new Promise<void>((r) => setTimeout(r, 180)),
+        ]);
+      }
+
+      await logStep("spinner:end", { outer });
+    },
+    [hideBusy]
+  );
+
   // --- LOG SNAPSHOT (lean) ---
   const fmtFlags = useCallback((): string => {
     const pages = Math.max(1, pageStartsRef.current.length);
-    const page  = Math.max(1, Math.min(pageIdxRef.current + 1, pages));
+    const page = Math.max(1, Math.min(pageIdxRef.current + 1, pages));
     const queued = reflowAgainRef.current; // "none" | "width" | "height"
     const zf = (zoomFactorRef.current ?? 1).toFixed(3);
 
@@ -678,8 +758,8 @@ export default function ScoreOSMD({
   // --- MINIMAL TELEMETRY (host/CV/visibility + SVG presence) ---
   const dumpTelemetry = useCallback((label: string): void => {
     const outer = wrapRef.current;
-    const host  = hostRef.current;
-    const svg   = outer ? getSvg(outer) : null;
+    const host = hostRef.current;
+    const svg = outer ? getSvg(outer) : null;
 
     const phase = outer?.dataset.osmdPhase ?? "(none)";
     //const hostHiddenAttr = outer?.dataset.osmdHostHidden ?? "(unset)";
@@ -695,7 +775,7 @@ export default function ScoreOSMD({
         visInline = host.style.visibility || "(unset)";
         visComputed = cs.visibility || "(n/a)";
       }
-    } catch {}
+    } catch { }
 
     const gCount = svg ? svg.querySelectorAll("g").length : 0;
 
@@ -710,8 +790,8 @@ export default function ScoreOSMD({
   // --- GEOMETRY SNAPSHOT (outer/host/svg sizes, viewBox, layoutW, zf) ---
   const dumpGeom = useCallback((label: string): void => {
     const outer = wrapRef.current;
-    const host  = hostRef.current;
-    const svg   = outer ? getSvg(outer) : null;
+    const host = hostRef.current;
+    const svg = outer ? getSvg(outer) : null;
 
     const ow = outer?.clientWidth ?? 0;
     const oh = outer?.clientHeight ?? 0;
@@ -721,7 +801,7 @@ export default function ScoreOSMD({
 
     const viewBox = svg?.getAttribute("viewBox") || "(none)";
     const layoutW = outer?.dataset.osmdLayoutW ?? "(unset)";
-    const zf      = outer?.dataset.osmdZf ?? String(zoomFactorRef.current ?? 1);
+    const zf = outer?.dataset.osmdZf ?? String(zoomFactorRef.current ?? 1);
 
     void logStep(
       `[geom] ${label} ` +
@@ -736,10 +816,10 @@ export default function ScoreOSMD({
   const dumpBands = useCallback((label: string, bands: Band[]): void => {
     const n = bands.length;
     const sample = bands.slice(0, Math.min(5, n))
-                        .map(b => Math.round(b.height))
-                        .join(",");
+      .map(b => Math.round(b.height))
+      .join(",");
     const firstTop = n ? Math.round(bands[0]!.top) : -1;
-    const lastBot  = n ? Math.round(bands[n - 1]!.bottom) : -1;
+    const lastBot = n ? Math.round(bands[n - 1]!.bottom) : -1;
     void logStep(`[bands] ${label} n=${n} sampleH=[${sample}] firstTop=${firstTop} lastBottom=${lastBot}`);
   }, []);
 
@@ -747,10 +827,10 @@ export default function ScoreOSMD({
   const reflowFnRef = useRef<ReflowCallback>(async function noopReflow(): Promise<void> {
     return;
   });
-  
+
   const repagFnRef = useRef<
     (resetToFirst?: boolean, showBusy?: boolean) => void
-  >(() => {});
+  >(() => { });
 
   const vpHRef = useVisibleViewportHeight();
 
@@ -812,7 +892,7 @@ export default function ScoreOSMD({
     void logStep(`debug:probe measured bands=${measured.length} H=${H} starts=${starts.join(",") || "(none)"}`);
   }, [getPAGE_H]);
 
-  
+
   // Apply the chosen page to the viewport: translate the SVG to its start and mask/cut to hide any next-page peek.
   // May recompute page starts and re-apply to preserve whole systems; bounded recursion prevents oscillation.
   const applyPage = useCallback(
@@ -980,15 +1060,15 @@ export default function ScoreOSMD({
           const nextBand = bands[nextStartIndex];
           if (!lastBand || !nextBand) { return hVisible; }
 
-          const relBottom  = lastBand.bottom - startBand.top;
-          const nextTopRel = nextBand.top    - startBand.top;
+          const relBottom = lastBand.bottom - startBand.top;
+          const nextTopRel = nextBand.top - startBand.top;
 
           // If nothing from the next page peeks into the viewport, don't mask at all.
           if (nextTopRel >= hVisible - PEEK_GUARD - 1) { return hVisible; }
 
           // Otherwise, hide just the peeking sliver.
           const nudge = (window.devicePixelRatio || 1) >= 2 ? 3 : 2;
-          const low  = Math.ceil(relBottom) + MASK_BOTTOM_SAFETY_PX - nudge;
+          const low = Math.ceil(relBottom) + MASK_BOTTOM_SAFETY_PX - nudge;
           const high = Math.floor(nextTopRel) - PEEK_GUARD;
 
           if (low > high) {
@@ -1020,13 +1100,13 @@ export default function ScoreOSMD({
         outer.dataset.osmdLastApply = String(Date.now());
         outer.dataset.osmdPage = String(pageIdxRef.current);
         outer.dataset.osmdMaskTop = String(maskTopWithinMusicPx);
-        outer.dataset.osmdPages  = String(pages);
+        outer.dataset.osmdPages = String(pages);
         outer.dataset.osmdStarts = starts.slice(0, 12).join(',');
-        outer.dataset.osmdTy     = String(-ySnap + Math.max(0, topGutterPx));
-        outer.dataset.osmdH      = String(hVisible);
+        outer.dataset.osmdTy = String(-ySnap + Math.max(0, topGutterPx));
+        outer.dataset.osmdH = String(hVisible);
 
         // Single, serialized logger
-        logStep(`apply page:${clampedPage+1}/${pages} start:${startIndex} nextStart:${nextStartIndex} h:${hVisible} maskTop:${maskTopWithinMusicPx}`);
+        logStep(`apply page:${clampedPage + 1}/${pages} start:${startIndex} nextStart:${nextStartIndex} h:${hVisible} maskTop:${maskTopWithinMusicPx}`);
 
         let mask = outer.querySelector<HTMLDivElement>("[data-osmd-mask='1']");
         if (!mask) {
@@ -1083,12 +1163,12 @@ export default function ScoreOSMD({
         // Stop layer promotion after page is applied
         if (svg) { svg.style.willChange = "auto"; }
       } finally {
-        try { outer.dataset.osmdFunc = prevFuncTag; } catch {}
+        try { outer.dataset.osmdFunc = prevFuncTag; } catch { }
       }
-    }, 
+    },
     [pageHeight, topGutterPx, bottomPeekPad, getPAGE_H]
   );
-  
+
   // --- HEIGHT-ONLY REPAGINATION (no OSMD re-init) ---
   const recomputePaginationHeightOnly = useCallback(
     (resetToFirst: boolean = false, withSpinner: boolean = false): void => {
@@ -1150,7 +1230,7 @@ export default function ScoreOSMD({
         }
 
         const queued = reflowAgainRef.current;
-        const cause  = reflowQueuedCauseRef.current || "drain:after-repag";
+        const cause = reflowQueuedCauseRef.current || "drain:after-repag";
         reflowAgainRef.current = "none";
         reflowQueuedCauseRef.current = "";
 
@@ -1179,7 +1259,7 @@ export default function ScoreOSMD({
       reflowCause?: string
     ): Promise<void> {
       const outer = wrapRef.current;
-      const osmd  = osmdRef.current;
+      const osmd = osmdRef.current;
 
       if (!outer) {
         console.warn("[reflowOnWidthChange][prep] early-bail outer=0 osmd=" + (osmd ? "1" : "0"));
@@ -1189,7 +1269,7 @@ export default function ScoreOSMD({
       // Tag this path and set initial phase so logStep prefixes are correct.
       const prevFuncTag = outer.dataset.osmdFunc ?? "";
       outer.dataset.osmdFunc = "reflowOnWidthChange";
-      
+
       outer.dataset.osmdPhase = "prep";
       await logStep("phase starting", { outer });
 
@@ -1209,7 +1289,7 @@ export default function ScoreOSMD({
         if (reflowRunningRef.current) {
           reflowAgainRef.current = "width";
           const run = Number(outer.dataset.osmdRun || "0");
-          outer.dataset.osmdReflowQueued   = String(run);
+          outer.dataset.osmdReflowQueued = String(run);
           outer.dataset.osmdReflowQueueWhy = "reflowRunning";
           outer.dataset.osmdReflowQueuedAt = String(Date.now());
           void logStep("reflow already in progress; queued follow-up");
@@ -1230,37 +1310,41 @@ export default function ScoreOSMD({
         handledHRef.current = currH;
 
         try {
-          outer.dataset.osmdReflowTargetW = "";
-          outer.dataset.osmdReflowTargetH = "";
-        } catch {}
+          outer.dataset.osmdReflowTargetW = String(currW);
+          outer.dataset.osmdReflowTargetH = String(currH);
+        } catch { }
 
-        // Spinner on (with unconditional fail-safe)
-        {
-          const token = Symbol("spin");
-          spinnerOwnerRef.current = token;
+        /*
+                // Spinner on (with unconditional fail-safe)
+                {
+                  const token = Symbol("spin");
+                  spinnerOwnerRef.current = token;
+        
+                  setBusyMsg(DEFAULT_BUSY);
+                  setBusy(true);
+        
+                  await new Promise<void>((r) => setTimeout(r, 0));
+                  if (document.visibilityState === "visible") {
+                    await Promise.race([
+                      new Promise<void>((r) => requestAnimationFrame(() => r())),
+                      new Promise<void>((r) => setTimeout(r, 120)),
+                    ]);
+                  }
+        
+                  const ov = overlayRef.current;
+                  const shown = !!ov && ov.style.display !== "none";
+                  void logStep(shown ? "spinner is visible" : "spinner requested (visibility pending)");
+        
+                  if (spinnerFailSafeRef.current) { window.clearTimeout(spinnerFailSafeRef.current); }
+                  spinnerFailSafeRef.current = window.setTimeout(() => {
+                    spinnerOwnerRef.current = null;
+                    hideBusy();
+                    void logStep("failsafe triggered after 9s; hiding spinner");
+                  }, 9000);
+                }
+        */
 
-          setBusyMsg(DEFAULT_BUSY);
-          setBusy(true);
-
-          await new Promise<void>((r) => setTimeout(r, 0));
-          if (document.visibilityState === "visible") {
-            await Promise.race([
-              new Promise<void>((r) => requestAnimationFrame(() => r())),
-              new Promise<void>((r) => setTimeout(r, 120)),
-            ]);
-          }
-
-          const ov = overlayRef.current;
-          const shown = !!ov && ov.style.display !== "none";
-          void logStep(shown ? "spinner is visible" : "spinner requested (visibility pending)");
-
-          if (spinnerFailSafeRef.current) { window.clearTimeout(spinnerFailSafeRef.current); }
-          spinnerFailSafeRef.current = window.setTimeout(() => {
-            spinnerOwnerRef.current = null;
-            hideBusy();
-            void logStep("failsafe triggered after 9s; hiding spinner");
-          }, 9000);
-        }
+        await spinBegin(outer, { message: DEFAULT_BUSY, gatePaint: true });
 
         await logStep("phase finished", { outer });
         outer.dataset.osmdPhase = "render";
@@ -1276,7 +1360,7 @@ export default function ScoreOSMD({
           prevCvForReflow = hostForReflow.style.getPropertyValue("content-visibility") || "";
           hostForReflow.style.removeProperty("content-visibility");
           hostForReflow.style.visibility = "hidden";
-          try { void hostForReflow.getBoundingClientRect().width; } catch {}
+          try { void hostForReflow.getBoundingClientRect().width; } catch { }
         }
 
         {
@@ -1327,7 +1411,7 @@ export default function ScoreOSMD({
           );
         }
         pageStartsRef.current = newStarts;
- 
+
         await logStep("phase finished", { outer });
         outer.dataset.osmdPhase = "apply";
         await logStep("phase starting", { outer });
@@ -1352,7 +1436,7 @@ export default function ScoreOSMD({
 
       } finally {
         if (started) {
-          try { outer.dataset.osmdPhase = "finally"; } catch {}
+          try { outer.dataset.osmdPhase = "finally"; } catch { }
           await logStep("phase starting", { outer });
 
           // Reveal host now that the page has been applied (or if we bailed)
@@ -1373,9 +1457,11 @@ export default function ScoreOSMD({
                 hostNow.style.removeProperty("visibility");
               }
             }
-          } catch {}
+          } catch { }
 
-          spinnerOwnerRef.current = null;
+
+          //spinnerOwnerRef.current = null;
+
 
           // set reflowRunning=false BEFORE we flip busy off so the post-busy drain
           // sees we're idle and can drain queued work immediately.
@@ -1398,15 +1484,18 @@ export default function ScoreOSMD({
             }
           } catch { /* ignore */ }
 
+
           // hide overlay next; post-busy drain will see reflowRunning=false and (if dropped) no queued work
-          hideBusy();
+          //hideBusy();
+
+          await spinEnd(outer);
 
           // clear breadcrumbs
           outer.dataset.osmdReflowTargetW = "";
           outer.dataset.osmdReflowTargetH = "";
 
           const queued = reflowAgainRef.current;
-          const cause  = reflowQueuedCauseRef.current || "drain:finally";
+          const cause = reflowQueuedCauseRef.current || "drain:finally";
 
           // clear flags before scheduling to avoid double-drain races
           reflowAgainRef.current = "none";
@@ -1428,18 +1517,20 @@ export default function ScoreOSMD({
           }
           // else: queued === "none" → no log, nothing to schedule
 
-          if (spinnerFailSafeRef.current) {
-            window.clearTimeout(spinnerFailSafeRef.current);
-            spinnerFailSafeRef.current = null;
-          }
+
+          // if (spinnerFailSafeRef.current) {
+          //   window.clearTimeout(spinnerFailSafeRef.current);
+          //   spinnerFailSafeRef.current = null;
+          // }
+
 
           await logStep("phase finished", { outer });
         }
 
-        try { outer.dataset.osmdFunc = prevFuncTag; } catch {}
+        try { outer.dataset.osmdFunc = prevFuncTag; } catch { }
       }
     },
-    [applyPage, getPAGE_H, hideBusy, renderWithEffectiveWidth, fmtFlags, nextPerfUID]
+    [applyPage, getPAGE_H, renderWithEffectiveWidth, fmtFlags, nextPerfUID, spinBegin, spinEnd]
   );
 
   // keep ref pointing to latest width-reflow callback
@@ -1459,7 +1550,7 @@ export default function ScoreOSMD({
           (gl.getExtension("WEBGL_lose_context") as { loseContext?: () => void }).loseContext?.();
         }
         c.remove();
-      } catch {}
+      } catch { }
     }
   }
 
@@ -1497,7 +1588,7 @@ export default function ScoreOSMD({
     const vv = typeof window !== "undefined" ? window.visualViewport : undefined;
 
     let lastScale = vv?.scale ?? 1;
-    let lastDpr   = window.devicePixelRatio || 1;
+    let lastDpr = window.devicePixelRatio || 1;
     let kick: number | null = null;
 
     const schedule = (why: "vv-scale" | "dpr") => {
@@ -1589,7 +1680,7 @@ export default function ScoreOSMD({
       try {
         const epoch = ++initEpochRef.current;
         outer.dataset.osmdInitEpoch = String(epoch);
-        
+
         // If a newer init started (src changed), abort this one quietly.
         const isStale = () => outer.dataset.osmdInitEpoch !== String(epoch);
 
@@ -1623,7 +1714,7 @@ export default function ScoreOSMD({
           }
           if (isStale()) { return; }
 
-      } catch {}
+        } catch { }
 
         await logStep("BUILD: ScoreOSMD v10 @ tick+ap-gate");
 
@@ -1832,7 +1923,7 @@ export default function ScoreOSMD({
         // NOTE: MessageChannel probe removed as redundant
         try {
           queueMicrotask(() => { void logStep("[probe] init:microtask before render", { outer }); });
-        } catch {}
+        } catch { }
 
         // Time the actual render call
         const t0 = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
@@ -1868,7 +1959,7 @@ export default function ScoreOSMD({
             void hostX.getBoundingClientRect().width;  // force layout
             void hostX.scrollWidth;                    // ditto
           }
-        } catch {}
+        } catch { }
 
         try {
           const canvasCount = outer.querySelectorAll("canvas").length
@@ -1883,7 +1974,7 @@ export default function ScoreOSMD({
               }
             }, 0)
           } else {
-              void logStep("purge:skip(no-canvas)")
+            void logStep("purge:skip(no-canvas)")
           }
 
           outer.dataset.osmdPhase = "scan"
@@ -1895,7 +1986,7 @@ export default function ScoreOSMD({
           const err: Error = e instanceof Error ? e : new Error(String(e))
           void logStep(`MEASURE-ENTRY:exception:${err.message}`)
         }
-        
+
         // Measure immediately — no gate at all.
         void logStep("measure:gate:none");
 
@@ -1930,13 +2021,13 @@ export default function ScoreOSMD({
                 }
                 hostForInitX.style.visibility = prevVisForInit || "visible";
               }
-            } catch {}
+            } catch { }
 
             o.dataset.osmdPhase = "init:forced-finalize";
             void logStep("init:forced-finalize");
             hideBusy();
           }, 1500);
-        } catch {}
+        } catch { }
 
         // --- Measure systems + first pagination ---
         void outer.getBoundingClientRect(); // layout flush
@@ -1954,13 +2045,13 @@ export default function ScoreOSMD({
             `host.vis=${cs.visibility} host.cv=${cs.getPropertyValue('content-visibility')} ` +
             `host.contain=${cs.getPropertyValue('contain')}`
           );
-        } catch {}
+        } catch { }
 
         const bands =
           withUntransformedSvg(outer, (svg) =>
             timeSection("measure:scan", () => scanSystemsPx(outer, svg))
           ) ?? [];
-          
+
         void logStep(`measure:scan:exit bands=${bands.length}`);
         dumpTelemetry(`post-measure:init bands=${bands.length}`);
         dumpBands("init", bands);
@@ -2002,7 +2093,7 @@ export default function ScoreOSMD({
                 hostForInit3.style.removeProperty("content-visibility");
               }
             }
-          } catch {}
+          } catch { }
           hideBusy();
           return;
         }
@@ -2034,7 +2125,7 @@ export default function ScoreOSMD({
             }
             hostForInit2.style.visibility = prevVisForInit || "visible";
           }
-        } catch {}
+        } catch { }
 
         // Quick snapshot
         void logStep(`init: svg=${outer.dataset.osmdSvg} bands=${outer.dataset.osmdBands} pages=${outer.dataset.osmdPages}`);
@@ -2051,9 +2142,9 @@ export default function ScoreOSMD({
         hideBusy();
 
       } finally {
-      // Restore previous func-tag (exactly like reflowOnWidthChange).
-      try { outer.dataset.osmdFunc = prevFuncTag; } catch {}
-    }
+        // Restore previous func-tag (exactly like reflowOnWidthChange).
+        try { outer.dataset.osmdFunc = prevFuncTag; } catch { }
+      }
 
 
     })().catch((err: unknown) => {
@@ -2062,8 +2153,8 @@ export default function ScoreOSMD({
       const outerNow = wrapRef.current;
       const msg =
         err instanceof Error ? err.message :
-        typeof err === "string" ? err :
-        JSON.stringify(err);
+          typeof err === "string" ? err :
+            JSON.stringify(err);
 
       if (outerNow) {
         outerNow.setAttribute("data-osmd-step", "init-crash");
@@ -2078,7 +2169,7 @@ export default function ScoreOSMD({
           window.clearTimeout(initFinalizeTimerRef.current);
           initFinalizeTimerRef.current = null;
         }
-      } catch {}
+      } catch { }
 
       if (osmdRef.current) {
         osmdRef.current?.clear();
@@ -2139,7 +2230,7 @@ export default function ScoreOSMD({
     [applyPage, getPAGE_H]
   );
 
-  const goNext = useCallback(() => tryAdvance(1),  [tryAdvance]);
+  const goNext = useCallback(() => tryAdvance(1), [tryAdvance]);
   const goPrev = useCallback(() => tryAdvance(-1), [tryAdvance]);
 
   // Wheel & keyboard paging (disabled while busy)
@@ -2202,7 +2293,7 @@ export default function ScoreOSMD({
     const TAP_MAX_MOVE_PX = 12;   // little to no movement
 
     const onTouchStart = (e: TouchEvent) => {
-      if (!readyRef.current ||  busyRef.current || e.touches.length === 0) {
+      if (!readyRef.current || busyRef.current || e.touches.length === 0) {
         return;
       }
       active = true;
@@ -2252,8 +2343,8 @@ export default function ScoreOSMD({
     };
 
     outer.addEventListener("touchstart", onTouchStart, { passive: true });
-    outer.addEventListener("touchmove", onTouchMove,  { passive: false });
-    outer.addEventListener("touchend",  onTouchEnd,   { passive: true });
+    outer.addEventListener("touchmove", onTouchMove, { passive: false });
+    outer.addEventListener("touchend", onTouchEnd, { passive: true });
 
     outer.style.overscrollBehavior = "contain";
 
@@ -2298,7 +2389,7 @@ export default function ScoreOSMD({
         // --- queue + return if not safe to run now (VV handler) ---
         const kind =
           widthChanged ? "width" :
-          (heightChanged ? "height" : "none");
+            (heightChanged ? "height" : "none");
 
         if (kind === "none") {
           return;
@@ -2454,27 +2545,27 @@ export default function ScoreOSMD({
   const isFill = fillParent;
   const outerStyle: React.CSSProperties = isFill
     ? {
-        width: "100%",
-        height: vpHRef.current > 0 ? vpHRef.current : "100vh", // ← was "100%"
-        minHeight: 320,                                        // ← was 0
-        position: "relative",
-        overflow: "hidden",
-        background: "#fff",
-        paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 2px)",
-        boxSizing: "border-box",
-        isolation: "isolate",
-      }
+      width: "100%",
+      height: vpHRef.current > 0 ? vpHRef.current : "100vh", // ← was "100%"
+      minHeight: 320,                                        // ← was 0
+      position: "relative",
+      overflow: "hidden",
+      background: "#fff",
+      paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 2px)",
+      boxSizing: "border-box",
+      isolation: "isolate",
+    }
     : {
-        width: "100%",
-        height: height ?? 600,
-        minHeight: height ?? 600,
-        position: "relative",
-        overflow: "hidden",
-        background: "#fff",
-        paddingBottom: "2px",
-        boxSizing: "border-box",
-        isolation: "isolate",
-      };
+      width: "100%",
+      height: height ?? 600,
+      minHeight: height ?? 600,
+      position: "relative",
+      overflow: "hidden",
+      background: "#fff",
+      paddingBottom: "2px",
+      boxSizing: "border-box",
+      isolation: "isolate",
+    };
 
   const hostStyle: React.CSSProperties = {
     position: "absolute",
