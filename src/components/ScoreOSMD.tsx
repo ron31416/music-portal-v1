@@ -1843,8 +1843,6 @@ export default function ScoreOSMD({
             async () => await withTimeout(entry.text(), 10000, "entry.text() timeout"),
             (ms) => { void logStep(`entry.text() runtime: (${ms}ms)`); }
           );
-
-          await logStep("zip:file:read:ok");
           outer.dataset.osmdZipChosen = entryName;
           outer.dataset.osmdZipChars = String(xmlText.length);
 
@@ -1860,7 +1858,7 @@ export default function ScoreOSMD({
           }
           const hasPartwise = xmlDoc.getElementsByTagName("score-partwise").length > 0;
           const hasTimewise = xmlDoc.getElementsByTagName("score-timewise").length > 0;
-          await logStep(`xml:tags pw=${String(hasPartwise)} tw=${String(hasTimewise)}`);
+          await logStep(`xmlDoc.getElementsByTagName pw=${String(hasPartwise)} tw=${String(hasTimewise)}`);
           if (!hasPartwise && !hasTimewise) {
             throw new Error("xmlDoc.getElementsByTagName no partwise or timewise");
           }
@@ -1914,10 +1912,13 @@ export default function ScoreOSMD({
         await waitForFonts();
         await logStep("fonts:ready");
 
+        outer.dataset.osmdPhase = "render";
+        await logStep("starting phase");
+
         // --- First render ---
         const attemptForRender = Number(outer.dataset.osmdZoomEntered || "0")
         outer.dataset.osmdRenderAttempt = String(attemptForRender)
-        void logStep(`[render] starting attempt#${attemptForRender}`)
+        void logStep(`starting attempt#${attemptForRender}`)
 
         // Prevent giant paint during render: hide host, keep layout available
         const hostForInit = hostRef.current
@@ -1930,10 +1931,6 @@ export default function ScoreOSMD({
           hostForInit.style.visibility = "hidden"
         }
 
-        // Kick off render immediately (no async gating)
-        outer.dataset.osmdPhase = "render";
-        await logStep("render:start");
-
         // (optional) prove the event loop is still responsive
         // NOTE: MessageChannel probe removed as redundant
         try {
@@ -1943,14 +1940,14 @@ export default function ScoreOSMD({
         // Time the actual render call
         const t0 = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
         await renderWithEffectiveWidth(outer, osmd);
-        outer.dataset.osmdPhase = "render:return";
-        void logStep("[probe] render returned", { outer });
+        //outer.dataset.osmdPhase = "render:return";
+        void logStep("render returned", { outer });
 
         const t1 = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
         const renderMs = Math.round(t1 - t0);
         outer.dataset.osmdRenderMs = String(renderMs);
         outer.dataset.osmdRenderEndedAt = String(Date.now());
-        void logStep(`[render] finished attempt#${attemptForRender} (${renderMs}ms)`, { outer });
+        void logStep(`finished attempt#${attemptForRender} (${renderMs}ms)`, { outer });
 
         // Dev-only: dump all tracked telemetry values (phase, timings, etc.)
         dumpTelemetry("post-render:init");
