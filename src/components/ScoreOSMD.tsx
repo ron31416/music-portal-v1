@@ -215,12 +215,6 @@ export async function logStep(
   } catch { /* no-op */ }
 }
 
-function tnow() {
-  return (typeof performance !== 'undefined' && performance.now)
-    ? performance.now()
-    : Date.now();
-}
-
 // --- DIAGNOSTIC: tiny timing helper (no behavior change) ---
 function timeSection<T>(label: string, fn: () => T): T {
   const t0 = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
@@ -1735,40 +1729,46 @@ export default function ScoreOSMD({
         // Spinner on during boot (unified with reflow)
         await spinBegin(outer, { message: DEFAULT_BUSY, gatePaint: true });
 
-        // --- Load score (string or API/zip) ---
-        await logStep("load:begin");
+        outer.dataset.osmdPhase = "load";
+        await logStep("phase starting", { outer });
+
         let loadInput: string | Document | ArrayBuffer | Uint8Array = src;
 
         if (src.startsWith("/api/")) {
-          const res = await fetch(src, { cache: "no-store" });
-          if (!res.ok) { throw new Error(`HTTP ${res.status}`); }
+          // 1) Network fetch → ArrayBuffer (timed)
+          const ab = await perfBlockAsync(
+            nextPerfUID(outer.dataset.osmdRun),
+            async () => {
+              const res = await fetch(src, { cache: "no-store" });
+              if (!res.ok) { throw new Error(`HTTP ${res.status}`); }
 
-          const ab = await withTimeout(res.arrayBuffer(), 12000, "fetch:timeout");
-          void logStep(`fetch:bytes:${ab.byteLength}`);
-          await logStep("fetch:done");        // flush before unzip work
+              const buf = await withTimeout(res.arrayBuffer(), 12000, "fetch:timeout");
+              outer.dataset.osmdZipBytes = String(buf.byteLength);
+              return buf;
+            },
+            (ms) => { void logStep(`fetch runtime: (${ms}ms)`); }
+          );
 
-          // unzipit import
-          await logStep("zip:lib:import");
-          let unzip!: typeof import("unzipit").unzip;
-          try {
-            const uz = await withTimeout(import("unzipit"), 4000, "zip:lib:import:timeout");
-            ({ unzip } = uz as typeof import("unzipit"));
-            await logStep("zip:lib:ready");
-          } catch (e) {
-            await logStep("zip:lib:error");
-            throw e;
-          }
+          await logStep(`fetch:bytes:${ab.byteLength}`);
+          await logStep("fetch:done"); // small breadcrumb before zip work
 
-          // open zip
-          const tZip0 = tnow();
-          await logStep("zip:open");
-          const { entries } = await withTimeout(unzip(ab), 8000, "zip:open:timeout");
-          void logStep(`zip:open: ${Math.round(tnow() - tZip0)}ms`);
-          await logStep("zip:opened");
+          // 2) Import unzipit (timed)
+          const uzMod = await perfBlockAsync(
+            nextPerfUID(outer.dataset.osmdRun),
+            async () => await withTimeout(import("unzipit"), 4000, "zip:lib:import:timeout"),
+            (ms) => { void logStep(`zip:lib:import runtime: (${ms}ms)`); }
+          );
+          const { unzip } = uzMod as typeof import("unzipit");
 
-          // container.xml probe
+          // 3) Open zip (timed)
+          const { entries } = await perfBlockAsync(
+            nextPerfUID(outer.dataset.osmdRun),
+            async () => await withTimeout(unzip(ab), 8000, "zip:open:timeout"),
+            (ms) => { void logStep(`zip:open runtime: (${ms}ms)`); }
+          );
+
+          // 4) container.xml probe (optional fast path)
           let entryName: string | undefined;
-          await logStep("zip:container:probe");
           const container = entries["META-INF/container.xml"];
           if (container) {
             await logStep("zip:container:read");
@@ -1776,7 +1776,8 @@ export default function ScoreOSMD({
 
             await logStep("zip:container:parse");
             const cdoc = new DOMParser().parseFromString(containerXml, "application/xml");
-            const rootfile = cdoc.querySelector('rootfile[full-path]') || cdoc.querySelector("rootfile");
+            const rootfile =
+              cdoc.querySelector('rootfile[full-path]') || cdoc.querySelector("rootfile");
             const fullPath =
               rootfile?.getAttribute("full-path") ||
               rootfile?.getAttribute("path") ||
@@ -1793,7 +1794,7 @@ export default function ScoreOSMD({
             await logStep("zip:container:missing");
           }
 
-          // scan fallback
+          // 5) Fallback scan if container.xml didn’t resolve a score
           if (!entryName) {
             await logStep("zip:scan:start");
             const candidates = Object.keys(entries).filter((p) => {
@@ -1819,34 +1820,42 @@ export default function ScoreOSMD({
 
           if (!entryName) { throw new Error("zip:no-musicxml-in-archive"); }
 
-          // read + parse XML
-          await logStep("zip:file:read");
+          // 6) Read chosen file (timed)
           const entry = entries[entryName];
           if (!entry) { throw new Error(`zip:file:missing:${entryName}`); }
 
-          const xmlText = await withTimeout(entry.text(), 10000, "zip:file:read:timeout");
-          await logStep("zip:file:read:ok");
-          void logStep(`zip:file:chars:${xmlText.length}`);
+          const xmlText = await perfBlockAsync(
+            nextPerfUID(outer.dataset.osmdRun),
+            async () => await withTimeout(entry.text(), 10000, "zip:file:read:timeout"),
+            (ms) => { void logStep(`zip:file:read runtime: (${ms}ms)`); }
+          );
 
-          await logStep("xml:parse:start");
-          const xmlDoc = new DOMParser().parseFromString(xmlText, "application/xml");
-          await logStep("xml:parse:done");
+          await logStep("zip:file:read:ok");
+          outer.dataset.osmdZipChosen = entryName;
+          outer.dataset.osmdZipChars = String(xmlText.length);
+
+          // 7) Parse XML (timed) + validate
+          const xmlDoc = await perfBlockAsync(
+            nextPerfUID(outer.dataset.osmdRun),
+            async () => new DOMParser().parseFromString(xmlText, "application/xml"),
+            (ms) => { void logStep(`xml:parse runtime: (${ms}ms)`); }
+          );
 
           if (xmlDoc.getElementsByTagName("parsererror").length > 0) {
             throw new Error("MusicXML parse error: XML parsererror");
           }
-
           const hasPartwise = xmlDoc.getElementsByTagName("score-partwise").length > 0;
           const hasTimewise = xmlDoc.getElementsByTagName("score-timewise").length > 0;
-          void logStep(`xml:tags pw=${String(hasPartwise)} tw=${String(hasTimewise)}`);
+          await logStep(`xml:tags pw=${String(hasPartwise)} tw=${String(hasTimewise)}`);
           if (!hasPartwise && !hasTimewise) {
             throw new Error("MusicXML parse error: no score-partwise/score-timewise");
           }
 
-          const xmlString = new XMLSerializer().serializeToString(xmlDoc);
+          // 8) Hand off to OSMD.load(...)
+          loadInput = new XMLSerializer().serializeToString(xmlDoc);
           await logStep("load:ready");
-          loadInput = xmlString;
         } else {
+          // Non-API source: use as-is
           loadInput = src;
         }
 
