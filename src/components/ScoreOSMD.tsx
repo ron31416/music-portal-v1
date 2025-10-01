@@ -1901,6 +1901,10 @@ export default function ScoreOSMD({
           (ms) => { void logStep(`renderWithEffectiveWidth runtime: (${ms}ms)`); }
         );
 
+        await logStep("phase finished", { outer });
+        outer.dataset.osmdPhase = "scan";
+        await logStep("phase starting");
+
         // Prepare the rendered SVG subtree for layout calculations.
         // Similar to the reflow path: strip content-visibility so
         // the browser actually lays it out, but keep it hidden from
@@ -1987,6 +1991,10 @@ export default function ScoreOSMD({
         outer.dataset.osmdPages = String(pageStartsRef.current.length);
         void logStep(`starts:init: ${pageStartsRef.current.join(",")}`);
 
+        await logStep("phase finished", { outer });
+        outer.dataset.osmdPhase = "apply";
+        await logStep("phase starting", { outer });
+
         pageIdxRef.current = 0;
         timeSection("apply:first", () => { applyPage(0); });
         await ap("apply:first", 450);
@@ -2017,6 +2025,8 @@ export default function ScoreOSMD({
 
         readyRef.current = true;
         await spinEnd(outer);
+
+        await logStep("phase finished", { outer });
 
       } finally {
         // Restore previous func-tag (exactly like reflowOnWidthChange).
