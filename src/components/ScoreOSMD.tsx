@@ -156,23 +156,28 @@ async function waitForPaint(timeoutMs = 450): Promise<void> {
 // Flip this to disable all on-page logging in one place.
 const DEBUG_LOG = true;
 
-// Track longest names we've seen so far for pretty, aligned prefixes.
-const __LOG_COLS = { fnW: 0, phaseW: 0 };
-const __MAX_COL = 28; // optional safety cap so a very long tag can't explode alignment
-
-function __fitAndPad(s: string, width: number): string {
-  const trimmed = s.length > __MAX_COL ? s.slice(0, __MAX_COL) : s;
-  return trimmed.padEnd(width, " ");
-}
 
 export async function logStep(
   message: string,
   opts: { paint?: boolean; outer?: HTMLDivElement | null } = {}
 ): Promise<void> {
   if (!DEBUG_LOG) { return; }
+
   const { paint = false, outer = null } = opts;
+
+  // ---- Fixed column widths (tweak as needed) ----
+  // 32 comfortably fits "recomputePaginationHeightOnly" (~30 chars) and similar.
+  const FN_COL = 32;
+  // You suggested 8 for phase; note some phases like "post-render-prepare" are longer
+  // and will be cleanly truncated to 8 here.
+  const PHASE_COL = 8;
+
+  // Local helper: truncate to the column width and pad to that width.
+  const pad = (s: string, w: number): string =>
+    (s.length > w ? s.slice(0, w) : s).padEnd(w, " ");
+
   try {
-    // Prefer the provided wrapper; otherwise find our wrapper element by data attribute.
+    // Prefer provided wrapper; otherwise find our wrapper element by data attribute.
     let fn = "(none)";
     let phase = "(none)";
     const wrap: HTMLElement | null =
@@ -181,38 +186,30 @@ export async function logStep(
         ? document.querySelector<HTMLElement>('[data-osmd-wrapper="1"]')
         : null);
 
-    if (wrap !== null) {
+    if (wrap) {
       const df = wrap.dataset?.osmdFunc;
       const dp = wrap.dataset?.osmdPhase;
       if (typeof df === "string" && df.length > 0) { fn = df; }
       if (typeof dp === "string" && dp.length > 0) { phase = dp; }
     }
 
-    // Update column widths (bounded by __MAX_COL).
-    const fnLen = Math.min(fn.length, __MAX_COL);
-    const phLen = phase !== "(none)" ? Math.min(phase.length, __MAX_COL) : 0;
-    if (fnLen > __LOG_COLS.fnW) { __LOG_COLS.fnW = fnLen; }
-    if (phLen > __LOG_COLS.phaseW) { __LOG_COLS.phaseW = phLen; }
+    // Always render both columns with fixed widths.
+    const fnChunk = `[${pad(fn === "(none)" ? "" : fn, FN_COL)}]`;
+    const phaseChunk = `[${pad(phase === "(none)" ? "" : phase, PHASE_COL)}]`;
 
-    // Build aligned prefix.
-    const fnChunk = `[${__fitAndPad(fn, __LOG_COLS.fnW)}]`;
-    const phaseChunk =
-      phase && phase !== "(none)"
-        ? ` [${__fitAndPad(phase, __LOG_COLS.phaseW)}]`
-        : "";
-
-    const composed = `${fnChunk}${phaseChunk} ${message}`;
+    const composed = `${fnChunk} ${phaseChunk} ${message}`;
 
     // eslint-disable-next-line no-console
     console.log(composed);
 
-    if (wrap !== null) {
+    if (wrap) {
       wrap.dataset.osmdLastLog = `${Date.now()}:${composed.slice(0, 80)}`;
     }
+
     if (paint) {
       await waitForPaint();
     }
-  } catch { /* no-op */ }
+  } catch { }
 }
 
 // --- DIAGNOSTIC: tiny timing helper (no behavior change) ---
@@ -1639,7 +1636,7 @@ export default function ScoreOSMD({
       // Match reflowOnWidthChange: capture, set our func-tag + phase, log start.
       const prevFuncTag = outer.dataset.osmdFunc ?? "";
       outer.dataset.osmdFunc = "initOSMD";
-      outer.dataset.osmdPhase = "boot";
+      outer.dataset.osmdPhase = "prep";
       await logStep("phase starting", { outer });
 
       try {
@@ -1709,7 +1706,6 @@ export default function ScoreOSMD({
         }) as OpenSheetMusicDisplay;
         osmdRef.current = osmd;
 
-        // Spinner on during boot (unified with reflow)
         await spinBegin(outer, { message: DEFAULT_BUSY, gatePaint: true });
 
         await logStep("phase finished", { outer });
