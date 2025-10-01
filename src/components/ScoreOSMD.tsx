@@ -1563,7 +1563,7 @@ export default function ScoreOSMD({
             },
             (ms) => {
               const bytes = outer.dataset.osmdZipBytes ?? "?";
-              void logStep(`fetch() runtime: (${ms}ms) bytes:${bytes}`);
+              void logStep(`fetch() + arrayBuffer() runtime: (${ms}ms) bytes:${bytes}`);
             }
           );
 
