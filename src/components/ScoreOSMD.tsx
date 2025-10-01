@@ -1916,17 +1916,6 @@ export default function ScoreOSMD({
         outer.dataset.osmdPhase = "render";
         await logStep("starting phase");
 
-        // --- First render ---
-        // const attemptForRender = Number(outer.dataset.osmdZoomEntered || "0")
-        // outer.dataset.osmdRenderAttempt = String(attemptForRender)
-        // void logStep(`starting attempt#${attemptForRender}`)
-
-        await perfBlockAsync(
-          nextPerfUID(outer.dataset.osmdRun),
-          async () => { await renderWithEffectiveWidth(outer, osmd); },
-          (ms) => { void logStep(`renderWithEffectiveWidth runtime: (${ms}ms)`); }
-        );
-
         // Prevent giant paint during render: hide host, keep layout available
         const hostForInit = hostRef.current
         const prevVisForInit = hostForInit?.style.visibility ?? ""
@@ -1938,26 +1927,11 @@ export default function ScoreOSMD({
           hostForInit.style.visibility = "hidden"
         }
 
-        // (optional) prove the event loop is still responsive
-        // NOTE: MessageChannel probe removed as redundant
-        try {
-          queueMicrotask(() => { void logStep("[probe] init:microtask before render", { outer }); });
-        } catch { }
-
-        // Time the actual render call
-        const t0 = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
-        await renderWithEffectiveWidth(outer, osmd);
-        //outer.dataset.osmdPhase = "render:return";
-        void logStep("render returned", { outer });
-
-        const t1 = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
-        const renderMs = Math.round(t1 - t0);
-        outer.dataset.osmdRenderMs = String(renderMs);
-        outer.dataset.osmdRenderEndedAt = String(Date.now());
-
-
-        // void logStep(`finished attempt#${attemptForRender} (${renderMs}ms)`, { outer });
-
+        await perfBlockAsync(
+          nextPerfUID(outer.dataset.osmdRun),
+          async () => { await renderWithEffectiveWidth(outer, osmd); },
+          (ms) => { void logStep(`renderWithEffectiveWidth runtime: (${ms}ms)`); }
+        );
 
         // Dev-only: dump all tracked telemetry values (phase, timings, etc.)
         dumpTelemetry("post-render:init");
