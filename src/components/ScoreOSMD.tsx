@@ -1679,9 +1679,6 @@ export default function ScoreOSMD({
           outer.dataset.osmdCapVv = hasVV ? "1" : "0";
           outer.dataset.osmdCapRo = hasRO ? "1" : "0";
 
-          outer.dataset.osmdCapVv = hasVV ? "1" : "0";
-          outer.dataset.osmdCapRo = hasRO ? "1" : "0";
-
           await logStep(`caps vv=${hasVV ? "yes" : "no"} ro=${hasRO ? "yes" : "no"}`, { outer });
 
           if (!hasVV) {
@@ -1731,6 +1728,7 @@ export default function ScoreOSMD({
         // Spinner on during boot (unified with reflow)
         await spinBegin(outer, { message: DEFAULT_BUSY, gatePaint: true });
 
+        await logStep("phase finished", { outer });
         outer.dataset.osmdPhase = "load";
         await logStep("phase starting", { outer });
 
@@ -1866,7 +1864,6 @@ export default function ScoreOSMD({
           }
 
           // 8) Hand off to OSMD.load(...)
-
           {
             let s = "";
             s = perfBlock(
@@ -1882,31 +1879,15 @@ export default function ScoreOSMD({
           loadInput = src;
         }
 
-        // --- OSMD.load (timed, lazy heartbeat) ---
+        // 9) OSMD.load
         await perfBlockAsync(
           nextPerfUID(outer.dataset.osmdRun),
           async () => {
-            const t0 = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
-
-            // only start a heartbeat if the load is slow (cuts log noise)
-            let hb: number | null = null;
-            let arm: number | null = window.setTimeout(() => {
-              arm = null;
-              hb = window.setInterval(() => {
-                const now = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
-                const secs = Math.round((now - t0) / 1000);
-                void logStep(`osmd.load heartbeat +${secs}s`, { outer });
-              }, 1000);
-            }, 700);
-
-            try {
-              await awaitLoad(osmd, loadInput);
-            } finally {
-              if (arm !== null) { window.clearTimeout(arm); }
-              if (hb !== null) { window.clearInterval(hb); }
-            }
+            await awaitLoad(osmd, loadInput);
           },
-          (ms) => { void logStep(`osmd.load runtime: (${ms}ms)`); }
+          (ms) => {
+            void logStep(`awaitLoad(osmd, loadInput) runtime: (${ms}ms)`, { outer });
+          }
         );
 
         await perfBlockAsync(
@@ -1915,8 +1896,9 @@ export default function ScoreOSMD({
           (ms) => { void logStep(`waitForFonts() runtime: (${ms}ms)`); }
         );
 
+        await logStep("phase finished", { outer });
         outer.dataset.osmdPhase = "render";
-        await logStep("starting phase");
+        await logStep("phase starting");
 
         // Prevent giant paint during render: hide host, keep layout available
         const hostForInit = hostRef.current
@@ -1935,17 +1917,10 @@ export default function ScoreOSMD({
           (ms) => { void logStep(`renderWithEffectiveWidth runtime: (${ms}ms)`); }
         );
 
-        // Normally we would wait for requestAnimationFrame/paint here,
-        // but large scores can throttle timers. Instead, mark "painted"
-        // immediately so downstream steps don't block forever.
-        outer.dataset.osmdPhase = "render:painted";
-        void logStep("post-render:skip-wait (no-yield)");
-
         // Prepare the rendered SVG subtree for layout calculations.
         // Similar to the reflow path: strip content-visibility so
         // the browser actually lays it out, but keep it hidden from
         // the user until pagination/masking is ready.
-        outer.dataset.osmdPhase = "post-render-prepare";
         try {
           const hostX = hostRef.current;
           if (hostX) {
@@ -1956,78 +1931,8 @@ export default function ScoreOSMD({
           }
         } catch { }
 
-        try {
-          const canvasCount = outer.querySelectorAll("canvas").length
-          void logStep(`purge:probe canvas#=${canvasCount}`)
-          if (canvasCount > 0) {
-            void logStep("purge:queued")
-            window.setTimeout(() => {
-              try { purgeWebGL(outer); void logStep("purge:done") }
-              catch (e) {
-                const err: Error = e instanceof Error ? e : new Error(String(e))
-                void logStep(`purge:error:${err.message}`)
-              }
-            }, 0)
-          } else {
-            void logStep("purge:skip(no-canvas)")
-          }
-
-          outer.dataset.osmdPhase = "scan"
-          void logStep("phase starting", { outer })
-          // (optional breadcrumb)
-          void logStep("scan: no gate", { outer })
-
-        } catch (e) {
-          const err: Error = e instanceof Error ? e : new Error(String(e))
-          void logStep(`MEASURE-ENTRY:exception:${err.message}`)
-        }
-
-        // Measure immediately — no gate at all.
-        void logStep("measure:gate:none");
-
-        // Safety: if we don’t reach starts/applied quickly, reveal + clear busy anyway.
-        // Idempotent: real path will still run and win.
-        try {
-          // Cancel any older init finalize timer for safety
-          if (initFinalizeTimerRef.current) {
-            window.clearTimeout(initFinalizeTimerRef.current);
-          }
-          initFinalizeTimerRef.current = window.setTimeout(() => {
-            const o = wrapRef.current;
-            if (!o) { return; }
-
-            // Only act if this timeout belongs to the *current* init attempt
-            if (o.dataset.osmdInitEpoch !== String(epoch)) { return; }
-
-            const ph = o.dataset.osmdPhase || "";
-
-            // If first pagination has started/completed, do nothing
-            if (/^starts:/.test(ph) || ph === "apply" || /^applied:/.test(ph)) {
-              return;
-            }
-
-            try {
-              const hostForInitX = hostRef.current;
-              if (hostForInitX) {
-                if (prevCvValueForInit) {
-                  hostForInitX.style.setProperty("content-visibility", prevCvValueForInit || "");
-                } else {
-                  hostForInitX.style.removeProperty("content-visibility");
-                }
-                hostForInitX.style.visibility = prevVisForInit || "visible";
-              }
-            } catch { }
-
-            o.dataset.osmdPhase = "init:forced-finalize";
-            void logStep("init:forced-finalize");
-            void spinEnd(o);
-          }, 1500);
-        } catch { }
-
         // --- Measure systems + first pagination ---
         void outer.getBoundingClientRect(); // layout flush
-
-        void logStep("measure:scan:enter");
 
         // PROBE A (init)
         try {
