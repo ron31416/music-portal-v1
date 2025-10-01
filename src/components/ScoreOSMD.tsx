@@ -1801,9 +1801,9 @@ export default function ScoreOSMD({
 
             if (fullPath && entries[fullPath]) {
               entryName = fullPath;
-              await logStep(`containter selected:${entryName}`);
+              await logStep(`container selected: ${entryName}`);
             } else {
-              await logStep("containter not found");
+              await logStep("container not found");
             }
           } else {
             await logStep("container missing");
@@ -1917,9 +1917,15 @@ export default function ScoreOSMD({
         await logStep("starting phase");
 
         // --- First render ---
-        const attemptForRender = Number(outer.dataset.osmdZoomEntered || "0")
-        outer.dataset.osmdRenderAttempt = String(attemptForRender)
-        void logStep(`starting attempt#${attemptForRender}`)
+        // const attemptForRender = Number(outer.dataset.osmdZoomEntered || "0")
+        // outer.dataset.osmdRenderAttempt = String(attemptForRender)
+        // void logStep(`starting attempt#${attemptForRender}`)
+
+        await perfBlockAsync(
+          nextPerfUID(outer.dataset.osmdRun),
+          async () => { await renderWithEffectiveWidth(outer, osmd); },
+          (ms) => { void logStep(`renderWithEffectiveWidth runtime: (${ms}ms)`); }
+        );
 
         // Prevent giant paint during render: hide host, keep layout available
         const hostForInit = hostRef.current
@@ -1948,7 +1954,10 @@ export default function ScoreOSMD({
         const renderMs = Math.round(t1 - t0);
         outer.dataset.osmdRenderMs = String(renderMs);
         outer.dataset.osmdRenderEndedAt = String(Date.now());
-        void logStep(`finished attempt#${attemptForRender} (${renderMs}ms)`, { outer });
+
+
+        // void logStep(`finished attempt#${attemptForRender} (${renderMs}ms)`, { outer });
+
 
         // Dev-only: dump all tracked telemetry values (phase, timings, etc.)
         dumpTelemetry("post-render:init");
