@@ -1,5 +1,5 @@
 /* eslint curly: ["error", "all"] */
-// src/components/ScoreOSMD.tsx
+// src/components/ScoreViewer.tsx
 "use client";
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
@@ -57,9 +57,9 @@ async function withTimeout<T>(p: Promise<T>, ms: number, tag: string): Promise<T
   });
 }
 
-// Await OSMD.load(...) whether it returns void or a Promise.
+// Await osmd.load(...) whether it returns void or a Promise.
 // (No "maybe" checks needed.)
-async function awaitLoad(
+async function loadOSMD(
   osmd: OpenSheetMusicDisplay,
   input: string | Document | ArrayBuffer | Uint8Array
 ): Promise<void> {
@@ -475,7 +475,7 @@ async function perfBlockAsync<T>(
 
 /* ---------- Component ---------- */
 
-export default function ScoreOSMD({
+export default function ScoreViewer({
   src,
   fillParent = true,
   height = 600,
@@ -563,8 +563,13 @@ export default function ScoreOSMD({
     }
   }, []);
 
+
   // --- WIDTH-SANDBOXED RENDER (safe) ---
-  const renderWithEffectiveWidth = useCallback(
+  // Render OSMD at a computed “layout width” derived from wrapper width and current zoom.
+  // We temporarily pin the inner host <div> to that width (the “sandbox”), invoke osmd.render(),
+  // then restore the host’s styles in finally. No persistent DOM/CSS changes.
+  // Safe to call from both init and reflow paths.
+  const renderViewer = useCallback(
     async (
       outer: HTMLDivElement,
       osmd: OpenSheetMusicDisplay
@@ -573,7 +578,7 @@ export default function ScoreOSMD({
       if (!host || !outer) { return; }
 
       const prevFuncTag = outer.dataset.osmdFunc ?? "";
-      outer.dataset.osmdFunc = "renderWithEffectiveWidth";
+      outer.dataset.osmdFunc = "renderViewer";
       await logStep("enter", { outer });
 
       // Use our zoom source of truth
@@ -583,7 +588,6 @@ export default function ScoreOSMD({
       const hostW = Math.max(1, Math.floor(outer.clientWidth));
       const rawLayoutW = Math.max(1, Math.floor(hostW / zf));
 
-      // Tiny nudge helps avoid width-specific edge cases
       const widthNudge = REFLOW.WIDTH_NUDGE;
       const MAX_LAYOUT_W = REFLOW.MAX_LAYOUT_W;
       const MIN_LAYOUT_W = REFLOW.MIN_LAYOUT_W;
@@ -592,13 +596,12 @@ export default function ScoreOSMD({
       outer.dataset.osmdZf = String(zf);
       outer.dataset.osmdLayoutW = String(layoutW);
 
-      // Heartbeat so you can see progress even if render is slow
-      const startedAt = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
-      const beat = window.setInterval(() => {
-        const now = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
-        const secs = Math.round((now - startedAt) / 1000);
-        void logStep(`render:heartbeat +${secs}s`);
-      }, 1000);
+      // Capture prior inline styles (so we can restore them exactly)
+      const svg = getSvg(outer);
+      const prevLeft = host.style.left;
+      const prevRight = host.style.right;
+      const prevWidth = host.style.width;
+      const prevSvgTO = svg?.style.transformOrigin ?? "";
 
       try {
         // Style sandbox: let width drive layout just for this call
@@ -607,35 +610,34 @@ export default function ScoreOSMD({
         host.style.width = `${layoutW}px`;
         void host.getBoundingClientRect(); // ensure style applies this frame
 
-        // NEW: let the spinner/host actually paint before we block the main thread
+        // Let spinner/host paint before the heavy render
         await waitForPaint(300);
 
         await logStep(`w=${layoutW} hostW=${hostW} zf=${zf.toFixed(3)} osmd.Zoom=${osmd.Zoom ?? "n/a"}`);
 
-        // NEW: mark + measure the synchronous render
-        try { performance.mark("osmd-render:start"); } catch { }
-        osmd.render(); // synchronous & heavy
-        try {
-          performance.mark("osmd-render:end");
-          performance.measure("osmd-render", "osmd-render:start", "osmd-render:end");
-        } catch { }
+        // Timed core render (isolates synchronous OSMD work)
+        perfBlock(
+          nextPerfUID(outer.dataset.osmdRun),
+          () => { osmd.render(); },
+          (ms) => { void logStep(`osmd.render() runtime: (${ms}ms)`); }
+        );
       } catch (e) {
         void logStep(`render:error ${(e as Error)?.message ?? e}`);
         throw e;
       } finally {
-        try { await logStep("exit", { outer }); } catch { }
-        try { outer.dataset.osmdFunc = prevFuncTag; } catch { }
+        try { await logStep("exit", { outer }); } catch { /* noop */ }
+        try { outer.dataset.osmdFunc = prevFuncTag; } catch { /* noop */ }
 
-        try { window.clearInterval(beat); } catch { }
-        // Always restore styles
-        host.style.left = "";
-        host.style.right = "";
-        host.style.width = "";
-        const svg = getSvg(outer);
-        if (svg) { svg.style.transformOrigin = "top left"; }
+        // Restore EXACT previous inline styles
+        host.style.left = prevLeft;
+        host.style.right = prevRight;
+        host.style.width = prevWidth;
+
+        // Restore prior transform anchor exactly (or remove if you prefer to let applyPage() set it)
+        if (svg) { svg.style.transformOrigin = prevSvgTO; }
       }
     },
-    [applyZoomFromRef]
+    [applyZoomFromRef, nextPerfUID]
   );
 
   const hideBusy = useCallback(() => {
@@ -1124,10 +1126,10 @@ export default function ScoreOSMD({
         const uid = nextPerfUID(outer.dataset.osmdRun);
         await perfBlockAsync(
           uid,
-          async () => { await renderWithEffectiveWidth(outer, osmd); },
+          async () => { await renderViewer(outer, osmd); },
           (ms) => {
             outer.dataset.osmdRenderMs = String(ms);
-            void logStep(`renderWithEffectiveWidth() runtime: (${ms}ms)`);
+            void logStep(`renderViewer() runtime: (${ms}ms)`);
           }
         );
       });
@@ -1181,7 +1183,7 @@ export default function ScoreOSMD({
     } finally {
       try { outer.dataset.osmdFunc = prevFuncTag; } catch { }
     }
-  }, [nextPerfUID, renderWithEffectiveWidth, withHostHidden, getPAGE_H, applyPage]);
+  }, [nextPerfUID, renderViewer, withHostHidden, getPAGE_H, applyPage]);
 
 
   // --- HEIGHT-ONLY REPAGINATION (no OSMD re-init) ---
@@ -1258,19 +1260,19 @@ export default function ScoreOSMD({
 
 
   // Handle a Visual Viewport width change by executing an osmd.render and a re-pagination
-  const reflowOnWidthChange = useCallback(
-    async function reflowOnWidthChange(): Promise<void> {
+  const reflowViewer = useCallback(
+    async function reflowViewer(): Promise<void> {
       const outer = wrapRef.current;
       const osmd = osmdRef.current;
 
       if (!outer) {
-        console.warn("[reflowOnWidthChange][prep] early-bail outer=0 osmd=" + (osmd ? "1" : "0"));
+        console.warn("[reflowViewer][prep] early-bail outer=0 osmd=" + (osmd ? "1" : "0"));
         return;
       }
 
       // Tag this path and set initial phase so logStep prefixes are correct.
       const prevFuncTag = outer.dataset.osmdFunc ?? "";
-      outer.dataset.osmdFunc = "reflowOnWidthChange";
+      outer.dataset.osmdFunc = "reflowViewer";
 
       outer.dataset.osmdPhase = "prep";
       await logStep("phase starting", { outer });
@@ -1363,8 +1365,8 @@ export default function ScoreOSMD({
 
   // keep ref pointing to latest width-reflow callback
   useEffect(() => {
-    reflowFnRef.current = reflowOnWidthChange;
-  }, [reflowOnWidthChange]);
+    reflowFnRef.current = reflowViewer;
+  }, [reflowViewer]);
 
   useEffect(() => {
     const el = wrapRef.current;
@@ -1463,15 +1465,15 @@ export default function ScoreOSMD({
 
 
   /** Init OSMD */
-  useEffect(function initOSMDEffect() {
+  useEffect(function initViewer() {
     (async () => {
       const host = hostRef.current;
       const outer = wrapRef.current;
       if (!host || !outer) { return; }
 
-      // Match reflowOnWidthChange: capture, set our func-tag + phase, log start.
+      // Match reflowViewer: capture, set our func-tag + phase, log start.
       const prevFuncTag = outer.dataset.osmdFunc ?? "";
-      outer.dataset.osmdFunc = "initOSMD";
+      outer.dataset.osmdFunc = "initViewer";
       outer.dataset.osmdPhase = "prep";
       await logStep("phase starting", { outer });
 
@@ -1577,113 +1579,6 @@ export default function ScoreOSMD({
             (ms) => { void logStep(`unzip() runtime: (${ms}ms)`); }
           );
 
-          /*          
-                    let entryName: string | undefined;
-                    const container = entries["META-INF/container.xml"];
-                    if (container) {
-                      const containerXml = await perfBlockAsync(
-                        nextPerfUID(outer.dataset.osmdRun),
-                        async () => {
-                          const s = await withTimeout(container.text(), 6000, "container.text timeout");
-                          outer.dataset.osmdContainerChars = String(s.length);
-                          return s;
-                        },
-                        (ms) => {
-                          const chars = outer.dataset.osmdContainerChars ?? "?";
-                          void logStep(`container.text() runtime: (${ms}ms) chars:${chars}`);
-                        }
-                      );
-          
-                      const cdoc = perfBlock(
-                        nextPerfUID(outer.dataset.osmdRun),
-                        () => new DOMParser().parseFromString(containerXml, "application/xml"),
-                        (ms) => { void logStep(`DOMParser().parseFromString() runtime: (${ms}ms)`); }
-                      );
-          
-                      const rootfile =
-                        cdoc.querySelector('rootfile[full-path]') || cdoc.querySelector("rootfile");
-                      const fullPath =
-                        rootfile?.getAttribute("full-path") ||
-                        rootfile?.getAttribute("path") ||
-                        rootfile?.getAttribute("href") ||
-                        undefined;
-          
-                      if (fullPath && entries[fullPath]) {
-                        entryName = fullPath;
-                        await logStep(`container selected: ${entryName}`);
-                      } else {
-                        await logStep("container not found");
-                      }
-                    } else {
-                      await logStep("container missing");
-                    }
-          
-                    // 5) Fallback scan if container.xml didn’t resolve a score
-                    if (!entryName) {
-                      const candidates = Object.keys(entries).filter((p) => {
-                        const q = p.toLowerCase();
-                        return !q.startsWith("meta-inf/") && (q.endsWith(".musicxml") || q.endsWith(".xml"));
-                      });
-                      void logStep(`candidates length${candidates.length}`);
-          
-                      candidates.sort((a, b) => {
-                        const aa = a.toLowerCase(), bb = b.toLowerCase();
-                        const scoreA = /score|partwise|timewise/.test(aa) ? 0 : 1;
-                        const scoreB = /score|partwise|timewise/.test(bb) ? 0 : 1;
-                        if (scoreA !== scoreB) { return scoreA - scoreB; }
-                        const extA = aa.endsWith(".musicxml") ? 0 : 1;
-                        const extB = bb.endsWith(".musicxml") ? 0 : 1;
-                        if (extA !== extB) { return extA - extB; }
-                        return aa.length - bb.length;
-                      });
-          
-                      entryName = candidates[0];
-                      await logStep(`entry name ${entryName ?? "(none)"}`);
-                    }
-          
-                    if (!entryName) { throw new Error("entry name missing"); }
-          
-                    // 6) Read chosen file (timed)
-                    const entry = entries[entryName];
-                    if (!entry) { throw new Error(`entry missing:${entryName}`); }
-          
-                    const xmlText = await perfBlockAsync(
-                      nextPerfUID(outer.dataset.osmdRun),
-                      async () => await withTimeout(entry.text(), 10000, "entry.text() timeout"),
-                      (ms) => { void logStep(`entry.text() runtime: (${ms}ms)`); }
-                    );
-                    outer.dataset.osmdZipChosen = entryName;
-                    outer.dataset.osmdZipChars = String(xmlText.length);
-          
-                    // 7) Parse XML (timed) + validate
-                    const xmlDoc = await perfBlockAsync(
-                      nextPerfUID(outer.dataset.osmdRun),
-                      async () => new DOMParser().parseFromString(xmlText, "application/xml"),
-                      (ms) => { void logStep(`DOMParser().parseFromString runtime: (${ms}ms)`); }
-                    );
-          
-                    if (xmlDoc.getElementsByTagName("parsererror").length > 0) {
-                      throw new Error("xmlDoc.getElementsByTagName parsererror");
-                    }
-                    const hasPartwise = xmlDoc.getElementsByTagName("score-partwise").length > 0;
-                    const hasTimewise = xmlDoc.getElementsByTagName("score-timewise").length > 0;
-                    await logStep(`xmlDoc.getElementsByTagName() hasPartwise: ${String(hasPartwise)} hasTimewise: ${String(hasTimewise)}`);
-                    if (!hasPartwise && !hasTimewise) {
-                      throw new Error("xmlDoc.getElementsByTagName() no partwise or timewise");
-                    }
-          
-                    {
-                      let s = "";
-                      s = perfBlock(
-                        nextPerfUID(outer.dataset.osmdRun),
-                        () => new XMLSerializer().serializeToString(xmlDoc),
-                        (ms) => { void logStep(`XMLSerializer().serializeToString runtime: (${ms}ms) chars=${s.length}`); }
-                      );
-                      outer.dataset.osmdXmlChars = String(s.length);
-                      loadInput = s;
-                    }
-          */
-
           // --- STRICT MXL container handling (no fallback scan) ---
           // Optional: tag a sub-phase; drop this line if you prefer to keep "load"
           outer.dataset.osmdPhase = "mxl:container";
@@ -1737,8 +1632,6 @@ export default function ScoreOSMD({
             throw new Error(`MXL error: rootfile entry not found in archive: ${fullPath}`);
           }
 
-          await logStep(`container selected: ${fullPath}`);
-
           // 7) Read chosen MusicXML (timed)
           const entry = entries[fullPath]!;
           const xmlText = await perfBlockAsync(
@@ -1789,10 +1682,10 @@ export default function ScoreOSMD({
         await perfBlockAsync(
           nextPerfUID(outer.dataset.osmdRun),
           async () => {
-            await awaitLoad(osmd, loadInput);
+            await loadOSMD(osmd, loadInput);
           },
           (ms) => {
-            void logStep(`awaitLoad() runtime: (${ms}ms)`, { outer });
+            void logStep(`loadOSMD() runtime: (${ms}ms)`, { outer });
           }
         );
 
@@ -1820,7 +1713,7 @@ export default function ScoreOSMD({
 
         // Record the dimensions we just handled. The VisualViewport listener compares
         // future vv events against these to decide:
-        //   - width changed -> full reflow (renderScanApply via reflowOnWidthChange)
+        //   - width changed -> full reflow (renderScanApply via reflowViewer)
         //   - height only   -> quick repagination
         // We capture them here once at the end of init; the width-reflow path updates
         // these itself at the start of each run.
@@ -1844,7 +1737,7 @@ export default function ScoreOSMD({
 
         await logStep("phase finished", { outer });
 
-        // Restore previous func-tag (exactly like reflowOnWidthChange).
+        // Restore previous func-tag (exactly like reflowViewer).
         try { outer.dataset.osmdFunc = prevFuncTag; } catch { }
       }
 
