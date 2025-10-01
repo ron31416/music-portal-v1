@@ -1548,7 +1548,6 @@ export default function ScoreOSMD({
         let loadInput: string | Document | ArrayBuffer | Uint8Array = src;
 
         if (src.startsWith("/api/")) {
-          // 1) Network fetch → ArrayBuffer (timed)
           const ab = await perfBlockAsync(
             nextPerfUID(outer.dataset.osmdRun),
             async () => {
@@ -1556,7 +1555,6 @@ export default function ScoreOSMD({
               if (!res.ok) { throw new Error(`HTTP ${res.status}`); }
 
               const buf = await withTimeout(res.arrayBuffer(), 12000, "fetch timeout");
-              // stash for the after() logger
               outer.dataset.osmdZipBytes = String(buf.byteLength);
               return buf;
             },
@@ -1566,7 +1564,6 @@ export default function ScoreOSMD({
             }
           );
 
-          // 2) Import unzipit (timed)
           const uzMod = await perfBlockAsync(
             nextPerfUID(outer.dataset.osmdRun),
             async () => await withTimeout(import("unzipit"), 4000, "unzipit timeout"),
@@ -1574,92 +1571,185 @@ export default function ScoreOSMD({
           );
           const { unzip } = uzMod as typeof import("unzipit");
 
-          // 3) Open zip (timed)
           const { entries } = await perfBlockAsync(
             nextPerfUID(outer.dataset.osmdRun),
             async () => await withTimeout(unzip(ab), 8000, "unzip timeout"),
             (ms) => { void logStep(`unzip() runtime: (${ms}ms)`); }
           );
 
-          // 4) container.xml probe (optional fast path)
-          let entryName: string | undefined;
+          /*          
+                    let entryName: string | undefined;
+                    const container = entries["META-INF/container.xml"];
+                    if (container) {
+                      const containerXml = await perfBlockAsync(
+                        nextPerfUID(outer.dataset.osmdRun),
+                        async () => {
+                          const s = await withTimeout(container.text(), 6000, "container.text timeout");
+                          outer.dataset.osmdContainerChars = String(s.length);
+                          return s;
+                        },
+                        (ms) => {
+                          const chars = outer.dataset.osmdContainerChars ?? "?";
+                          void logStep(`container.text() runtime: (${ms}ms) chars:${chars}`);
+                        }
+                      );
+          
+                      const cdoc = perfBlock(
+                        nextPerfUID(outer.dataset.osmdRun),
+                        () => new DOMParser().parseFromString(containerXml, "application/xml"),
+                        (ms) => { void logStep(`DOMParser().parseFromString() runtime: (${ms}ms)`); }
+                      );
+          
+                      const rootfile =
+                        cdoc.querySelector('rootfile[full-path]') || cdoc.querySelector("rootfile");
+                      const fullPath =
+                        rootfile?.getAttribute("full-path") ||
+                        rootfile?.getAttribute("path") ||
+                        rootfile?.getAttribute("href") ||
+                        undefined;
+          
+                      if (fullPath && entries[fullPath]) {
+                        entryName = fullPath;
+                        await logStep(`container selected: ${entryName}`);
+                      } else {
+                        await logStep("container not found");
+                      }
+                    } else {
+                      await logStep("container missing");
+                    }
+          
+                    // 5) Fallback scan if container.xml didn’t resolve a score
+                    if (!entryName) {
+                      const candidates = Object.keys(entries).filter((p) => {
+                        const q = p.toLowerCase();
+                        return !q.startsWith("meta-inf/") && (q.endsWith(".musicxml") || q.endsWith(".xml"));
+                      });
+                      void logStep(`candidates length${candidates.length}`);
+          
+                      candidates.sort((a, b) => {
+                        const aa = a.toLowerCase(), bb = b.toLowerCase();
+                        const scoreA = /score|partwise|timewise/.test(aa) ? 0 : 1;
+                        const scoreB = /score|partwise|timewise/.test(bb) ? 0 : 1;
+                        if (scoreA !== scoreB) { return scoreA - scoreB; }
+                        const extA = aa.endsWith(".musicxml") ? 0 : 1;
+                        const extB = bb.endsWith(".musicxml") ? 0 : 1;
+                        if (extA !== extB) { return extA - extB; }
+                        return aa.length - bb.length;
+                      });
+          
+                      entryName = candidates[0];
+                      await logStep(`entry name ${entryName ?? "(none)"}`);
+                    }
+          
+                    if (!entryName) { throw new Error("entry name missing"); }
+          
+                    // 6) Read chosen file (timed)
+                    const entry = entries[entryName];
+                    if (!entry) { throw new Error(`entry missing:${entryName}`); }
+          
+                    const xmlText = await perfBlockAsync(
+                      nextPerfUID(outer.dataset.osmdRun),
+                      async () => await withTimeout(entry.text(), 10000, "entry.text() timeout"),
+                      (ms) => { void logStep(`entry.text() runtime: (${ms}ms)`); }
+                    );
+                    outer.dataset.osmdZipChosen = entryName;
+                    outer.dataset.osmdZipChars = String(xmlText.length);
+          
+                    // 7) Parse XML (timed) + validate
+                    const xmlDoc = await perfBlockAsync(
+                      nextPerfUID(outer.dataset.osmdRun),
+                      async () => new DOMParser().parseFromString(xmlText, "application/xml"),
+                      (ms) => { void logStep(`DOMParser().parseFromString runtime: (${ms}ms)`); }
+                    );
+          
+                    if (xmlDoc.getElementsByTagName("parsererror").length > 0) {
+                      throw new Error("xmlDoc.getElementsByTagName parsererror");
+                    }
+                    const hasPartwise = xmlDoc.getElementsByTagName("score-partwise").length > 0;
+                    const hasTimewise = xmlDoc.getElementsByTagName("score-timewise").length > 0;
+                    await logStep(`xmlDoc.getElementsByTagName() hasPartwise: ${String(hasPartwise)} hasTimewise: ${String(hasTimewise)}`);
+                    if (!hasPartwise && !hasTimewise) {
+                      throw new Error("xmlDoc.getElementsByTagName() no partwise or timewise");
+                    }
+          
+                    {
+                      let s = "";
+                      s = perfBlock(
+                        nextPerfUID(outer.dataset.osmdRun),
+                        () => new XMLSerializer().serializeToString(xmlDoc),
+                        (ms) => { void logStep(`XMLSerializer().serializeToString runtime: (${ms}ms) chars=${s.length}`); }
+                      );
+                      outer.dataset.osmdXmlChars = String(s.length);
+                      loadInput = s;
+                    }
+          */
+
+          // --- STRICT MXL container handling (no fallback scan) ---
+          // Optional: tag a sub-phase; drop this line if you prefer to keep "load"
+          outer.dataset.osmdPhase = "mxl:container";
+
+          // 4) container.xml (required)
           const container = entries["META-INF/container.xml"];
-          if (container) {
-            const containerXml = await perfBlockAsync(
-              nextPerfUID(outer.dataset.osmdRun),
-              async () => {
-                const s = await withTimeout(container.text(), 6000, "container.text timeout");
-                outer.dataset.osmdContainerChars = String(s.length);
-                return s;
-              },
-              (ms) => {
-                const chars = outer.dataset.osmdContainerChars ?? "?";
-                void logStep(`container.text() runtime: (${ms}ms) chars:${chars}`);
-              }
-            );
+          if (!container) {
+            await logStep("container.xml missing → abort");
+            throw new Error("MXL error: META-INF/container.xml missing");
+          }
 
-            const cdoc = perfBlock(
-              nextPerfUID(outer.dataset.osmdRun),
-              () => new DOMParser().parseFromString(containerXml, "application/xml"),
-              (ms) => { void logStep(`DOMParser().parseFromString() runtime: (${ms}ms)`); }
-            );
-
-            const rootfile =
-              cdoc.querySelector('rootfile[full-path]') || cdoc.querySelector("rootfile");
-            const fullPath =
-              rootfile?.getAttribute("full-path") ||
-              rootfile?.getAttribute("path") ||
-              rootfile?.getAttribute("href") ||
-              undefined;
-
-            if (fullPath && entries[fullPath]) {
-              entryName = fullPath;
-              await logStep(`container selected: ${entryName}`);
-            } else {
-              await logStep("container not found");
+          // 5) Read + parse container.xml
+          const containerXml = await perfBlockAsync(
+            nextPerfUID(outer.dataset.osmdRun),
+            async () => {
+              const s = await withTimeout(container.text(), 6000, "container.text timeout");
+              outer.dataset.osmdContainerChars = String(s.length);
+              return s;
+            },
+            (ms) => {
+              const chars = outer.dataset.osmdContainerChars ?? "?";
+              void logStep(`container.text() runtime: (${ms}ms) chars:${chars}`);
             }
-          } else {
-            await logStep("container missing");
+          );
+
+          const cdoc = perfBlock(
+            nextPerfUID(outer.dataset.osmdRun),
+            () => new DOMParser().parseFromString(containerXml, "application/xml"),
+            (ms) => { void logStep(`DOMParser().parseFromString() runtime: (${ms}ms)`); }
+          );
+
+          // 6) Resolve rootfile path (full-path|path|href)
+          const rootEl =
+            cdoc.querySelector('rootfile[full-path]') ||
+            cdoc.querySelector('rootfile[path]') ||
+            cdoc.querySelector('rootfile[href]');
+
+          const fullPath =
+            rootEl?.getAttribute("full-path") ||
+            rootEl?.getAttribute("path") ||
+            rootEl?.getAttribute("href") ||
+            "";
+
+          if (!fullPath) {
+            await logStep("container rootfile path missing → abort");
+            throw new Error("MXL error: container.xml lacks a rootfile path");
           }
 
-          // 5) Fallback scan if container.xml didn’t resolve a score
-          if (!entryName) {
-            const candidates = Object.keys(entries).filter((p) => {
-              const q = p.toLowerCase();
-              return !q.startsWith("meta-inf/") && (q.endsWith(".musicxml") || q.endsWith(".xml"));
-            });
-            void logStep(`candidates length${candidates.length}`);
-
-            candidates.sort((a, b) => {
-              const aa = a.toLowerCase(), bb = b.toLowerCase();
-              const scoreA = /score|partwise|timewise/.test(aa) ? 0 : 1;
-              const scoreB = /score|partwise|timewise/.test(bb) ? 0 : 1;
-              if (scoreA !== scoreB) { return scoreA - scoreB; }
-              const extA = aa.endsWith(".musicxml") ? 0 : 1;
-              const extB = bb.endsWith(".musicxml") ? 0 : 1;
-              if (extA !== extB) { return extA - extB; }
-              return aa.length - bb.length;
-            });
-
-            entryName = candidates[0];
-            await logStep(`entry name ${entryName ?? "(none)"}`);
+          if (!entries[fullPath]) {
+            await logStep(`container rootfile not in ZIP (${fullPath}) → abort`);
+            throw new Error(`MXL error: rootfile entry not found in archive: ${fullPath}`);
           }
 
-          if (!entryName) { throw new Error("entry name missing"); }
+          await logStep(`container selected: ${fullPath}`);
 
-          // 6) Read chosen file (timed)
-          const entry = entries[entryName];
-          if (!entry) { throw new Error(`entry missing:${entryName}`); }
-
+          // 7) Read chosen MusicXML (timed)
+          const entry = entries[fullPath]!;
           const xmlText = await perfBlockAsync(
             nextPerfUID(outer.dataset.osmdRun),
             async () => await withTimeout(entry.text(), 10000, "entry.text() timeout"),
             (ms) => { void logStep(`entry.text() runtime: (${ms}ms)`); }
           );
-          outer.dataset.osmdZipChosen = entryName;
+          outer.dataset.osmdZipChosen = fullPath;
           outer.dataset.osmdZipChars = String(xmlText.length);
 
-          // 7) Parse XML (timed) + validate
+          // 8) Parse XML (timed) + validate
           const xmlDoc = await perfBlockAsync(
             nextPerfUID(outer.dataset.osmdRun),
             async () => new DOMParser().parseFromString(xmlText, "application/xml"),
@@ -1671,11 +1761,14 @@ export default function ScoreOSMD({
           }
           const hasPartwise = xmlDoc.getElementsByTagName("score-partwise").length > 0;
           const hasTimewise = xmlDoc.getElementsByTagName("score-timewise").length > 0;
-          await logStep(`xmlDoc.getElementsByTagName() hasPartwise: ${String(hasPartwise)} hasTimewise: ${String(hasTimewise)}`);
+          await logStep(
+            `xmlDoc.getElementsByTagName() hasPartwise: ${String(hasPartwise)} hasTimewise: ${String(hasTimewise)}`
+          );
           if (!hasPartwise && !hasTimewise) {
             throw new Error("xmlDoc.getElementsByTagName() no partwise or timewise");
           }
 
+          // 9) Serialize and hand off to OSMD.load(...)
           {
             let s = "";
             s = perfBlock(
@@ -1686,6 +1779,8 @@ export default function ScoreOSMD({
             outer.dataset.osmdXmlChars = String(s.length);
             loadInput = s;
           }
+
+
         } else {
           // Non-API source: use as-is
           loadInput = src;
