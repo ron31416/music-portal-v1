@@ -1174,7 +1174,7 @@ export default function ScoreOSMD({
           await Promise.race([ap(gateLabel, gateMs), new Promise<void>((r) => setTimeout(r, gateMs))]);
           if (doubleApply) { applyPage(0); }
         },
-        (ms) => { void logStep(`applyPage(0) runtime: (${ms}ms)`); }
+        (ms) => { void logStep(`applyPage() runtime: (${ms}ms)`); }
       );
 
       await logStep(`exit bands=${bands.length} pages=${starts.length}`, { outer });
@@ -1516,7 +1516,7 @@ export default function ScoreOSMD({
         const mod = await perfBlockAsync(
           nextPerfUID(outer.dataset.osmdRun),
           async () => await import("opensheetmusicdisplay"),
-          (ms) => { void logStep(`import opensheetmusicdisplay runtime: (${ms}ms)`); }
+          (ms) => { void logStep(`import("opensheetmusicdisplay") runtime: (${ms}ms)`); }
         );
         const { OpenSheetMusicDisplay: OSMDClass } =
           mod as typeof import("opensheetmusicdisplay");
@@ -1563,7 +1563,7 @@ export default function ScoreOSMD({
             },
             (ms) => {
               const bytes = outer.dataset.osmdZipBytes ?? "?";
-              void logStep(`fetch runtime: (${ms}ms) bytes:${bytes}`);
+              void logStep(`fetch() runtime: (${ms}ms) bytes:${bytes}`);
             }
           );
 
@@ -1571,7 +1571,7 @@ export default function ScoreOSMD({
           const uzMod = await perfBlockAsync(
             nextPerfUID(outer.dataset.osmdRun),
             async () => await withTimeout(import("unzipit"), 4000, "unzipit timeout"),
-            (ms) => { void logStep(`unzipit runtime: (${ms}ms)`); }
+            (ms) => { void logStep(`import("unzipit") runtime: (${ms}ms)`); }
           );
           const { unzip } = uzMod as typeof import("unzipit");
 
@@ -1579,7 +1579,7 @@ export default function ScoreOSMD({
           const { entries } = await perfBlockAsync(
             nextPerfUID(outer.dataset.osmdRun),
             async () => await withTimeout(unzip(ab), 8000, "unzip timeout"),
-            (ms) => { void logStep(`unzip runtime: (${ms}ms)`); }
+            (ms) => { void logStep(`unzip() runtime: (${ms}ms)`); }
           );
 
           // 4) container.xml probe (optional fast path)
@@ -1595,14 +1595,14 @@ export default function ScoreOSMD({
               },
               (ms) => {
                 const chars = outer.dataset.osmdContainerChars ?? "?";
-                void logStep(`container.text runtime: (${ms}ms) chars:${chars}`);
+                void logStep(`container.text() runtime: (${ms}ms) chars:${chars}`);
               }
             );
 
             const cdoc = perfBlock(
               nextPerfUID(outer.dataset.osmdRun),
               () => new DOMParser().parseFromString(containerXml, "application/xml"),
-              (ms) => { void logStep(`DOMParser().parseFromString runtime: (${ms}ms)`); }
+              (ms) => { void logStep(`DOMParser().parseFromString() runtime: (${ms}ms)`); }
             );
 
             const rootfile =
@@ -1655,7 +1655,7 @@ export default function ScoreOSMD({
           const xmlText = await perfBlockAsync(
             nextPerfUID(outer.dataset.osmdRun),
             async () => await withTimeout(entry.text(), 10000, "entry.text() timeout"),
-            (ms) => { void logStep(`entry().text runtime: (${ms}ms)`); }
+            (ms) => { void logStep(`withTimeout() runtime: (${ms}ms)`); }
           );
           outer.dataset.osmdZipChosen = entryName;
           outer.dataset.osmdZipChars = String(xmlText.length);
@@ -1672,12 +1672,11 @@ export default function ScoreOSMD({
           }
           const hasPartwise = xmlDoc.getElementsByTagName("score-partwise").length > 0;
           const hasTimewise = xmlDoc.getElementsByTagName("score-timewise").length > 0;
-          await logStep(`xmlDoc.getElementsByTagName pw=${String(hasPartwise)} tw=${String(hasTimewise)}`);
+          await logStep(`xmlDoc.getElementsByTagName() hasPartwise: ${String(hasPartwise)} hasTimewise: ${String(hasTimewise)}`);
           if (!hasPartwise && !hasTimewise) {
-            throw new Error("xmlDoc.getElementsByTagName no partwise or timewise");
+            throw new Error("xmlDoc.getElementsByTagName() no partwise or timewise");
           }
 
-          // 8) Hand off to OSMD.load(...)
           {
             let s = "";
             s = perfBlock(
@@ -1693,14 +1692,13 @@ export default function ScoreOSMD({
           loadInput = src;
         }
 
-        // 9) OSMD.load
         await perfBlockAsync(
           nextPerfUID(outer.dataset.osmdRun),
           async () => {
             await awaitLoad(osmd, loadInput);
           },
           (ms) => {
-            void logStep(`awaitLoad(osmd, loadInput) runtime: (${ms}ms)`, { outer });
+            void logStep(`awaitLoad() runtime: (${ms}ms)`, { outer });
           }
         );
 
