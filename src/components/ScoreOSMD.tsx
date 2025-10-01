@@ -1114,6 +1114,7 @@ export default function ScoreOSMD({
 
 
   // Unified: render → scan → compute starts → apply(first page)
+  // NOTE: now tags logs with [renderScanApply] and adds enter/exit breadcrumbs.
   const renderScanApply = useCallback(async (
     outer: HTMLDivElement,
     osmd: OpenSheetMusicDisplay,
@@ -1124,67 +1125,78 @@ export default function ScoreOSMD({
     }
   ): Promise<{ bands: Band[]; starts: number[] }> => {
     const { gateLabel = "apply:first", gateMs = 400, doubleApply = true } = opts ?? {};
-    const ap = makeAfterPaint(outer);
 
-    // --- RENDER ---
-    await logStep("phase finished", { outer });
-    outer.dataset.osmdPhase = "render";
-    await logStep("phase starting", { outer });
+    // func-tag so log prefixes show renderScanApply instead of the caller
+    const prevFuncTag = outer.dataset.osmdFunc ?? "";
+    outer.dataset.osmdFunc = "renderScanApply";
+    await logStep("enter", { outer });
 
-    await withHostHidden(outer, async () => {
-      const uid = nextPerfUID(outer.dataset.osmdRun);
-      await perfBlockAsync(
-        uid,
-        async () => { await renderWithEffectiveWidth(outer, osmd); },
-        (ms) => { outer.dataset.osmdRenderMs = String(ms); void logStep(`renderWithEffectiveWidth runtime: (${ms}ms)`); }
+    try {
+      const ap = makeAfterPaint(outer);
+
+      // --- RENDER ---
+      await logStep("phase finished", { outer });
+      outer.dataset.osmdPhase = "render";
+      await logStep("phase starting", { outer });
+
+      await withHostHidden(outer, async () => {
+        const uid = nextPerfUID(outer.dataset.osmdRun);
+        await perfBlockAsync(
+          uid,
+          async () => { await renderWithEffectiveWidth(outer, osmd); },
+          (ms) => { outer.dataset.osmdRenderMs = String(ms); void logStep(`renderWithEffectiveWidth runtime: (${ms}ms)`); }
+        );
+      });
+
+      await new Promise<void>((r) => setTimeout(r, 0)); // yield one task
+
+      // --- SCAN ---
+      await logStep("phase finished", { outer });
+      outer.dataset.osmdPhase = "scan";
+      await logStep("phase starting", { outer });
+
+      const bands = perfBlock(
+        nextPerfUID(outer.dataset.osmdRun),
+        () => withUntransformedSvg(outer, (svg) => scanSystemsPx(outer, svg)) ?? [],
+        (ms) => { void logStep(`scanSystemsPx runtime: (${ms}ms)`); }
       );
-    });
+      outer.dataset.osmdBands = String(bands.length);
+      if (bands.length === 0) {
+        await logStep("0 bands — abort", { outer });
+        return { bands: [], starts: [0] };
+      }
 
-    await new Promise<void>((r) => setTimeout(r, 0)); // yield one task
+      const H = getPAGE_H(outer);
+      const starts = perfBlock(
+        nextPerfUID(outer.dataset.osmdRun),
+        () => computePageStartIndices(outer, bands, H),
+        (ms) => { void logStep(`computePageStartIndices runtime: (${ms}ms) H=${H}`); }
+      );
 
-    // --- SCAN ---
-    await logStep("phase finished", { outer });
-    outer.dataset.osmdPhase = "scan";
-    await logStep("phase starting", { outer });
+      // --- APPLY (first page) ---
+      await logStep("phase finished", { outer });
+      outer.dataset.osmdPhase = "apply";
+      await logStep("phase starting", { outer });
 
-    const bands = perfBlock(
-      nextPerfUID(outer.dataset.osmdRun),
-      () => withUntransformedSvg(outer, (svg) => scanSystemsPx(outer, svg)) ?? [],
-      (ms) => { void logStep(`scanSystemsPx runtime: (${ms}ms)`); }
-    );
-    outer.dataset.osmdBands = String(bands.length);
-    if (bands.length === 0) {
-      await logStep("0 bands — abort");
-      return { bands: [], starts: [0] };
+      pageStartsRef.current = starts;
+      bandsRef.current = bands;
+      pageIdxRef.current = 0;
+
+      await perfBlockAsync(
+        nextPerfUID(outer.dataset.osmdRun),
+        async () => {
+          applyPage(0);
+          await Promise.race([ap(gateLabel, gateMs), new Promise<void>((r) => setTimeout(r, gateMs))]);
+          if (doubleApply) { applyPage(0); }
+        },
+        (ms) => { void logStep(`applyPage(0) runtime: (${ms}ms)`); }
+      );
+
+      await logStep(`exit bands=${bands.length} pages=${starts.length}`, { outer });
+      return { bands, starts };
+    } finally {
+      try { outer.dataset.osmdFunc = prevFuncTag; } catch { /* noop */ }
     }
-
-    const H = getPAGE_H(outer);
-    const starts = perfBlock(
-      nextPerfUID(outer.dataset.osmdRun),
-      () => computePageStartIndices(outer, bands, H),
-      (ms) => { void logStep(`computePageStartIndices runtime: (${ms}ms) H=${H}`); }
-    );
-
-    // --- APPLY (first page) ---
-    await logStep("phase finished", { outer });
-    outer.dataset.osmdPhase = "apply";
-    await logStep("phase starting", { outer });
-
-    pageStartsRef.current = starts;
-    bandsRef.current = bands;
-    pageIdxRef.current = 0;
-
-    await perfBlockAsync(
-      nextPerfUID(outer.dataset.osmdRun),
-      async () => {
-        applyPage(0);
-        await Promise.race([ap(gateLabel, gateMs), new Promise<void>((r) => setTimeout(r, gateMs))]);
-        if (doubleApply) { applyPage(0); }
-      },
-      (ms) => { void logStep(`applyPage(0) runtime: (${ms}ms)`); }
-    );
-
-    return { bands, starts };
   }, [nextPerfUID, renderWithEffectiveWidth, withHostHidden, getPAGE_H, applyPage]);
 
 
