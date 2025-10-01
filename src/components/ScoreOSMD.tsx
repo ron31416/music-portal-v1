@@ -2000,7 +2000,7 @@ export default function ScoreOSMD({
     };
   }, [goNext, goPrev]);
 
-  // Recompute pagination when the visual viewport changes (URL bars, IME, pinch-zoom)
+  // Recompute pagination when the visual viewport changes (URL bar, IME, orientation, etc.)
   useEffect(() => {
     const vv = typeof window !== "undefined" ? window.visualViewport : undefined;
     if (!vv) { return; }
@@ -2008,79 +2008,89 @@ export default function ScoreOSMD({
     const onVisualViewportChange = () => {
       if (!readyRef.current) { return; }
 
-      const outer = wrapRef.current;
-      if (!outer) { return; }
+      // debounce vv events
+      if (vvTimerRef.current) { window.clearTimeout(vvTimerRef.current); }
+      vvTimerRef.current = window.setTimeout(async () => {
+        vvTimerRef.current = null;
 
-      // Tag logs with this handler; restore after scheduling the debounce
-      const prevFuncTag = outer.dataset.osmdFunc ?? "";
-      outer.dataset.osmdFunc = "onVisualViewportChange";
-      try {
-        // debounce vv events
-        if (vvTimerRef.current) { window.clearTimeout(vvTimerRef.current); }
-        vvTimerRef.current = window.setTimeout(async () => {
-          vvTimerRef.current = null;
+        const outerNow = wrapRef.current;
+        if (!outerNow) { return; }
 
-          const outerNow = wrapRef.current;
-          if (!outerNow) { return; }
+        // Tag logs with function name; clear phase since this isn't a render/scan/apply phase
+        const prevFuncTag = outerNow.dataset.osmdFunc ?? "";
+        const prevPhase = outerNow.dataset.osmdPhase ?? "";
+        outerNow.dataset.osmdFunc = "onVisualViewportChange";
+        outerNow.dataset.osmdPhase = "";
 
-          // Keep logs inside this handler during the debounced run too
-          const prevInnerTag = outerNow.dataset.osmdFunc ?? "";
-          outerNow.dataset.osmdFunc = "onVisualViewportChange";
-          try {
-            const currW = outerNow.clientWidth;
-            const currH = outerNow.clientHeight;
+        try {
+          // Current wrapper (host) size in CSS px
+          const wrapW = outerNow.clientWidth;
+          const wrapH = outerNow.clientHeight;
 
-            const widthChanged =
-              handledWRef.current === -1 || Math.abs(currW - handledWRef.current) >= 1;
-            const heightChanged =
-              handledHRef.current === -1 || Math.abs(currH - handledHRef.current) >= 1;
+          // Current VisualViewport metrics (for diagnosis only)
+          const vvW = Math.floor(vv?.width ?? 0);
+          const vvH = Math.floor(vv?.height ?? 0);
+          const vvScale = (vv?.scale ?? (window.devicePixelRatio || 1));
 
-            void logStep(
-              `vv:change w=${currW} h=${currH} handled=${handledWRef.current}×${handledHRef.current} ΔW=${widthChanged} ΔH=${heightChanged}`
+          // What we last handled (used to decide if work is needed)
+          const handledWrapW = handledWRef.current;
+          const handledWrapH = handledHRef.current;
+
+          const widthChanged =
+            handledWrapW === -1 || Math.abs(wrapW - handledWrapW) >= 1;
+          const heightChanged =
+            handledWrapH === -1 || Math.abs(wrapH - handledWrapH) >= 1;
+
+          // Only log when we're going to act; keeps noise down long-term.
+          if (widthChanged || heightChanged) {
+            await logStep(
+              `onVisualViewportChange wrap=${wrapW}×${wrapH} vv=${vvW}×${vvH} scale=${vvScale.toFixed(3)} ` +
+              `handled=${handledWrapW}×${handledWrapH} ΔW=${widthChanged} ΔH=${heightChanged}`,
+              { outer: outerNow }
             );
-
-            const kind = widthChanged ? "width" : (heightChanged ? "height" : "none");
-            if (kind === "none") { return; }
-
-            // If we’re busy/in-flight, queue and bail; the post-busy drain will handle it
-            if (busyRef.current) {
-              reflowAgainRef.current = kind;
-              reflowQueuedCauseRef.current = `vv:guard-busy:${kind}`;
-              return;
-            }
-            if (reflowRunningRef.current) {
-              reflowAgainRef.current = kind;
-              reflowQueuedCauseRef.current = `vv:guard-reflow:${kind}`;
-              return;
-            }
-            if (repagRunningRef.current) {
-              reflowAgainRef.current = kind;
-              reflowQueuedCauseRef.current = `vv:guard-repag:${kind}`;
-              return;
-            }
-
-            if (widthChanged) {
-              // Horizontal/scale change → full OSMD reflow + reset to page 1
-              await reflowFnRef.current("vv:width-change");
-              handledWRef.current = currW;
-              handledHRef.current = currH;
-            } else if (heightChanged) {
-              // Vertical-only change → cheap repagination (no spinner) + reset to page 1
-              repagFnRef.current(true /* resetToFirst */, false /* no spinner */);
-              handledHRef.current = currH;
-            }
-          } finally {
-            try { outerNow.dataset.osmdFunc = prevInnerTag; } catch { /* noop */ }
+          } else {
+            return; // nothing to do
           }
-        }, 200);
-      } finally {
-        try { outer.dataset.osmdFunc = prevFuncTag; } catch { /* noop */ }
-      }
+
+          // Guard against heavy work overlapping
+          const kind = widthChanged ? "width" : "height";
+          if (busyRef.current) {
+            reflowAgainRef.current = kind;
+            reflowQueuedCauseRef.current = `vv:guard-busy:${kind}`;
+            return;
+          }
+          if (reflowRunningRef.current) {
+            reflowAgainRef.current = kind;
+            reflowQueuedCauseRef.current = `vv:guard-reflow:${kind}`;
+            return;
+          }
+          if (repagRunningRef.current) {
+            reflowAgainRef.current = kind;
+            reflowQueuedCauseRef.current = `vv:guard-repag:${kind}`;
+            return;
+          }
+
+          // Do the work
+          if (widthChanged) {
+            // Horizontal change → full OSMD reflow + reset to page 1
+            await reflowFnRef.current("vv:width-change");
+            handledWRef.current = wrapW;
+            handledHRef.current = wrapH;
+          } else {
+            // Vertical-only change → cheap repagination (no spinner) + reset to page 1
+            repagFnRef.current(true /* resetToFirst */, false /* no spinner */);
+            handledHRef.current = wrapH;
+          }
+        } finally {
+          // Restore previous tags so later logs show the right context
+          outerNow.dataset.osmdFunc = prevFuncTag;
+          outerNow.dataset.osmdPhase = prevPhase;
+        }
+      }, 200);
     };
 
     vv.addEventListener("resize", onVisualViewportChange);
     vv.addEventListener("scroll", onVisualViewportChange);
-
     return () => {
       vv.removeEventListener("resize", onVisualViewportChange);
       vv.removeEventListener("scroll", onVisualViewportChange);
