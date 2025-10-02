@@ -376,6 +376,120 @@ function debugDrawBands(
   if (Number.isFinite(opts.maskAbsY!)) { addHGuide(opts.maskAbsY!, "maskTop", "#e53935"); }
 }
 
+// === HUD & edge-lines (helpers)
+type HudSnapshot = {
+  pageIdx: number;
+  pages: number;
+  startIndex: number;
+  nextStartIndex: number;
+  ySnap: number;
+  translateY: number;
+  visibleH: number;
+  paginationH: number;
+  maskTop: number;
+  startTop?: number;
+  startBottom?: number;
+  nextTop?: number;
+  nextBottom?: number;
+};
+
+function drawHud(outer: HTMLDivElement, snap: HudSnapshot): void {
+  let hud = outer.querySelector<HTMLDivElement>("[data-viewer-hud='1']");
+  if (!hud) {
+    hud = document.createElement("div");
+    hud.dataset.viewerHud = "1";
+    Object.assign(hud.style, {
+      position: "absolute",
+      top: "6px",
+      right: "6px",
+      zIndex: "1000",
+      font: "11px system-ui, sans-serif",
+      whiteSpace: "pre",
+      background: "rgba(0,0,0,0.65)",
+      color: "#fff",
+      padding: "6px 8px",
+      borderRadius: "8px",
+      pointerEvents: "auto",
+      maxWidth: "52vw",
+    } as CSSStyleDeclaration);
+    outer.appendChild(hud);
+  }
+
+  const lines: string[] = [
+    `p ${snap.pageIdx + 1}/${snap.pages}  start#=${snap.startIndex} next#=${snap.nextStartIndex}`,
+    `ySnap=${snap.ySnap}  translateY=${snap.translateY}`,
+    `visibleH=${snap.visibleH}  pagH=${snap.paginationH}  maskTop=${snap.maskTop}`,
+  ];
+
+  if (Number.isFinite(snap.startTop ?? NaN)) {
+    lines.push(`start: top=${Math.round(snap.startTop!)}  bot=${Math.round(snap.startBottom!)} `);
+  }
+  if (Number.isFinite(snap.nextTop ?? NaN)) {
+    lines.push(`next : top=${Math.round(snap.nextTop!)}  bot=${Math.round(snap.nextBottom!)} `);
+  }
+
+  hud.textContent = lines.join("\n");
+}
+
+type EdgeLineMode = "raw" | "applied";
+
+/** Draw thin lines for each system's top & bottom. */
+function drawSystemEdgeLines(
+  outer: HTMLDivElement,
+  bands: Band[],
+  idxs: number[],
+  mode: EdgeLineMode,
+  ySnap: number,
+  topGutter: number
+): void {
+  const old = outer.querySelectorAll("[data-viewer-edgelines='1']");
+  old.forEach((el) => el.remove());
+
+  const layer = document.createElement("div");
+  layer.dataset.viewerEdgelines = "1";
+  Object.assign(layer.style, {
+    position: "absolute",
+    inset: "0",
+    pointerEvents: "none",
+    zIndex: "998",
+  } as CSSStyleDeclaration);
+  outer.appendChild(layer);
+
+  const makeY = (y: number): number => mode === "raw"
+    ? Math.round(y)
+    : Math.round(y - ySnap + topGutter);
+
+  const colorTop = mode === "raw" ? "#1976d2" : "#2e7d32";   // top: blue vs green
+  const colorBot = mode === "raw" ? "#64b5f6" : "#81c784";   // bottom: dashed
+
+  for (const idx of idxs) {
+    const b = bands[idx];
+    if (!b) { continue; }
+
+    const topLine = document.createElement("div");
+    Object.assign(topLine.style, {
+      position: "absolute",
+      left: "0",
+      right: "0",
+      top: `${makeY(b.top)}px`,
+      borderTop: `2px solid ${colorTop}`,
+    } as CSSStyleDeclaration);
+    layer.appendChild(topLine);
+
+    const botLine = document.createElement("div");
+    Object.assign(botLine.style, {
+      position: "absolute",
+      left: "0",
+      right: "0",
+      top: `${makeY(b.bottom)}px`,
+      borderTop: `2px dashed ${colorBot}`,
+    } as CSSStyleDeclaration);
+    layer.appendChild(botLine);
+  }
+}
+// === /HUD & edge-lines
+
+
 /** Wait for web fonts to be ready (bounded; prevents rare long hangs) */
 async function waitForFonts(): Promise<void> {
   try {
@@ -1159,6 +1273,38 @@ export default function ScoreViewer({
           `hVisible: ${hVisible} maskTopWithinMusicPx: ${maskTopWithinMusicPx}`, { outer }
         );
 
+        {
+          const translateY = -ySnap + Math.max(0, topGutterPx);
+
+          drawHud(outer, {
+            pageIdx: clampedPage,
+            pages,
+            startIndex,
+            nextStartIndex,
+            ySnap,
+            translateY,
+            visibleH: hVisible,
+            paginationH: PAGE_H,
+            maskTop: maskTopWithinMusicPx,
+            startTop: startBand.top,
+            startBottom: startBand.bottom,
+            nextTop: nextStartIndex >= 0 ? bands[nextStartIndex]?.top : undefined,
+            nextBottom: nextStartIndex >= 0 ? bands[nextStartIndex]?.bottom : undefined,
+          });
+
+          const edgeIdxs: number[] = [startIndex];
+          if (nextStartIndex >= 0) { edgeIdxs.push(nextStartIndex); }
+
+          drawSystemEdgeLines(
+            outer,
+            bands,
+            edgeIdxs,
+            "applied",
+            ySnap,
+            Math.max(0, topGutterPx)
+          );
+        }
+
         debugDrawBands(outer, bands, {
           tag: `apply p${clampedPage + 1}`,
           starts,
@@ -1356,7 +1502,7 @@ export default function ScoreViewer({
         );
         outer.dataset.viewerStartsDump = JSON.stringify(starts);
 
-      } catch { /* ignore */ }
+      } catch { }
 
       debugDrawBands(outer, bands, {
         tag: "starts",
@@ -1365,6 +1511,40 @@ export default function ScoreViewer({
         pageAbsY: Math.max(0, topGutterPx) + paginationHeight(outer),
         topGutter: Math.max(0, topGutterPx),
       });
+
+      {
+        const startIndex0 = starts[0] ?? 0;
+        const nextIndex0 = starts.length > 1 ? (starts[1] ?? -1) : -1;
+        const ySnap0 = Math.ceil(bands[startIndex0]?.top ?? 0);
+
+        drawHud(outer, {
+          pageIdx: 0,
+          pages: starts.length,
+          startIndex: startIndex0,
+          nextStartIndex: nextIndex0,
+          ySnap: ySnap0,
+          translateY: -ySnap0 + Math.max(0, topGutterPx),
+          visibleH: visiblePageHeight(outer),
+          paginationH: paginationHeight(outer),
+          maskTop: visiblePageHeight(outer),
+          startTop: bands[startIndex0]?.top,
+          startBottom: bands[startIndex0]?.bottom,
+          nextTop: nextIndex0 >= 0 ? bands[nextIndex0]?.top : undefined,
+          nextBottom: nextIndex0 >= 0 ? bands[nextIndex0]?.bottom : undefined,
+        });
+
+        const rawIdxs: number[] = [startIndex0];
+        if (nextIndex0 >= 0) { rawIdxs.push(nextIndex0); }
+
+        drawSystemEdgeLines(
+          outer,
+          bands,
+          rawIdxs,
+          "raw",
+          ySnap0,
+          Math.max(0, topGutterPx)
+        );
+      }
 
       await logStep("phase finished", { outer });
       outer.dataset.viewerPhase = "apply";
