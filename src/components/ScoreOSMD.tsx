@@ -926,6 +926,32 @@ export default function ScoreViewer({
   const pageIdxRef = useRef<number>(0);
   const readyRef = useRef<boolean>(false);
 
+  // Packed/virtual Y positions for each band (what their Y would be if we stacked them)
+  const flowMapRef = useRef<{ top: number[]; bottom: number[] }>({ top: [], bottom: [] });
+
+  function rebuildFlowMap(outer: HTMLDivElement, bands: Band[]): void {
+    const gap = interSystemPackGapPx(outer); // you already call this in computePageStarts
+    const top: number[] = [];
+    const bottom: number[] = [];
+
+    // Anchor the virtual flow to the *physical* top of the first band,
+    // so translateY(-flowTop[i] + gutter) still pins the band correctly.
+    let y = bands[0]?.top ?? 0;
+
+    for (let i = 0; i < bands.length; i++) {
+      const b = bands[i]!;
+      top[i] = Math.round(y);
+      y += b.height;
+      bottom[i] = Math.round(y);
+      if (i < bands.length - 1) {
+        y += gap;
+      }
+    }
+
+    flowMapRef.current = { top, bottom };
+  }
+
+
   const DEFAULT_BUSY_MSG = "Please wait…";
 
   // Busy lock (blocks input while OSMD works)
@@ -1243,9 +1269,11 @@ export default function ScoreViewer({
           return;
         }
 
-        const ySnap = Math.ceil(startBand.top);
+        const flow = flowMapRef.current;
+        const flowStartTop = Math.ceil(flow.top[startIndex] ?? startBand.top);
+        const ySnap = flowStartTop; // keep the HUD/edge-lines variable name
 
-        svg.style.transform = `translateY(${-ySnap + Math.max(0, topGutterPx)}px)`;
+        svg.style.transform = `translateY(${-flowStartTop + Math.max(0, topGutterPx)}px)`;
         svg.style.transformOrigin = "top left";
         svg.style.willChange = "transform";
 
@@ -1262,7 +1290,7 @@ export default function ScoreViewer({
         if (nextStartIndex >= 0) {
           const nextBand = bands[nextStartIndex];
           if (nextBand) {
-            const nextBottomRel = nextBand.bottom - startBand.top;
+            const nextBottomRel = (flow.bottom[nextStartIndex] ?? nextBand.bottom) - flowStartTop;
 
             if (nextBottomRel > hVisible - TOL) {
               const fresh = computePageStarts(outer, bands, PAGE_H);
@@ -1298,7 +1326,7 @@ export default function ScoreViewer({
           for (let i = startIndex; i < bands.length; i++) {
             const b = bands[i];
             if (!b) { continue; }
-            const relBottom = b.bottom - startBand.top;
+            const relBottom = (flow.bottom[i] ?? b.bottom) - flowStartTop;
 
             if (relBottom > hVisible - LAST_PAGE_BOTTOM_PAD_PX) {
               cutIdx = i;
@@ -1327,7 +1355,9 @@ export default function ScoreViewer({
           : Math.max(startIndex, bands.length - 1);
 
         const assumedLast = bands[assumedLastIdx];
-        const lastBottomRel = assumedLast ? (assumedLast.bottom - startBand.top) : 0;
+        const lastBottomRel = assumedLast
+          ? ((flow.bottom[assumedLastIdx] ?? assumedLast.bottom) - flowStartTop)
+          : 0;
 
         if (assumedLast && lastBottomRel > hVisible - SAFETY) {
           const freshStarts = computePageStarts(outer, bands, PAGE_H);
@@ -1366,8 +1396,8 @@ export default function ScoreViewer({
           const nextBand = bands[nextStartIndex];
           if (!lastBand || !nextBand) { return hVisible; }
 
-          const relBottom = lastBand.bottom - startBand.top;
-          const nextTopRel = nextBand.top - startBand.top;
+          const relBottom = (flow.bottom[lastIncludedIdx] ?? lastBand.bottom) - flowStartTop;
+          const nextTopRel = (flow.top[nextStartIndex] ?? nextBand.top) - flowStartTop;
 
           // If nothing from the next page peeks into the viewport, don't mask at all.
           if (nextTopRel >= hVisible - PEEK_GUARD - 1) { return hVisible; }
@@ -1618,6 +1648,8 @@ export default function ScoreViewer({
         withSvgAtUnitScale(outer, (svg) => scanPageBoxes(outer, svg)) ?? [];
       bands = flattenBandsByPages(bands, pageBoxes, interSystemPackGapPx(outer));
 
+      rebuildFlowMap(outer, bands);
+
       debugDrawBands(outer, bands, {
         tag: "scan",
         visibleAbsY: Math.max(0, topGutterPx) + visiblePageHeight(outer),
@@ -1756,6 +1788,7 @@ export default function ScoreViewer({
       }
 
       // Recompute page starts for the current *unified* page height
+      rebuildFlowMap(outer, bands);
       const paginationH = paginationHeight(outer);
       const starts = perfBlock(
         nextPerfUID(outer.dataset.viewerRun),
