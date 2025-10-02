@@ -207,6 +207,160 @@ export async function logStep(
     }
   } catch { }
 }
+
+// ---------- DEBUG OVERLAY (visualize bands & starts) ----------
+const DEBUG_BANDS = true; // set true to show guides; false to hide
+
+type DebugOpts = {
+  tag?: string;
+  starts?: number[];
+  startIndex?: number;       // current page's start band index
+  nextStartIndex?: number;   // next page's start band index
+  ySnap?: number;            // startBand.top (ceil)
+  visibleAbsY?: number;      // topGutterPx + visiblePageHeight(outer)
+  pageAbsY?: number;         // topGutterPx + paginationHeight(outer)
+  maskAbsY?: number;         // topGutterPx + maskTopWithinMusicPx
+  topGutter?: number;
+};
+
+function debugDrawBands(
+  outer: HTMLDivElement,
+  bands: Band[],
+  opts: DebugOpts = {}
+): void {
+  if (!DEBUG_BANDS || !outer) { return; }
+
+  let layer = outer.querySelector<HTMLDivElement>("[data-viewer-debug='1']");
+  if (!layer) {
+    layer = document.createElement("div");
+    layer.dataset.viewerDebug = "1";
+    Object.assign(layer.style, {
+      position: "absolute",
+      inset: "0",
+      pointerEvents: "none",
+      zIndex: "999",
+      fontFamily: "system-ui, sans-serif",
+      fontSize: "11px",
+      lineHeight: "1",
+    } as CSSStyleDeclaration);
+    outer.appendChild(layer);
+  }
+  layer.innerHTML = "";
+
+  const badge = document.createElement("div");
+  badge.textContent = opts.tag ?? "debug";
+  Object.assign(badge.style, {
+    position: "absolute",
+    top: "2px",
+    left: "2px",
+    background: "rgba(0,0,0,0.65)",
+    color: "#fff",
+    padding: "2px 6px",
+    borderRadius: "6px",
+  } as CSSStyleDeclaration);
+  layer.appendChild(badge);
+
+  // Draw each band as a faint block with top/bottom lines and a label.
+  bands.forEach((b, i) => {
+    // translucent fill
+    const block = document.createElement("div");
+    Object.assign(block.style, {
+      position: "absolute",
+      left: "0",
+      right: "0",
+      top: `${Math.round(b.top)}px`,
+      height: `${Math.round(b.height)}px`,
+      background: "rgba(255,0,0,0.06)",
+      outline: "1px solid rgba(255,0,0,0.35)",
+    } as CSSStyleDeclaration);
+    layer.appendChild(block);
+
+    // label
+    const label = document.createElement("div");
+    label.textContent = `#${i}  h=${Math.round(b.height)}  top=${Math.round(b.top)}  bot=${Math.round(b.bottom)}`;
+    Object.assign(label.style, {
+      position: "absolute",
+      left: "6px",
+      top: `${Math.max(0, Math.round(b.top) - 13)}px`,
+      color: "#a00",
+      textShadow: "0 1px 0 #fff",
+      fontWeight: i === opts.startIndex ? "700" as const : "600" as const,
+    } as CSSStyleDeclaration);
+    layer.appendChild(label);
+
+    // emphasize the active start band & next start band
+    if (i === opts.startIndex) {
+      block.style.outline = "2px solid rgba(0,128,255,0.8)";
+    }
+    if (i === opts.nextStartIndex) {
+      const mark = document.createElement("div");
+      mark.textContent = "▶ next-start";
+      Object.assign(mark.style, {
+        position: "absolute",
+        right: "6px",
+        top: `${Math.max(0, Math.round(b.top) - 13)}px`,
+        color: "#084",
+        fontWeight: "700",
+        textShadow: "0 1px 0 #fff",
+      } as CSSStyleDeclaration);
+      layer.appendChild(mark);
+    }
+  });
+
+  // Page start markers (S0, S1, …) at the top of each band in 'starts'
+  if (opts.starts && opts.starts.length) {
+    opts.starts.forEach((s, idx) => {
+      const b = bands[s];
+      if (!b) { return; }
+      const tag = document.createElement("div");
+      tag.textContent = `S${idx}`;
+      Object.assign(tag.style, {
+        position: "absolute",
+        left: "2px",
+        top: `${Math.max(0, Math.round(b.top) - 26)}px`,
+        background: "rgba(128,0,255,0.85)",
+        color: "#fff",
+        padding: "1px 4px",
+        borderRadius: "4px",
+      } as CSSStyleDeclaration);
+      layer.appendChild(tag);
+    });
+  }
+
+  // Horizontal guides: visible height, unified pagination height, and mask top
+  const addHGuide = (y: number, label: string, color: string, dash = false) => {
+    if (!Number.isFinite(y)) { return; }
+    const line = document.createElement("div");
+    Object.assign(line.style, {
+      position: "absolute",
+      left: "0",
+      right: "0",
+      top: `${Math.round(y)}px`,
+      borderTop: `2px ${dash ? "dashed" : "solid"} ${color}`,
+    } as CSSStyleDeclaration);
+    layer.appendChild(line);
+
+    const tag = document.createElement("div");
+    tag.textContent = label;
+    Object.assign(tag.style, {
+      position: "absolute",
+      right: "4px",
+      top: `${Math.max(0, Math.round(y) - 12)}px`,
+      background: color,
+      color: "#fff",
+      padding: "1px 6px",
+      borderRadius: "4px",
+    } as CSSStyleDeclaration);
+    layer.appendChild(tag);
+  };
+
+  if (Number.isFinite(opts.visibleAbsY!)) { addHGuide(opts.visibleAbsY!, "visibleH", "#007acc") };
+  if (Number.isFinite(opts.pageAbsY!)) { addHGuide(opts.pageAbsY!, "paginationH", "#9c27b0", true) };
+  if (Number.isFinite(opts.maskAbsY!)) { addHGuide(opts.maskAbsY!, "maskTop", "#e53935") };
+}
+// ---------- /DEBUG OVERLAY ----------
+
+
 /** Wait for web fonts to be ready (bounded; prevents rare long hangs) */
 async function waitForFonts(): Promise<void> {
   try {
@@ -989,6 +1143,17 @@ export default function ScoreViewer({
           `hVisible: ${hVisible} maskTopWithinMusicPx: ${maskTopWithinMusicPx}`, { outer }
         );
 
+        debugDrawBands(outer, bands, {
+          tag: `apply p${clampedPage + 1}`,
+          starts,
+          startIndex,
+          nextStartIndex,
+          visibleAbsY: Math.max(0, topGutterPx) + hVisible,
+          pageAbsY: Math.max(0, topGutterPx) + paginationHeight(outer),
+          maskAbsY: Math.max(0, topGutterPx) + maskTopWithinMusicPx,
+          topGutter: Math.max(0, topGutterPx),
+        });
+
         let mask = outer.querySelector<HTMLDivElement>("[data-viewer-mask='1']");
         if (!mask) {
           mask = document.createElement("div");
@@ -1136,6 +1301,13 @@ export default function ScoreViewer({
         return { bands: [], starts: [0] };
       }
 
+      debugDrawBands(outer, bands, {
+        tag: "scan",
+        visibleAbsY: Math.max(0, topGutterPx) + visiblePageHeight(outer),
+        pageAbsY: Math.max(0, topGutterPx) + paginationHeight(outer),
+        topGutter: Math.max(0, topGutterPx),
+      });
+
       const paginationH = paginationHeight(outer);
       const starts = perfBlock(
         nextPerfUID(outer.dataset.viewerRun),
@@ -1143,9 +1315,49 @@ export default function ScoreViewer({
         (ms) => { void logStep(`computePageStarts() runtime: ${ms}ms paginationH: ${paginationH}`, { outer }); }
       );
 
+      try {
+        // 1) Lightweight human-readable lines via logStep (eslint-ok inside logStep)
+        await logStep(
+          `bands=${bands.length} starts=[${starts.join(",")}] ` +
+          `visibleH=${visiblePageHeight(outer)} paginationH=${paginationHeight(outer)}`,
+          { outer }
+        );
+
+        // If you want per-band rows (still short enough to read in DevTools Console column)
+        const rows = bands.map((b, i) =>
+          `#${i} top=${Math.round(b.top)} bottom=${Math.round(b.bottom)} h=${Math.round(b.height)}`
+        );
+        // Split into a few chunks so each line stays short
+        for (let k = 0; k < rows.length; k += 10) {
+          await logStep(`bandRows ${k}-${Math.min(k + 9, rows.length - 1)}: ${rows.slice(k, k + 10).join(" | ")}`, { outer });
+        }
+
+        // 2) Machine-friendly dump on the wrapper (inspect via Elements → dataset)
+        outer.dataset.viewerBandsDump = JSON.stringify(
+          bands.map((b, i) => ({ i, top: Math.round(b.top), bottom: Math.round(b.bottom), height: Math.round(b.height) }))
+        );
+        outer.dataset.viewerStartsDump = JSON.stringify(starts);
+
+      } catch { /* ignore */ }
+
+      debugDrawBands(outer, bands, {
+        tag: "starts",
+        starts,
+        visibleAbsY: Math.max(0, topGutterPx) + visiblePageHeight(outer),
+        pageAbsY: Math.max(0, topGutterPx) + paginationHeight(outer),
+        topGutter: Math.max(0, topGutterPx),
+      });
+
       await logStep("phase finished", { outer });
       outer.dataset.viewerPhase = "apply";
       await logStep("phase starting", { outer });
+
+      debugDrawBands(outer, bands, {
+        tag: "scan",
+        visibleAbsY: Math.max(0, topGutterPx) + visiblePageHeight(outer),
+        pageAbsY: Math.max(0, topGutterPx) + paginationHeight(outer),
+        topGutter: Math.max(0, topGutterPx),
+      });
 
       pageStartIdxsRef.current = starts;
       systemBandsRef.current = bands;
@@ -1168,7 +1380,7 @@ export default function ScoreViewer({
     } finally {
       try { outer.dataset.viewerFunc = prevFuncTag; } catch { }
     }
-  }, [nextPerfUID, renderViewer, withHostHidden, paginationHeight, applyPage]);
+  }, [nextPerfUID, renderViewer, withHostHidden, paginationHeight, applyPage, visiblePageHeight, topGutterPx]);
 
 
   // --- HEIGHT-ONLY REPAGINATION (no OSMD re-init) ---
