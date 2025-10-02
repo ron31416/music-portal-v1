@@ -87,13 +87,13 @@ function makeAfterPaint(outer: HTMLDivElement) {
         done = true;
         try {
           // Keep lightweight breadcrumbs for debugging
-          outer.dataset.osmdAfterpaint = `${label ?? ""}:${why}`;
+          outer.dataset.viewerAfterpaint = `${label ?? ""}:${why}`;
           const now =
             typeof performance !== "undefined" && typeof performance.now === "function"
               ? performance.now()
               : Date.now();
           const ms = Math.round(now - t0);
-          outer.dataset.osmdAfterpaintMs = String(ms);
+          outer.dataset.viewerAfterpaintMs = String(ms);
 
           void logStep(`${label ?? ""} -> ${why} (${ms}ms)`, { outer });
         } catch { }
@@ -179,12 +179,12 @@ export async function logStep(
     const wrap: HTMLElement | null =
       outer ??
       (typeof document !== "undefined"
-        ? document.querySelector<HTMLElement>('[data-osmd-wrapper="1"]')
+        ? document.querySelector<HTMLElement>('[data-viewer-wrapper="1"]')
         : null);
 
     if (wrap) {
-      const df = wrap.dataset?.osmdFunc;
-      const dp = wrap.dataset?.osmdPhase;
+      const df = wrap.dataset?.viewerFunc;
+      const dp = wrap.dataset?.viewerPhase;
       if (typeof df === "string" && df.length > 0) { fn = df; }
       if (typeof dp === "string" && dp.length > 0) { phase = dp; }
     }
@@ -199,7 +199,7 @@ export async function logStep(
     console.log(composed);
 
     if (wrap) {
-      wrap.dataset.osmdLastLog = `${Date.now()}:${composed.slice(0, 80)}`;
+      wrap.dataset.viewerLastLog = `${Date.now()}:${composed.slice(0, 80)}`;
     }
 
     if (paint) {
@@ -296,8 +296,8 @@ function isTitleLike(first: Band | undefined, rest: Band[]): boolean {
 }
 
 function scanSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[] {
-  const prevFuncTag = outer.dataset.osmdFunc ?? "";
-  outer.dataset.osmdFunc = "scanSystemsPx";
+  const prevFuncTag = outer.dataset.viewerFunc ?? "";
+  outer.dataset.viewerFunc = "scanSystemsPx";
 
   try {
     const pageRoots = Array.from(
@@ -351,15 +351,15 @@ function scanSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[] {
     void logStep(`bands: ${bands.length}`, { outer });
     return bands;
   } finally {
-    try { outer.dataset.osmdFunc = prevFuncTag; } catch { }
+    try { outer.dataset.viewerFunc = prevFuncTag; } catch { }
   }
 }
 
 /** Compute page start *indices* so each page shows only full systems */
 function computePageStarts(outer: HTMLDivElement, bands: Band[], viewportH: number): number[] {
 
-  const prevFuncTag = outer.dataset.osmdFunc ?? "";
-  outer.dataset.osmdFunc = "computePageStarts";
+  const prevFuncTag = outer.dataset.viewerFunc ?? "";
+  outer.dataset.viewerFunc = "computePageStarts";
 
   try {
     if (bands.length === 0 || viewportH <= 0) {
@@ -398,7 +398,7 @@ function computePageStarts(outer: HTMLDivElement, bands: Band[], viewportH: numb
     void logStep(`starts: ${out.length}`, { outer });
     return out;
   } finally {
-    try { outer.dataset.osmdFunc = prevFuncTag; } catch { }
+    try { outer.dataset.viewerFunc = prevFuncTag; } catch { }
   }
 }
 
@@ -503,8 +503,8 @@ export default function ScoreViewer({
   const busyRef = useRef(false);
   useEffect(() => { busyRef.current = busy; }, [busy]);
 
-  // Monotonic UID for perf blocks within this component instance
-  const instanceIdRef = useRef<string>(`osmd-${Math.random().toString(36).slice(2, 8)}`);
+  // Stable per-instance ID (for perf marks), plus a monotonic per-run sequence elsewhere
+  const instanceIdRef = useRef<string>(`viewer-${Math.random().toString(36).slice(2, 8)}`);
   const perfSeqRef = useRef(0);
   const nextPerfUID = useCallback((run: string | number | undefined) => {
     perfSeqRef.current += 1;
@@ -572,8 +572,8 @@ export default function ScoreViewer({
       const host = hostRef.current;
       if (!host || !outer) { return; }
 
-      const prevFuncTag = outer.dataset.osmdFunc ?? "";
-      outer.dataset.osmdFunc = "renderViewer";
+      const prevFuncTag = outer.dataset.viewerFunc ?? "";
+      outer.dataset.viewerFunc = "renderViewer";
 
       // Use our zoom source of truth
       applyZoomFromRef();
@@ -587,8 +587,8 @@ export default function ScoreViewer({
       const MIN_LAYOUT_W = REFLOW.MIN_LAYOUT_W;
       const layoutW = Math.max(MIN_LAYOUT_W, Math.min(rawLayoutW + widthNudge, MAX_LAYOUT_W));
 
-      outer.dataset.osmdZf = String(zf);
-      outer.dataset.osmdLayoutW = String(layoutW);
+      outer.dataset.viewerZf = String(zf);
+      outer.dataset.viewerLayoutW = String(layoutW);
 
       // Capture prior inline styles (so we can restore them exactly)
       const svg = getSvg(outer);
@@ -607,11 +607,11 @@ export default function ScoreViewer({
         // Let spinner/host paint before the heavy render
         await waitForPaint(300);
 
-        await logStep(`w: ${layoutW} hostW: ${hostW} zf: ${zf.toFixed(3)} osmd.Zoom: ${osmd.Zoom ?? "n/a"}`, { outer });
+        await logStep(`layoutW: ${layoutW} hostW: ${hostW} zf: ${zf.toFixed(3)} osmd.Zoom: ${osmd.Zoom ?? "n/a"}`, { outer });
 
         // Timed core render (isolates synchronous OSMD work)
         perfBlock(
-          nextPerfUID(outer.dataset.osmdRun),
+          nextPerfUID(outer.dataset.viewerRun),
           () => { osmd.render(); },
           (ms) => { void logStep(`osmd.render() runtime: ${ms}ms`, { outer }); }
         );
@@ -619,7 +619,7 @@ export default function ScoreViewer({
         void logStep(`render:error ${(e as Error)?.message ?? e}`, { outer });
         throw e;
       } finally {
-        try { outer.dataset.osmdFunc = prevFuncTag; } catch { }
+        try { outer.dataset.viewerFunc = prevFuncTag; } catch { }
 
         // Restore EXACT previous inline styles
         host.style.left = prevLeft;
@@ -771,14 +771,14 @@ export default function ScoreViewer({
       const outer = wrapRef.current;
       if (!outer) { return; }
 
-      const prevFuncTag = outer.dataset.osmdFunc ?? "";
-      outer.dataset.osmdFunc = "applyPage";
+      const prevFuncTag = outer.dataset.viewerFunc ?? "";
+      outer.dataset.viewerFunc = "applyPage";
 
       try {
         // Bail if recursion depth exceeds APPLY_MAX_PASSES (prevents oscillation).
         // This allows up to 3 recursive passes; the 4th would bail.
         if (depth > APPLY_MAX_PASSES) {
-          outer.dataset.osmdPhase = "applyPage:bailout";
+          outer.dataset.viewerPhase = "applyPage:bailout";
           void logStep(`bail: recursion depth>${APPLY_MAX_PASSES} at pageIdx=${pageIdx}`, { outer });
           return;
         }
@@ -965,22 +965,22 @@ export default function ScoreViewer({
         })();
 
         // Breadcrumbs
-        outer.dataset.osmdLastApply = String(Date.now());
-        outer.dataset.osmdPage = String(pageIdxRef.current);
-        outer.dataset.osmdMaskTop = String(maskTopWithinMusicPx);
-        outer.dataset.osmdPages = String(pages);
-        outer.dataset.osmdStarts = starts.slice(0, 12).join(',');
-        outer.dataset.osmdTy = String(-ySnap + Math.max(0, topGutterPx));
-        outer.dataset.osmdH = String(hVisible);
+        outer.dataset.viewerLastApply = String(Date.now());
+        outer.dataset.viewerPage = String(pageIdxRef.current);
+        outer.dataset.viewerMaskTop = String(maskTopWithinMusicPx);
+        outer.dataset.viewerPages = String(pages);
+        outer.dataset.viewerStarts = starts.slice(0, 12).join(',');
+        outer.dataset.viewerTy = String(-ySnap + Math.max(0, topGutterPx));
+        outer.dataset.viewerH = String(hVisible);
 
         logStep(`apply page: ${clampedPage + 1}/${pages} startIndex: ${startIndex} nextStartIndex: ${nextStartIndex} ` +
           `hVisible: ${hVisible} maskTopWithinMusicPx: ${maskTopWithinMusicPx}`, { outer }
         );
 
-        let mask = outer.querySelector<HTMLDivElement>("[data-osmd-mask='1']");
+        let mask = outer.querySelector<HTMLDivElement>("[data-viewer-mask='1']");
         if (!mask) {
           mask = document.createElement("div");
-          mask.dataset.osmdMask = "1";
+          mask.dataset.viewerMask = "1";
           mask.style.position = "absolute";
           mask.style.left = "0";
           mask.style.right = "0";
@@ -993,10 +993,10 @@ export default function ScoreViewer({
         }
         mask.style.top = `${Math.max(0, topGutterPx) + maskTopWithinMusicPx}px`;
 
-        let bottomCutter = outer.querySelector<HTMLDivElement>("[data-osmd-bottomcutter='1']");
+        let bottomCutter = outer.querySelector<HTMLDivElement>("[data-viewer-bottomcutter='1']");
         if (!bottomCutter) {
           bottomCutter = document.createElement("div");
-          bottomCutter.dataset.osmdBottomcutter = "1";
+          bottomCutter.dataset.viewerBottomcutter = "1";
           Object.assign(bottomCutter.style, {
             position: "absolute",
             left: "0",
@@ -1012,10 +1012,10 @@ export default function ScoreViewer({
           bottomCutter.style.height = `${BOTTOM_PEEK_PAD}px`;
         }
 
-        let topCutter = outer.querySelector<HTMLDivElement>("[data-osmd-topcutter='1']");
+        let topCutter = outer.querySelector<HTMLDivElement>("[data-viewer-topcutter='1']");
         if (!topCutter) {
           topCutter = document.createElement("div");
-          topCutter.dataset.osmdTopcutter = "1";
+          topCutter.dataset.viewerTopcutter = "1";
           topCutter.style.position = "absolute";
           topCutter.style.left = "0";
           topCutter.style.right = "0";
@@ -1032,7 +1032,7 @@ export default function ScoreViewer({
         // Stop layer promotion after page is applied
         if (svg) { svg.style.willChange = "auto"; }
       } finally {
-        try { outer.dataset.osmdFunc = prevFuncTag; } catch { }
+        try { outer.dataset.viewerFunc = prevFuncTag; } catch { }
       }
     },
     [pageHeight, topGutterPx, bottomPeekPad, getPAGE_H]
@@ -1083,21 +1083,21 @@ export default function ScoreViewer({
   ): Promise<{ bands: Band[]; starts: number[] }> => {
     const { gateLabel = "apply:first", gateMs = 400, doubleApply = true } = opts ?? {};
 
-    const prevFuncTag = outer.dataset.osmdFunc ?? "";
-    outer.dataset.osmdFunc = "layoutViewer";
-    outer.dataset.osmdPhase = "render";
+    const prevFuncTag = outer.dataset.viewerFunc ?? "";
+    outer.dataset.viewerFunc = "layoutViewer";
+    outer.dataset.viewerPhase = "render";
     await logStep("phase starting", { outer });
 
     try {
       const ap = makeAfterPaint(outer);
 
       await withHostHidden(outer, async () => {
-        const uid = nextPerfUID(outer.dataset.osmdRun);
+        const uid = nextPerfUID(outer.dataset.viewerRun);
         await perfBlockAsync(
           uid,
           async () => { await renderViewer(outer, osmd); },
           (ms) => {
-            outer.dataset.osmdRenderMs = String(ms);
+            outer.dataset.viewerRenderMs = String(ms);
             void logStep(`renderViewer() runtime: ${ms}ms`, { outer });
           }
         );
@@ -1106,15 +1106,15 @@ export default function ScoreViewer({
       await new Promise<void>((r) => setTimeout(r, 0)); // yield one task
 
       await logStep("phase finished", { outer });
-      outer.dataset.osmdPhase = "scan";
+      outer.dataset.viewerPhase = "scan";
       await logStep("phase starting", { outer });
 
       const bands = perfBlock(
-        nextPerfUID(outer.dataset.osmdRun),
+        nextPerfUID(outer.dataset.viewerRun),
         () => withUntransformedSvg(outer, (svg) => scanSystemsPx(outer, svg)) ?? [],
         (ms) => { void logStep(`scanSystemsPx() runtime: ${ms}ms`, { outer }); }
       );
-      outer.dataset.osmdBands = String(bands.length);
+      outer.dataset.viewerBands = String(bands.length);
       if (bands.length === 0) {
         await logStep("0 bands — abort", { outer });
         return { bands: [], starts: [0] };
@@ -1122,13 +1122,13 @@ export default function ScoreViewer({
 
       const H = getPAGE_H(outer);
       const starts = perfBlock(
-        nextPerfUID(outer.dataset.osmdRun),
+        nextPerfUID(outer.dataset.viewerRun),
         () => computePageStarts(outer, bands, H),
         (ms) => { void logStep(`computePageStarts() runtime: ${ms}ms H: ${H}`, { outer }); }
       );
 
       await logStep("phase finished", { outer });
-      outer.dataset.osmdPhase = "apply";
+      outer.dataset.viewerPhase = "apply";
       await logStep("phase starting", { outer });
 
       pageStartsRef.current = starts;
@@ -1136,7 +1136,7 @@ export default function ScoreViewer({
       pageIdxRef.current = 0;
 
       await perfBlockAsync(
-        nextPerfUID(outer.dataset.osmdRun),
+        nextPerfUID(outer.dataset.viewerRun),
         async () => {
           applyPage(0);
           await Promise.race([ap(gateLabel, gateMs), new Promise<void>((r) => setTimeout(r, gateMs))]);
@@ -1150,7 +1150,7 @@ export default function ScoreViewer({
       return { bands, starts };
 
     } finally {
-      try { outer.dataset.osmdFunc = prevFuncTag; } catch { }
+      try { outer.dataset.viewerFunc = prevFuncTag; } catch { }
     }
   }, [nextPerfUID, renderViewer, withHostHidden, getPAGE_H, applyPage]);
 
@@ -1164,11 +1164,11 @@ export default function ScoreViewer({
     if (repagRunningRef.current) { return; }
     repagRunningRef.current = true;
 
-    const prevFuncTag = outer.dataset.osmdFunc ?? "";
-    outer.dataset.osmdFunc = "paginateViewer";
+    const prevFuncTag = outer.dataset.viewerFunc ?? "";
+    outer.dataset.viewerFunc = "paginateViewer";
 
     try {
-      outer.dataset.osmdRecompute = String(Date.now());
+      outer.dataset.viewerRecompute = String(Date.now());
 
       const bands = bandsRef.current;
       if (bands.length === 0) {
@@ -1180,17 +1180,17 @@ export default function ScoreViewer({
 
       // Recompute page starts for the current *unified* page height
       const starts = perfBlock(
-        nextPerfUID(outer.dataset.osmdRun),
+        nextPerfUID(outer.dataset.viewerRun),
         () => computePageStarts(outer, bands, H),
         (ms) => { void logStep(`computePageStarts runtime: ${ms}ms H: ${H}`, { outer }); }
       );
 
       pageStartsRef.current = starts;
-      outer.dataset.osmdPages = String(starts.length);
+      outer.dataset.viewerPages = String(starts.length);
 
       // Always reset to page 1 after repagination
       perfBlock(
-        nextPerfUID(outer.dataset.osmdRun),
+        nextPerfUID(outer.dataset.viewerRun),
         () => { applyPage(0); },
         (ms) => { void logStep(`applyPage runtime: ${ms}ms`, { outer }); }
       );
@@ -1212,7 +1212,7 @@ export default function ScoreViewer({
 
       repagRunningRef.current = false;
 
-      outer.dataset.osmdFunc = prevFuncTag;
+      outer.dataset.viewerFunc = prevFuncTag;
     }
   }, [applyPage, getPAGE_H, nextPerfUID]);
 
@@ -1238,9 +1238,9 @@ export default function ScoreViewer({
         return;
       }
 
-      const prevFuncTag = outer.dataset.osmdFunc ?? "";
-      outer.dataset.osmdFunc = "reflowViewer";
-      outer.dataset.osmdPhase = "prep";
+      const prevFuncTag = outer.dataset.viewerFunc ?? "";
+      outer.dataset.viewerFunc = "reflowViewer";
+      outer.dataset.viewerPhase = "prep";
       await logStep("phase starting", { outer });
 
       let started = false;
@@ -1253,10 +1253,10 @@ export default function ScoreViewer({
 
         if (reflowRunningRef.current) {
           reflowAgainRef.current = "width";
-          const run = Number(outer.dataset.osmdRun || "0");
-          outer.dataset.osmdReflowQueued = String(run);
-          outer.dataset.osmdReflowQueueWhy = "reflowRunning";
-          outer.dataset.osmdReflowQueuedAt = String(Date.now());
+          const run = Number(outer.dataset.viewerRun || "0");
+          outer.dataset.viewerReflowQueued = String(run);
+          outer.dataset.viewerReflowQueueWhy = "reflowRunning";
+          outer.dataset.viewerReflowQueuedAt = String(Date.now());
           void logStep("reflow already in progress; queued follow-up", { outer });
           return;
         }
@@ -1265,8 +1265,8 @@ export default function ScoreViewer({
 
         reflowRunningRef.current = true;
 
-        const run = (Number(outer.dataset.osmdRun || "0") + 1);
-        outer.dataset.osmdRun = String(run);
+        const run = (Number(outer.dataset.viewerRun || "0") + 1);
+        outer.dataset.viewerRun = String(run);
         void logStep(`run: ${run} • ${fmtFlags()}`, { outer });
 
         const currW = outer.clientWidth;
@@ -1275,26 +1275,26 @@ export default function ScoreViewer({
         handledHRef.current = currH;
 
         try {
-          outer.dataset.osmdReflowTargetW = String(currW);
-          outer.dataset.osmdReflowTargetH = String(currH);
+          outer.dataset.viewerReflowTargetW = String(currW);
+          outer.dataset.viewerReflowTargetH = String(currH);
         } catch { }
 
         await startSpinner({ message: DEFAULT_BUSY, gatePaint: true });
         await logStep("spinner started", { outer });
 
         const { bands, starts } = await layoutViewer(outer, osmd, {
-          gateLabel: "one paint opportunity after first apply",
+          gateLabel: "reflowViewer",
           gateMs: 400,
-          doubleApply: true,
+          doubleApply: true
         });
-        outer.dataset.osmdBands = String(bands.length);
-        outer.dataset.osmdPages = String(starts.length);
+        outer.dataset.viewerBands = String(bands.length);
+        outer.dataset.viewerPages = String(starts.length);
 
         await logStep("phase finished", { outer });
 
       } finally {
         if (started) {
-          try { outer.dataset.osmdPhase = "finally"; } catch { }
+          try { outer.dataset.viewerPhase = "finally"; } catch { }
           await logStep("phase starting", { outer });
 
           // we finished a run; drop the guard before hiding spinner
@@ -1305,8 +1305,8 @@ export default function ScoreViewer({
           await logStep("spinner stopped", { outer });
 
           // clear breadcrumbs
-          outer.dataset.osmdReflowTargetW = "";
-          outer.dataset.osmdReflowTargetH = "";
+          outer.dataset.viewerReflowTargetW = "";
+          outer.dataset.viewerReflowTargetH = "";
 
           // drain any queued work
           const queued = reflowAgainRef.current;
@@ -1324,8 +1324,8 @@ export default function ScoreViewer({
 
           await logStep("phase finished", { outer });
         }
-        try { outer.dataset.osmdFunc = prevFuncTag; } catch { }
-        try { outer.dataset.osmdPhase = ""; } catch { }
+        try { outer.dataset.viewerFunc = prevFuncTag; } catch { }
+        try { outer.dataset.viewerPhase = ""; } catch { }
       }
 
     },
@@ -1341,7 +1341,7 @@ export default function ScoreViewer({
     const el = wrapRef.current;
     if (!el) { return; }
 
-    el.dataset.osmdProbeMounted = "1";
+    el.dataset.viewerProbeMounted = "1";
   }, []);
 
   // Record baseline zoom/scale at mount (used to compute relative zoom later)
@@ -1445,17 +1445,17 @@ export default function ScoreViewer({
       const outer = wrapRef.current;
       if (!host || !outer) { return; }
 
-      const prevFuncTag = outer.dataset.osmdFunc ?? "";
-      outer.dataset.osmdFunc = "initViewer";
-      outer.dataset.osmdPhase = "prep";
+      const prevFuncTag = outer.dataset.viewerFunc ?? "";
+      outer.dataset.viewerFunc = "initViewer";
+      outer.dataset.viewerPhase = "prep";
       await logStep("phase starting", { outer });
 
       try {
         const epoch = ++initEpochRef.current;
-        outer.dataset.osmdInitEpoch = String(epoch);
+        outer.dataset.viewerInitEpoch = String(epoch);
 
         // If a newer init started (src changed), abort this one quietly.
-        const isStale = () => outer.dataset.osmdInitEpoch !== String(epoch);
+        const isStale = () => outer.dataset.viewerInitEpoch !== String(epoch);
 
         try {
           const hasVV =
@@ -1468,15 +1468,15 @@ export default function ScoreViewer({
             "ResizeObserver" in window &&
             typeof window.ResizeObserver === "function";
 
-          outer.dataset.osmdCapVv = hasVV ? "1" : "0";
-          outer.dataset.osmdCapRo = hasRO ? "1" : "0";
+          outer.dataset.viewerCapVv = hasVV ? "1" : "0";
+          outer.dataset.viewerCapRo = hasRO ? "1" : "0";
 
           await logStep(`hasVV: ${hasVV ? "yes" : "no"} hasRO: ${hasRO ? "yes" : "no"}`, { outer });
 
           if (!hasVV) {
             // Hard-fail policy
-            outer.dataset.osmdPhase = "fatal:no-visual-viewport";
-            outer.dataset.osmdFatal = "1";
+            outer.dataset.viewerPhase = "fatal:no-visual-viewport";
+            outer.dataset.viewerFatal = "1";
             setBusyMsg("This viewer requires the Visual Viewport API for correct zoom & pagination.\nTry a modern browser (Chrome, Edge, Safari 16+).");
             setBusy(true); // show blocking overlay with the message
             await logStep("fatal: visualViewport unavailable — aborting init", { outer });
@@ -1488,7 +1488,7 @@ export default function ScoreViewer({
 
         // --- Dynamic import OSMD ---
         const mod = await perfBlockAsync(
-          nextPerfUID(outer.dataset.osmdRun),
+          nextPerfUID(outer.dataset.viewerRun),
           async () => await import("opensheetmusicdisplay"),
           (ms) => { void logStep(`import("opensheetmusicdisplay") runtime: ${ms}ms`, { outer }); }
         );
@@ -1518,37 +1518,37 @@ export default function ScoreViewer({
         await logStep("spinner started", { outer });
 
         await logStep("phase finished", { outer });
-        outer.dataset.osmdPhase = "load";
+        outer.dataset.viewerPhase = "load";
         await logStep("phase starting", { outer });
 
         let loadInput: string | Document | ArrayBuffer | Uint8Array = src;
 
         if (src.startsWith("/api/")) {
           const ab = await perfBlockAsync(
-            nextPerfUID(outer.dataset.osmdRun),
+            nextPerfUID(outer.dataset.viewerRun),
             async () => {
               const res = await fetch(src, { cache: "no-store" });
               if (!res.ok) { throw new Error(`HTTP ${res.status}`); }
 
               const buf = await withTimeout(res.arrayBuffer(), 12000, "fetch timeout");
-              outer.dataset.osmdZipBytes = String(buf.byteLength);
+              outer.dataset.viewerZipBytes = String(buf.byteLength);
               return buf;
             },
             (ms) => {
-              const bytes = outer.dataset.osmdZipBytes ?? "?";
+              const bytes = outer.dataset.viewerZipBytes ?? "?";
               void logStep(`fetch() + arrayBuffer() runtime: ${ms}ms bytes: ${bytes}`, { outer });
             }
           );
 
           const uzMod = await perfBlockAsync(
-            nextPerfUID(outer.dataset.osmdRun),
+            nextPerfUID(outer.dataset.viewerRun),
             async () => await withTimeout(import("unzipit"), 4000, "unzipit timeout"),
             (ms) => { void logStep(`import("unzipit") runtime: ${ms}ms`, { outer }); }
           );
           const { unzip } = uzMod as typeof import("unzipit");
 
           const { entries } = await perfBlockAsync(
-            nextPerfUID(outer.dataset.osmdRun),
+            nextPerfUID(outer.dataset.viewerRun),
             async () => await withTimeout(unzip(ab), 8000, "unzip timeout"),
             (ms) => { void logStep(`unzip() runtime: ${ms}ms`, { outer }); }
           );
@@ -1560,20 +1560,20 @@ export default function ScoreViewer({
           }
 
           const containerXml = await perfBlockAsync(
-            nextPerfUID(outer.dataset.osmdRun),
+            nextPerfUID(outer.dataset.viewerRun),
             async () => {
               const s = await withTimeout(container.text(), 6000, "container.text timeout");
-              outer.dataset.osmdContainerChars = String(s.length);
+              outer.dataset.viewerContainerChars = String(s.length);
               return s;
             },
             (ms) => {
-              const chars = outer.dataset.osmdContainerChars ?? "?";
+              const chars = outer.dataset.viewerContainerChars ?? "?";
               void logStep(`container.text() runtime: ${ms}ms chars: ${chars}`, { outer });
             }
           );
 
           const cdoc = perfBlock(
-            nextPerfUID(outer.dataset.osmdRun),
+            nextPerfUID(outer.dataset.viewerRun),
             () => new DOMParser().parseFromString(containerXml, "application/xml"),
             (ms) => { void logStep(`DOMParser().parseFromString() runtime: ${ms}ms`, { outer }); }
           );
@@ -1601,15 +1601,15 @@ export default function ScoreViewer({
 
           const entry = entries[fullPath]!;
           const xmlText = await perfBlockAsync(
-            nextPerfUID(outer.dataset.osmdRun),
+            nextPerfUID(outer.dataset.viewerRun),
             async () => await withTimeout(entry.text(), 10000, "entry.text() timeout"),
             (ms) => { void logStep(`entry.text() runtime: ${ms}ms`, { outer }); }
           );
-          outer.dataset.osmdZipChosen = fullPath;
-          outer.dataset.osmdZipChars = String(xmlText.length);
+          outer.dataset.viewerZipChosen = fullPath;
+          outer.dataset.viewerZipChars = String(xmlText.length);
 
           const xmlDoc = await perfBlockAsync(
-            nextPerfUID(outer.dataset.osmdRun),
+            nextPerfUID(outer.dataset.viewerRun),
             async () => new DOMParser().parseFromString(xmlText, "application/xml"),
             (ms) => { void logStep(`DOMParser().parseFromString runtime: ${ms}ms`, { outer }); }
           );
@@ -1627,11 +1627,11 @@ export default function ScoreViewer({
           {
             let serializeMs = 0;
             const serialized = perfBlock(
-              nextPerfUID(outer.dataset.osmdRun),
+              nextPerfUID(outer.dataset.viewerRun),
               () => new XMLSerializer().serializeToString(xmlDoc),
               (ms) => { serializeMs = ms; }
             );
-            outer.dataset.osmdXmlChars = String(serialized.length);
+            outer.dataset.viewerXmlChars = String(serialized.length);
             await logStep(`XMLSerializer().serializeToString runtime: ${serializeMs}ms chars: ${serialized.length}`, { outer });
             loadInput = serialized;
           }
@@ -1646,7 +1646,7 @@ export default function ScoreViewer({
         }
 
         await perfBlockAsync(
-          nextPerfUID(outer.dataset.osmdRun),
+          nextPerfUID(outer.dataset.viewerRun),
           async () => {
             await loadOSMD(osmd, loadInput);
           },
@@ -1656,20 +1656,20 @@ export default function ScoreViewer({
         );
 
         await perfBlockAsync(
-          nextPerfUID(outer.dataset.osmdRun),
+          nextPerfUID(outer.dataset.viewerRun),
           async () => { await waitForFonts(); },
-          (ms) => { void logStep(`waitForFonts() runtime: (${ms}ms)`, { outer }); }
+          (ms) => { void logStep(`waitForFonts() runtime: ${ms}ms`, { outer }); }
         );
 
         await logStep("phase finished", { outer });
 
         const { bands, starts } = await layoutViewer(outer, osmd, {
-          gateLabel: "apply:first",
+          gateLabel: "initViewer",
           gateMs: 450,
-          doubleApply: false, // // init: single apply; we’ll repaginate on height next
+          doubleApply: false
         });
-        outer.dataset.osmdBands = String(bands.length);
-        outer.dataset.osmdPages = String(starts.length);
+        outer.dataset.viewerBands = String(bands.length);
+        outer.dataset.viewerPages = String(starts.length);
 
         // Immediately recompute page starts using the *final* visible height.
         // Why: on first load, the browser/UI chrome (URL/tool bars) can settle a frame
@@ -1697,13 +1697,13 @@ export default function ScoreViewer({
         await logStep("spinner stopped", { outer });
 
       } finally {
-        try { outer.dataset.osmdPhase = "finally"; } catch { }
+        try { outer.dataset.viewerPhase = "finally"; } catch { }
         await logStep("phase starting", { outer });
 
         await logStep("phase finished", { outer });
 
-        try { outer.dataset.osmdFunc = prevFuncTag; } catch { }
-        try { outer.dataset.osmdPhase = ""; } catch { }
+        try { outer.dataset.viewerFunc = prevFuncTag; } catch { }
+        try { outer.dataset.viewerPhase = ""; } catch { }
       }
 
     })().catch(async (err: unknown) => {
@@ -1721,8 +1721,8 @@ export default function ScoreViewer({
           JSON.stringify(err);
 
       if (outerNow) {
-        outerNow.setAttribute("data-osmd-step", "init-crash");
-        outerNow.dataset.osmdErr = String(msg).slice(0, 180);
+        outerNow.setAttribute("data-viewer-step", "init-crash");
+        outerNow.dataset.viewerErr = String(msg).slice(0, 180);
       }
     });
 
@@ -1935,8 +1935,8 @@ export default function ScoreViewer({
         const outerNow = wrapRef.current;
         if (!outerNow) { return; }
 
-        const prevFuncTag = outerNow.dataset.osmdFunc ?? "";
-        outerNow.dataset.osmdFunc = "handleVVChange";
+        const prevFuncTag = outerNow.dataset.viewerFunc ?? "";
+        outerNow.dataset.viewerFunc = "handleVVChange";
 
         try {
           // Current wrapper (host) size in CSS px
@@ -1998,7 +1998,7 @@ export default function ScoreViewer({
             handledHRef.current = wrapH;
           }
         } finally {
-          outerNow.dataset.osmdFunc = prevFuncTag;
+          outerNow.dataset.viewerFunc = prevFuncTag;
         }
       }, 200);
     };
@@ -2021,7 +2021,7 @@ export default function ScoreViewer({
     if (!busy) { return; }
 
     const t = window.setTimeout(() => {
-      const phase = wrapRef.current?.dataset.osmdPhase ?? "";
+      const phase = wrapRef.current?.dataset.viewerPhase ?? "";
       const inHeavy = phase === "render" || phase === "scan";
 
       if (!inHeavy) {
@@ -2112,8 +2112,8 @@ export default function ScoreViewer({
   return (
     <div
       ref={wrapRef}
-      data-osmd-wrapper="1"
-      data-osmd-probe="v10"
+      data-viewer-wrapper="1"
+      data-viewer-probe="v10"
       className={className}
       style={{ /* outline: "4px solid fuchsia", */ ...outerStyle, ...style }}
     >
@@ -2158,14 +2158,14 @@ export default function ScoreViewer({
               border: "2px solid rgba(0,0,0,0.4)",
               borderTopColor: "transparent",
               margin: "0 auto 8px",
-              animation: "osmd-spin 0.9s linear infinite",
+              animation: "viewer-spin 0.9s linear infinite",
             }}
           />
           <div>{busyMsg || DEFAULT_BUSY}</div>
         </div>
       </div>
 
-      <style>{`@keyframes osmd-spin { from { transform: rotate(0) } to { transform: rotate(360deg) } }`}</style>
+      <style>{`@keyframes viewer-spin { from { transform: rotate(0) } to { transform: rotate(360deg) } }`}</style>
     </div>
   );
 }
