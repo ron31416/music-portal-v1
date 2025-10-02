@@ -651,9 +651,96 @@ function scanSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[] {
   }
 }
 
-/** Compute page start *indices* so each page shows only full systems */
-function computePageStarts(outer: HTMLDivElement, bands: Band[], viewportH: number): number[] {
+// --- System packing helpers (insert after scanSystemsPx) ---
 
+function interSystemPackGapPx(outer: HTMLDivElement): number {
+  // Nominal gap between systems when *we* repack them
+  const h = outer.clientHeight || 0;
+  const dpr = typeof window !== "undefined" ? (window.devicePixelRatio || 1) : 1;
+  let gap = 12;                 // base
+  if (h <= 750) { gap += 2; }   // small visible height → a hair more spacing
+  if (dpr >= 2) { gap += 1; }   // Hi-DPR hairline safety
+  return gap;
+}
+
+function getPageRoots(svgRoot: SVGSVGElement): SVGGElement[] {
+  return Array.from(
+    svgRoot.querySelectorAll<SVGGElement>(
+      'g[id^="osmdCanvasPage"], g[id^="Page"], g[class*="Page"], g[class*="page"]'
+    )
+  );
+}
+
+/**
+ * Collapse OSMD's engraved page seams so that the *first system* on page N+1
+ * sits a nominal gap below the *last system* on page N. We do that by
+ * translating each page <g> by an accumulated delta in CSS pixels.
+ *
+ * Call this *after* osmd.render() and *before* the final scan for bands.
+ */
+function flattenEngravedSeams(
+  outer: HTMLDivElement,
+  svgRoot: SVGSVGElement,
+  preBands: Band[]
+): void {
+  const pages = getPageRoots(svgRoot);
+  if (pages.length <= 1 || preBands.length === 0) { return; }
+
+  // Measure each page's top/bottom in the host coordinate space (pre-transform).
+  const hostTop = outer.getBoundingClientRect().top;
+  const pageRects = pages.map(p => {
+    const r = p.getBoundingClientRect();
+    return { top: r.top - hostTop, bottom: r.bottom - hostTop };
+  });
+
+  // Assign each band to the page whose rect contains its center.
+  const bandPageIdx: number[] = preBands.map((b) => {
+    const mid = (b.top + b.bottom) / 2;
+    let idx = pages.length - 1;
+    for (let i = 0; i < pageRects.length; i++) {
+      const pr = pageRects[i]!;
+      if (mid >= pr.top && mid < pr.bottom) { idx = i; break; }
+    }
+    return idx;
+  });
+
+  // For each page, find first/last band inside it.
+  type PageEnds = { firstTop: number; lastBottom: number } | null;
+  const ends: PageEnds[] = pages.map(() => null);
+  for (let i = 0; i < preBands.length; i++) {
+    const p = bandPageIdx[i]!;
+    const b = preBands[i]!;
+    const e = ends[p];
+    if (!e) {
+      ends[p] = { firstTop: b.top, lastBottom: b.bottom };
+    } else {
+      e.firstTop = Math.min(e.firstTop, b.top);
+      e.lastBottom = Math.max(e.lastBottom, b.bottom);
+    }
+  }
+
+  const desiredGap = interSystemPackGapPx(outer);
+  let accDelta = 0;
+
+  // Page 0 stays put; subsequent pages are shifted upward by accumulated deltas.
+  for (let i = 1; i < pages.length; i++) {
+    const prev = ends[i - 1];
+    const curr = ends[i];
+    if (!prev || !curr) { continue; }
+
+    const originalGap = curr.firstTop - prev.lastBottom;
+    const deltaThisPage = desiredGap - originalGap; // positive = move up, negative = move down
+    accDelta += deltaThisPage;
+
+    const g = pages[i]!;
+    const prevStyle = g.style.transform || "";
+    g.style.transform = `${prevStyle} translateY(${Math.round(accDelta)}px)`;
+  }
+}
+
+
+/** Compute page starts by PACKING system heights + a fixed inter-system gap. */
+function computePageStarts(outer: HTMLDivElement, bands: Band[], viewportH: number): number[] {
   const prevFuncTag = outer.dataset.viewerFunc ?? "";
   outer.dataset.viewerFunc = "computePageStarts";
 
@@ -663,36 +750,33 @@ function computePageStarts(outer: HTMLDivElement, bands: Band[], viewportH: numb
       return [0];
     }
 
+    const gap = interSystemPackGapPx(outer);
     const starts: number[] = [];
     let i = 0;
-    const fuseTitle = isTitleLike(bands[0], bands.slice(1));
 
     while (i < bands.length) {
-      const current = bands[i]!;
-      const startTop = current.top;
-      let last = i;
+      starts.push(i);
 
-      while (last + 1 < bands.length) {
-        const next = bands[last + 1]!;
-        const isFirstPage = starts.length === 0 && i === 0;
-        const slack = isFirstPage && fuseTitle
-          ? Math.min(28, Math.round(viewportH * 0.035))
-          : 0;
-
-        if (next.bottom - startTop <= viewportH + slack) {
-          last++;
+      let used = 0;
+      while (i < bands.length) {
+        const next = bands[i]!;
+        const add = (used === 0 ? 0 : gap) + next.height;
+        if (used + add <= viewportH) {
+          used += add;
+          i += 1;
         } else {
           break;
         }
       }
 
-      starts.push(i);
-      i = last + 1;
+      // Safety: always advance at least one system per page
+      if (starts[starts.length - 1] === i) {
+        i += 1;
+      }
     }
 
-    const out = starts.length ? starts : [0];
-    void logStep(`starts: ${out.length}`, { outer });
-    return out;
+    void logStep(`starts(packed): ${starts.length} gap=${gap} viewportH=${viewportH}`, { outer });
+    return starts.length ? starts : [0];
   } finally {
     try { outer.dataset.viewerFunc = prevFuncTag; } catch { }
   }
@@ -1453,6 +1537,16 @@ export default function ScoreViewer({
       await logStep("phase finished", { outer });
       outer.dataset.viewerPhase = "scan";
       await logStep("phase starting", { outer });
+
+      // --- NEW: pre-scan + flatten engraved seams, then re-scan ---
+      const svgForFlatten = getSvg(outer);
+      if (svgForFlatten) {
+        // Pre-scan to get rough bands for page anchoring (pre-transform)
+        const preBands = withSvgAtUnitScale(outer, (svg) => scanSystemsPx(outer, svg)) ?? [];
+        if (preBands.length) {
+          flattenEngravedSeams(outer, svgForFlatten, preBands);
+        }
+      }
 
       const bands = perfBlock(
         nextPerfUID(outer.dataset.viewerRun),
