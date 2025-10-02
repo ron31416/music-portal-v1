@@ -216,11 +216,12 @@ type DebugOpts = {
   starts?: number[];
   startIndex?: number;       // current page's start band index
   nextStartIndex?: number;   // next page's start band index
-  ySnap?: number;            // startBand.top (ceil)
-  visibleAbsY?: number;      // topGutterPx + visiblePageHeight(outer)
-  pageAbsY?: number;         // topGutterPx + paginationHeight(outer)
-  maskAbsY?: number;         // topGutterPx + maskTopWithinMusicPx
+  ySnap?: number;            // REQUIRED for page-local lines: ceil(startBand.top)
+  visibleAbsY?: number;
+  pageAbsY?: number;
+  maskAbsY?: number;
   topGutter?: number;
+  drawPageLocal?: boolean;   // NEW: draw per-system top/bottom in page space
 };
 
 function debugDrawBands(
@@ -260,9 +261,8 @@ function debugDrawBands(
   } as CSSStyleDeclaration);
   layer.appendChild(badge);
 
-  // Draw each band as a faint block with top/bottom lines and a label.
+  // Absolute (unshifted) band blocks — keep as-is for reference
   bands.forEach((b, i) => {
-    // translucent fill
     const block = document.createElement("div");
     Object.assign(block.style, {
       position: "absolute",
@@ -275,7 +275,6 @@ function debugDrawBands(
     } as CSSStyleDeclaration);
     layer.appendChild(block);
 
-    // label
     const label = document.createElement("div");
     label.textContent = `#${i}  h=${Math.round(b.height)}  top=${Math.round(b.top)}  bot=${Math.round(b.bottom)}`;
     Object.assign(label.style, {
@@ -288,7 +287,6 @@ function debugDrawBands(
     } as CSSStyleDeclaration);
     layer.appendChild(label);
 
-    // emphasize the active start band & next start band
     if (i === opts.startIndex) {
       block.style.outline = "2px solid rgba(0,128,255,0.8)";
     }
@@ -307,24 +305,43 @@ function debugDrawBands(
     }
   });
 
-  // Page start markers (S0, S1, …) at the top of each band in 'starts'
-  if (opts.starts && opts.starts.length) {
-    opts.starts.forEach((s, idx) => {
-      const b = bands[s];
-      if (!b) { return; }
-      const tag = document.createElement("div");
-      tag.textContent = `S${idx}`;
-      Object.assign(tag.style, {
+  // Page-local top/bottom lines (THIS is what you asked for)
+  const haveYSnap = typeof opts.ySnap === "number" && Number.isFinite(opts.ySnap);
+  if (opts.drawPageLocal && haveYSnap) {
+    const ySnap = Math.floor(opts.ySnap ?? 0);
+    const gutter = Math.max(0, opts.topGutter ?? 0);
+    const first = Math.max(0, opts.startIndex ?? 0);
+    const lastExclusive = (opts.nextStartIndex !== undefined && opts.nextStartIndex !== null && opts.nextStartIndex >= 0)
+      ? opts.nextStartIndex
+      : bands.length;
+
+    for (let i = first; i < lastExclusive; i++) {
+      const b = bands[i]!;
+      const pageTop = Math.round(b.top - ySnap + gutter);
+      const pageBottom = Math.round(b.bottom - ySnap + gutter);
+
+      const topLine = document.createElement("div");
+      Object.assign(topLine.style, {
         position: "absolute",
-        left: "2px",
-        top: `${Math.max(0, Math.round(b.top) - 26)}px`,
-        background: "rgba(128,0,255,0.85)",
-        color: "#fff",
-        padding: "1px 4px",
-        borderRadius: "4px",
+        left: "0",
+        right: "0",
+        top: `${pageTop}px`,
+        borderTop: "2px solid #1976d2", // blue = system TOP (page-local)
+        zIndex: "1000",
       } as CSSStyleDeclaration);
-      layer.appendChild(tag);
-    });
+      layer.appendChild(topLine);
+
+      const botLine = document.createElement("div");
+      Object.assign(botLine.style, {
+        position: "absolute",
+        left: "0",
+        right: "0",
+        top: `${pageBottom}px`,
+        borderTop: "2px solid #2e7d32", // green = system BOTTOM (page-local)
+        zIndex: "1000",
+      } as CSSStyleDeclaration);
+      layer.appendChild(botLine);
+    }
   }
 
   // Horizontal guides: visible height, unified pagination height, and mask top
@@ -354,18 +371,10 @@ function debugDrawBands(
     layer.appendChild(tag);
   };
 
-  if (Number.isFinite(opts.visibleAbsY!)) { addHGuide(opts.visibleAbsY!, "visibleH", "#007acc") };
-  if (Number.isFinite(opts.pageAbsY!)) { addHGuide(opts.pageAbsY!, "paginationH", "#9c27b0", true) };
-  if (Number.isFinite(opts.maskAbsY!)) { addHGuide(opts.maskAbsY!, "maskTop", "#e53935") };
-
-  // Draw per-system top/bottom guides (debug only)
-  bands.forEach((b, i) => {
-    addHGuide(Math.round(b.top), `#${i} top=${Math.round(b.top)}`, "#008CFF", true);
-    addHGuide(Math.round(b.bottom), `#${i} bot=${Math.round(b.bottom)}`, "#2E7D32", true);
-  });
+  if (Number.isFinite(opts.visibleAbsY!)) { addHGuide(opts.visibleAbsY!, "visibleH", "#007acc"); }
+  if (Number.isFinite(opts.pageAbsY!)) { addHGuide(opts.pageAbsY!, "paginationH", "#9c27b0", true); }
+  if (Number.isFinite(opts.maskAbsY!)) { addHGuide(opts.maskAbsY!, "maskTop", "#e53935"); }
 }
-// ---------- /DEBUG OVERLAY ----------
-
 
 /** Wait for web fonts to be ready (bounded; prevents rare long hangs) */
 async function waitForFonts(): Promise<void> {
@@ -1155,6 +1164,8 @@ export default function ScoreViewer({
           starts,
           startIndex,
           nextStartIndex,
+          ySnap,                          // NEW: ceil(startBand.top) from above
+          drawPageLocal: true,            // NEW: draw page-local system lines
           visibleAbsY: Math.max(0, topGutterPx) + hVisible,
           pageAbsY: Math.max(0, topGutterPx) + paginationHeight(outer),
           maskAbsY: Math.max(0, topGutterPx) + maskTopWithinMusicPx,
