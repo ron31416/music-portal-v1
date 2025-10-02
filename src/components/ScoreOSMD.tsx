@@ -558,26 +558,6 @@ function dynamicBandGapPx(outer: HTMLDivElement): number {
   return gap;
 }
 
-function isTitleLike(first: Band | undefined, rest: Band[]): boolean {
-  if (!first || rest.length === 0) {
-    return false;
-  }
-  const sample = rest
-    .slice(0, Math.min(5, rest.length))
-    .map((b) => b.height)
-    .filter((n) => Number.isFinite(n) && n > 0)
-    .sort((a, b) => a - b);
-  if (sample.length === 0) {
-    return false;
-  }
-  const idx = Math.floor(sample.length / 2);
-  const median = sample[idx];
-  if (median === undefined) {
-    return false;
-  } // handles strict noUncheckedIndexedAccess
-  return first.height < Math.max(36, 0.6 * median);
-}
-
 function scanSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[] {
   const prevFuncTag = outer.dataset.viewerFunc ?? "";
   outer.dataset.viewerFunc = "scanSystemsPx";
@@ -750,18 +730,25 @@ function computePageStarts(outer: HTMLDivElement, bands: Band[], viewportH: numb
       return [0];
     }
 
-    const gap = interSystemPackGapPx(outer);
+    const GAP = interSystemPackGapPx(outer);
+    const DPR = window.devicePixelRatio || 1;
+    const NO_CLIP_SAFETY = DPR >= 2 ? 2 : 1;              // cushion for sub-px rounding
+    const budgetH = Math.max(1, Math.floor(viewportH) - NO_CLIP_SAFETY);
+
     const starts: number[] = [];
     let i = 0;
 
     while (i < bands.length) {
-      starts.push(i);
+      const pageStart = i;
+      starts.push(pageStart);
 
       let used = 0;
       while (i < bands.length) {
-        const next = bands[i]!;
-        const add = (used === 0 ? 0 : gap) + next.height;
-        if (used + add <= viewportH) {
+        const b = bands[i]!;
+        const h = Math.ceil(b.height);                    // stop sub-px leaks
+        const add = (used === 0 ? 0 : GAP) + h;
+
+        if (add <= (budgetH - used)) {
           used += add;
           i += 1;
         } else {
@@ -769,16 +756,16 @@ function computePageStarts(outer: HTMLDivElement, bands: Band[], viewportH: numb
         }
       }
 
-      // Safety: always advance at least one system per page
-      if (starts[starts.length - 1] === i) {
+      // Ensure progress even if a single system is taller than the page
+      if (i === pageStart) {
         i += 1;
       }
     }
 
-    void logStep(`starts(packed): ${starts.length} gap=${gap} viewportH=${viewportH}`, { outer });
+    void logStep(`starts(packed): ${starts.length} gap=${GAP} budgetH=${budgetH}`, { outer });
     return starts.length ? starts : [0];
   } finally {
-    try { outer.dataset.viewerFunc = prevFuncTag; } catch { }
+    try { outer.dataset.viewerFunc = prevFuncTag; } catch { /* no-op */ }
   }
 }
 
