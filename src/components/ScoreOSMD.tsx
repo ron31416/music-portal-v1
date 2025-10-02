@@ -982,17 +982,18 @@ export default function ScoreViewer({
 
         const hVisible = visiblePageHeight(outer);
 
-        // unify all repagination to one height
-        const TOL = (window.devicePixelRatio || 1) >= 2 ? 2 : 1; // tiny tolerance
-        const PAGE_H = paginationHeight(outer);
+        // Use the *same* height for starts and masking to avoid shaving bottoms.
+        const TOL = (window.devicePixelRatio || 1) >= 2 ? 2 : 1;
+        const PAGE_H = hVisible;
 
         // If the top of the next system is already inside the window...
+        // Only repaginate when the *entire* next system would not fit.
         if (nextStartIndex >= 0) {
           const nextBand = bands[nextStartIndex];
           if (nextBand) {
-            const nextTopRel = nextBand.top - startBand.top;
+            const nextBottomRel = nextBand.bottom - startBand.top;
 
-            if (nextTopRel <= hVisible - TOL) {
+            if (nextBottomRel > hVisible - TOL) {
               const fresh = computePageStarts(outer, bands, PAGE_H);
               if (fresh.length) {
                 // lower bound: first start >= startIndex
@@ -1009,7 +1010,7 @@ export default function ScoreViewer({
 
                 if (!noChange) {
                   pageStartIdxsRef.current = fresh;
-                  applyPage(lb, depth + 1); // ← pass recursion depth
+                  applyPage(lb, depth + 1);
                   return;
                 }
               }
@@ -1308,11 +1309,11 @@ export default function ScoreViewer({
         topGutter: Math.max(0, topGutterPx),
       });
 
-      const paginationH = paginationHeight(outer);
+      const visH = visiblePageHeight(outer);
       const starts = perfBlock(
         nextPerfUID(outer.dataset.viewerRun),
-        () => computePageStarts(outer, bands, paginationH),
-        (ms) => { void logStep(`computePageStarts() runtime: ${ms}ms paginationH: ${paginationH}`, { outer }); }
+        () => computePageStarts(outer, bands, visH),
+        (ms) => { void logStep(`computePageStarts() runtime: ${ms}ms visH: ${visH}`, { outer }); }
       );
 
       try {
