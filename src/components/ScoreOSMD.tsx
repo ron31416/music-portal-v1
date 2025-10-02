@@ -29,9 +29,6 @@ const REFLOW = {
   MAX_LAYOUT_W: 1600,
   WIDTH_NUDGE: -1,           // small bias to avoid edge-case layouts
 
-  // Pagination height slop: lets us fill the page slightly past the visible height
-  PAGE_FILL_SLOP_PX: 8,
-
   // “Last page” spacing: if a system is too close to the bottom, push it to a new page
   LAST_PAGE_BOTTOM_PAD_PX: 12,
 
@@ -757,12 +754,16 @@ export default function ScoreViewer({
     [getViewportH, bottomPeekPad]
   );
 
-  // --- Unify pagination height (memoized so identity is stable) ---
-  const paginationHeight = useCallback(
-    (outer: HTMLDivElement) => visiblePageHeight(outer) + REFLOW.PAGE_FILL_SLOP_PX,
-    [visiblePageHeight]
+  const contentBottomMargin = useCallback(
+    () => ((window.devicePixelRatio || 1) >= 2 ? 4 : 3), // tweak if you want more/less
+    []
   );
 
+  const pageHeightForStarts = useCallback(
+    (outer: HTMLDivElement) =>
+      Math.max(1, visiblePageHeight(outer) - contentBottomMargin()),
+    [visiblePageHeight, contentBottomMargin]
+  );
 
   // Apply the chosen page to the viewport: translate the SVG to its start and mask/cut to hide any next-page peek.
   // May recompute page starts and re-apply to preserve whole systems; bounded recursion prevents oscillation.
@@ -815,9 +816,7 @@ export default function ScoreViewer({
 
         const hVisible = visiblePageHeight(outer);
 
-        // unify all repagination to one height
         const TOL = (window.devicePixelRatio || 1) >= 2 ? 2 : 1; // tiny tolerance
-        const PAGE_H = paginationHeight(outer);
 
         // If the top of the next system is already inside the window...
         if (nextStartIndex >= 0) {
@@ -826,7 +825,7 @@ export default function ScoreViewer({
             const nextTopRel = nextBand.top - startBand.top;
 
             if (nextTopRel <= hVisible - TOL) {
-              const fresh = computePageStarts(outer, bands, PAGE_H);
+              const fresh = computePageStarts(outer, bands, pageHeightForStarts(outer));
               if (fresh.length) {
                 // lower bound: first start >= startIndex
                 let lb = fresh.length - 1;
@@ -879,7 +878,6 @@ export default function ScoreViewer({
           // If cutIdx === startIndex, the single system is taller than the page; do nothing.
         }
 
-
         // stale page-starts guard: recompute if last-included doesn't fit
         // roughly MASK_BOTTOM_SAFETY_PX + (PEEK_GUARD - 2), avoids edge-shave on Hi-DPR
         const SAFETY = (window.devicePixelRatio || 1) >= 2 ? 12 : 10;
@@ -891,7 +889,7 @@ export default function ScoreViewer({
         const lastBottomRel = assumedLast ? (assumedLast.bottom - startBand.top) : 0;
 
         if (assumedLast && lastBottomRel > hVisible - SAFETY) {
-          const freshStarts = computePageStarts(outer, bands, PAGE_H);
+          const freshStarts = computePageStarts(outer, bands, pageHeightForStarts(outer));
           if (freshStarts.length) {
             let nearest = 0, best = Number.POSITIVE_INFINITY;
             for (let i = 0; i < freshStarts.length; i++) {
@@ -939,7 +937,7 @@ export default function ScoreViewer({
           const high = Math.floor(nextTopRel) - PEEK_GUARD;
 
           if (low > high) {
-            const fresh = computePageStarts(outer, bands, PAGE_H);
+            const fresh = computePageStarts(outer, bands, pageHeightForStarts(outer));
             if (fresh.length) {
               let nearest = 0, best = Number.POSITIVE_INFINITY;
               for (let i = 0; i < fresh.length; i++) {
@@ -976,25 +974,36 @@ export default function ScoreViewer({
           `hVisible: ${hVisible} maskTopWithinMusicPx: ${maskTopWithinMusicPx}`, { outer }
         );
 
+        // Tiny tolerance avoids flicker on Hi-DPR when equal-to-edge.
+        const EPS = (window.devicePixelRatio || 1) >= 2 ? 0.75 : 0.5;
+        const needsMask = nextStartIndex >= 0 && maskTopWithinMusicPx < hVisible - EPS;
+
+        // --- main mask (show only when there is actual peek) ---
         let mask = outer.querySelector<HTMLDivElement>("[data-viewer-mask='1']");
         if (!mask) {
           mask = document.createElement("div");
           mask.dataset.viewerMask = "1";
-          mask.style.position = "absolute";
-          mask.style.left = "0";
-          mask.style.right = "0";
-          mask.style.top = "0";
-          mask.style.bottom = "0";
-          mask.style.background = "#fff";
-          mask.style.pointerEvents = "none";
-          mask.style.zIndex = "10";
+          Object.assign(mask.style, {
+            position: "absolute",
+            left: "0",
+            right: "0",
+            top: "0",
+            bottom: "0",
+            background: "#fff",
+            pointerEvents: "none",
+            zIndex: "10",
+          });
           outer.appendChild(mask);
         }
-        mask.style.top = `${Math.max(0, topGutterPx) + maskTopWithinMusicPx}px`;
+        if (needsMask) {
+          mask.style.display = "block";
+          mask.style.top = `${Math.max(0, topGutterPx) + maskTopWithinMusicPx}px`;
+        } else {
+          mask.style.display = "none";
+        }
 
-        // --- bottom cutter (only when there is actual peek) ---
+        // --- bottom cutter (tiny guard only when masking) ---
         let bottomCutter = outer.querySelector<HTMLDivElement>("[data-viewer-bottomcutter='1']");
-        const needsMask = nextStartIndex >= 0 && maskTopWithinMusicPx < hVisible;
         const CUTTER_PX = needsMask ? ((window.devicePixelRatio || 1) >= 2 ? 2 : 1) : 0;
 
         if (!bottomCutter) {
@@ -1011,7 +1020,6 @@ export default function ScoreViewer({
           });
           outer.appendChild(bottomCutter);
         }
-        // collapse when not needed; tiny guard only when peek occurs
         bottomCutter.style.height = `${CUTTER_PX}px`;
         bottomCutter.style.display = CUTTER_PX === 0 ? "none" : "block";
 
@@ -1038,7 +1046,7 @@ export default function ScoreViewer({
         try { outer.dataset.viewerFunc = prevFuncTag; } catch { }
       }
     },
-    [visiblePageHeight, topGutterPx, paginationHeight]
+    [visiblePageHeight, topGutterPx, pageHeightForStarts]
   );
 
   // Hide the SVG host while we do heavy work, then restore previous styles.
@@ -1117,17 +1125,18 @@ export default function ScoreViewer({
         () => withSvgAtUnitScale(outer, (svg) => scanSystemsPx(outer, svg)) ?? [],
         (ms) => { void logStep(`scanSystemsPx() runtime: ${ms}ms`, { outer }); }
       );
+
       outer.dataset.viewerBands = String(bands.length);
       if (bands.length === 0) {
         await logStep("0 bands — abort", { outer });
         return { bands: [], starts: [0] };
       }
 
-      const paginationH = paginationHeight(outer);
+      const startsH = pageHeightForStarts(outer);
       const starts = perfBlock(
         nextPerfUID(outer.dataset.viewerRun),
-        () => computePageStarts(outer, bands, paginationH),
-        (ms) => { void logStep(`computePageStarts() runtime: ${ms}ms paginationH: ${paginationH}`, { outer }); }
+        () => computePageStarts(outer, bands, startsH),
+        (ms) => { void logStep(`computePageStarts() runtime: ${ms}ms startsH: ${startsH}`, { outer }); }
       );
 
       await logStep("phase finished", { outer });
@@ -1155,7 +1164,7 @@ export default function ScoreViewer({
     } finally {
       try { outer.dataset.viewerFunc = prevFuncTag; } catch { }
     }
-  }, [nextPerfUID, renderViewer, withHostHidden, paginationHeight, applyPage]);
+  }, [nextPerfUID, renderViewer, withHostHidden, pageHeightForStarts, applyPage]);
 
 
   // --- HEIGHT-ONLY REPAGINATION (no OSMD re-init) ---
@@ -1180,11 +1189,11 @@ export default function ScoreViewer({
       }
 
       // Recompute page starts for the current *unified* page height
-      const paginationH = paginationHeight(outer);
+      const startsH = pageHeightForStarts(outer);
       const starts = perfBlock(
         nextPerfUID(outer.dataset.viewerRun),
-        () => computePageStarts(outer, bands, paginationH),
-        (ms) => { void logStep(`computePageStarts runtime: ${ms}ms paginationH: ${paginationH}`, { outer }); }
+        () => computePageStarts(outer, bands, startsH),
+        (ms) => { void logStep(`computePageStarts runtime: ${ms}ms startsH: ${startsH}`, { outer }); }
       );
 
       pageStartIdxsRef.current = starts;
@@ -1216,7 +1225,7 @@ export default function ScoreViewer({
 
       outer.dataset.viewerFunc = prevFuncTag;
     }
-  }, [applyPage, paginationHeight, nextPerfUID]);
+  }, [applyPage, pageHeightForStarts, nextPerfUID]);
 
 
   // keep ref pointing to latest repagination callback
@@ -1773,7 +1782,7 @@ export default function ScoreViewer({
         const outer = wrapRef.current;
         if (!outer) { return; }
 
-        const fresh = computePageStarts(outer, systemBandsRef.current, paginationHeight(outer));
+        const fresh = computePageStarts(outer, systemBandsRef.current, pageHeightForStarts(outer));
         if (!fresh.length) { return; }
 
         pageStartIdxsRef.current = fresh;
@@ -1792,7 +1801,7 @@ export default function ScoreViewer({
         if (idx !== beforePage) { applyPage(idx); }
       });
     },
-    [applyPage, paginationHeight]
+    [applyPage, pageHeightForStarts]
   );
 
   const goNext = useCallback(() => tryAdvance(1), [tryAdvance]);
