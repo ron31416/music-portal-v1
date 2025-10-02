@@ -164,11 +164,9 @@ export async function logStep(
 
   const { paint = false, outer = null } = opts;
 
-  // ---- Fixed column widths (tweak as needed) ----
-  const FN_COL = 32;
-  // You suggested 8 for phase; note some phases like "post-render-prepare" are longer
-  // and will be cleanly truncated to 8 here.
-  const PHASE_COL = 8;
+  // Fixed DevTools console column widths (tweak as needed) 
+  const FN_COL = 20;
+  const PHASE_COL = 10;
 
   // Local helper: truncate to the column width and pad to that width.
   const pad = (s: string, w: number): string =>
@@ -360,13 +358,11 @@ function scanSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[] {
 }
 
 /** Compute page start *indices* so each page shows only full systems */
-function computePageStartIndices(outer: HTMLDivElement, bands: Band[], viewportH: number): number[] {
+function computePageStarts(outer: HTMLDivElement, bands: Band[], viewportH: number): number[] {
   const prevFuncTag = outer.dataset.osmdFunc ?? "";
-  outer.dataset.osmdFunc = "computePageStartIndices";
+  outer.dataset.osmdFunc = "computePageStarts";
 
   try {
-    void logStep("enter", { outer });
-
     if (bands.length === 0 || viewportH <= 0) {
       void logStep("exit starts=1 (fallback [0])", { outer });
       return [0];
@@ -400,7 +396,7 @@ function computePageStartIndices(outer: HTMLDivElement, bands: Band[], viewportH
     }
 
     const out = starts.length ? starts : [0];
-    void logStep(`exit starts=${out.length}`, { outer });
+    void logStep(`starts=${out.length}`, { outer });
     return out;
   } finally {
     try { outer.dataset.osmdFunc = prevFuncTag; } catch { }
@@ -860,7 +856,7 @@ export default function ScoreViewer({
             const nextTopRel = nextBand.top - startBand.top;
 
             if (nextTopRel <= hVisible - TOL) {
-              const fresh = computePageStartIndices(outer, bands, PAGE_H);
+              const fresh = computePageStarts(outer, bands, PAGE_H);
               if (fresh.length) {
                 // lower bound: first start >= startIndex
                 let lb = fresh.length - 1;
@@ -925,7 +921,7 @@ export default function ScoreViewer({
         const lastBottomRel = assumedLast ? (assumedLast.bottom - startBand.top) : 0;
 
         if (assumedLast && lastBottomRel > hVisible - SAFETY) {
-          const freshStarts = computePageStartIndices(outer, bands, PAGE_H); // ← PAGE_H
+          const freshStarts = computePageStarts(outer, bands, PAGE_H); // ← PAGE_H
           if (freshStarts.length) {
             let nearest = 0, best = Number.POSITIVE_INFINITY;
             for (let i = 0; i < freshStarts.length; i++) {
@@ -975,7 +971,7 @@ export default function ScoreViewer({
           const high = Math.floor(nextTopRel) - PEEK_GUARD;
 
           if (low > high) {
-            const fresh = computePageStartIndices(outer, bands, PAGE_H);
+            const fresh = computePageStarts(outer, bands, PAGE_H);
             if (fresh.length) {
               let nearest = 0, best = Number.POSITIVE_INFINITY;
               for (let i = 0; i < fresh.length; i++) {
@@ -1102,7 +1098,7 @@ export default function ScoreViewer({
 
   /** layoutViewer
    * Full layout pipeline:
-   *   renderViewer()  → scanSystemsPx() → computePageStartIndices() → applyPage(0)
+   *   renderViewer()  → scanSystemsPx() → computePageStarts() → applyPage(0)
    * Optionally double-applies page 1 to settle masking; bounded by a paint gate.
    * Returns {bands, starts} for callers to stash.
    */
@@ -1157,8 +1153,8 @@ export default function ScoreViewer({
       const H = getPAGE_H(outer);
       const starts = perfBlock(
         nextPerfUID(outer.dataset.osmdRun),
-        () => computePageStartIndices(outer, bands, H),
-        (ms) => { void logStep(`computePageStartIndices() runtime: (${ms}ms) H=${H}`); }
+        () => computePageStarts(outer, bands, H),
+        (ms) => { void logStep(`computePageStarts() runtime: (${ms}ms) H=${H}`); }
       );
 
       await logStep("phase finished", { outer });
@@ -1218,8 +1214,8 @@ export default function ScoreViewer({
       // Recompute page starts for the current *unified* page height
       const starts = perfBlock(
         nextPerfUID(outer.dataset.osmdRun),
-        () => computePageStartIndices(outer, bands, H),
-        (ms) => { void logStep(`computePageStartIndices runtime: (${ms}ms) H=${H}`); }
+        () => computePageStarts(outer, bands, H),
+        (ms) => { void logStep(`computePageStarts runtime: (${ms}ms) H=${H}`); }
       );
 
       pageStartsRef.current = starts;
@@ -1736,8 +1732,6 @@ export default function ScoreViewer({
         // because a fatal no-VV path sets busy directly and must keep the overlay visible.
         await spinEnd(outer);
 
-        await logStep("init:ready", { outer }); // optional breadcrumb
-
       } finally {
         try { outer.dataset.osmdPhase = "finally"; } catch { }
         await logStep("phase starting", { outer });
@@ -1814,7 +1808,7 @@ export default function ScoreViewer({
         const outer = wrapRef.current;
         if (!outer) { return; }
 
-        const fresh = computePageStartIndices(outer, bandsRef.current, getPAGE_H(outer));
+        const fresh = computePageStarts(outer, bandsRef.current, getPAGE_H(outer));
         if (!fresh.length) { return; }
 
         pageStartsRef.current = fresh;
