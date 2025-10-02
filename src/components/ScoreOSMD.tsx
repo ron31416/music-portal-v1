@@ -357,6 +357,12 @@ function debugDrawBands(
   if (Number.isFinite(opts.visibleAbsY!)) { addHGuide(opts.visibleAbsY!, "visibleH", "#007acc") };
   if (Number.isFinite(opts.pageAbsY!)) { addHGuide(opts.pageAbsY!, "paginationH", "#9c27b0", true) };
   if (Number.isFinite(opts.maskAbsY!)) { addHGuide(opts.maskAbsY!, "maskTop", "#e53935") };
+
+  // Draw per-system top/bottom guides (debug only)
+  bands.forEach((b, i) => {
+    addHGuide(Math.round(b.top), `#${i} top=${Math.round(b.top)}`, "#008CFF", true);
+    addHGuide(Math.round(b.bottom), `#${i} bot=${Math.round(b.bottom)}`, "#2E7D32", true);
+  });
 }
 // ---------- /DEBUG OVERLAY ----------
 
