@@ -752,15 +752,15 @@ export default function ScoreViewer({
     []
   );
 
-  const pageHeight = useCallback(
+  const visiblePageHeight = useCallback(
     (outer: HTMLDivElement) => Math.max(1, getViewportH(outer) - bottomPeekPad()),
     [getViewportH, bottomPeekPad]
   );
 
   // --- Unify pagination height (memoized so identity is stable) ---
-  const getPAGE_H = useCallback(
-    (outer: HTMLDivElement) => pageHeight(outer) + REFLOW.PAGE_FILL_SLOP_PX,
-    [pageHeight]
+  const paginationHeight = useCallback(
+    (outer: HTMLDivElement) => visiblePageHeight(outer) + REFLOW.PAGE_FILL_SLOP_PX,
+    [visiblePageHeight]
   );
 
 
@@ -814,11 +814,11 @@ export default function ScoreViewer({
         const nextStartIndex = clampedPage + 1 < starts.length ? (starts[clampedPage + 1] ?? -1) : -1;
 
         const BOTTOM_PEEK_PAD = bottomPeekPad();
-        const hVisible = pageHeight(outer);
+        const hVisible = visiblePageHeight(outer);
 
         // unify all repagination to one height
         const TOL = (window.devicePixelRatio || 1) >= 2 ? 2 : 1; // tiny tolerance
-        const PAGE_H = getPAGE_H(outer);
+        const PAGE_H = paginationHeight(outer);
 
         // If the top of the next system is already inside the window...
         if (nextStartIndex >= 0) {
@@ -1035,7 +1035,7 @@ export default function ScoreViewer({
         try { outer.dataset.viewerFunc = prevFuncTag; } catch { }
       }
     },
-    [pageHeight, topGutterPx, bottomPeekPad, getPAGE_H]
+    [visiblePageHeight, topGutterPx, bottomPeekPad, paginationHeight]
   );
 
   // Hide the SVG host while we do heavy work, then restore previous styles.
@@ -1120,11 +1120,11 @@ export default function ScoreViewer({
         return { bands: [], starts: [0] };
       }
 
-      const H = getPAGE_H(outer);
+      const paginationH = paginationHeight(outer);
       const starts = perfBlock(
         nextPerfUID(outer.dataset.viewerRun),
-        () => computePageStarts(outer, bands, H),
-        (ms) => { void logStep(`computePageStarts() runtime: ${ms}ms H: ${H}`, { outer }); }
+        () => computePageStarts(outer, bands, paginationH),
+        (ms) => { void logStep(`computePageStarts() runtime: ${ms}ms paginationH: ${paginationH}`, { outer }); }
       );
 
       await logStep("phase finished", { outer });
@@ -1152,7 +1152,7 @@ export default function ScoreViewer({
     } finally {
       try { outer.dataset.viewerFunc = prevFuncTag; } catch { }
     }
-  }, [nextPerfUID, renderViewer, withHostHidden, getPAGE_H, applyPage]);
+  }, [nextPerfUID, renderViewer, withHostHidden, paginationHeight, applyPage]);
 
 
   // --- HEIGHT-ONLY REPAGINATION (no OSMD re-init) ---
@@ -1176,13 +1176,14 @@ export default function ScoreViewer({
         return;
       }
 
-      const H = getPAGE_H(outer);
+      const H = paginationHeight(outer);
 
       // Recompute page starts for the current *unified* page height
+      const paginationH = paginationHeight(outer);
       const starts = perfBlock(
         nextPerfUID(outer.dataset.viewerRun),
         () => computePageStarts(outer, bands, H),
-        (ms) => { void logStep(`computePageStarts runtime: ${ms}ms H: ${H}`, { outer }); }
+        (ms) => { void logStep(`computePageStarts runtime: ${ms}ms paginationH: ${paginationH}`, { outer }); }
       );
 
       pageStartsRef.current = starts;
@@ -1214,7 +1215,7 @@ export default function ScoreViewer({
 
       outer.dataset.viewerFunc = prevFuncTag;
     }
-  }, [applyPage, getPAGE_H, nextPerfUID]);
+  }, [applyPage, paginationHeight, nextPerfUID]);
 
 
   // keep ref pointing to latest repagination callback
@@ -1315,10 +1316,10 @@ export default function ScoreViewer({
           reflowQueuedCauseRef.current = "";
 
           if (queued === "width") {
-            await logStep(`draining queued width reflow (cause=${cause}, { outer })`);
+            await logStep(`draining queued width reflow (cause=${cause}), { outer }`);
             setTimeout(() => { reflowFnRef.current(); }, 0);
           } else if (queued === "height") {
-            await logStep(`draining queued height repagination (cause=${cause}, { outer })`);
+            await logStep(`draining queued height repagination (cause=${cause}), { outer }`);
             setTimeout(() => { repagFnRef.current(); }, 0);
           }
 
@@ -1771,7 +1772,7 @@ export default function ScoreViewer({
         const outer = wrapRef.current;
         if (!outer) { return; }
 
-        const fresh = computePageStarts(outer, bandsRef.current, getPAGE_H(outer));
+        const fresh = computePageStarts(outer, bandsRef.current, paginationHeight(outer));
         if (!fresh.length) { return; }
 
         pageStartsRef.current = fresh;
@@ -1790,7 +1791,7 @@ export default function ScoreViewer({
         if (idx !== beforePage) { applyPage(idx); }
       });
     },
-    [applyPage, getPAGE_H]
+    [applyPage, paginationHeight]
   );
 
   const goNext = useCallback(() => tryAdvance(1), [tryAdvance]);
