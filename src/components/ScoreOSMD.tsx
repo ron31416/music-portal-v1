@@ -1661,17 +1661,15 @@ export default function ScoreViewer({
           }
 
           {
-            let s = "";
-            s = perfBlock(
+            const serialized = perfBlock(
               nextPerfUID(outer.dataset.osmdRun),
               () => new XMLSerializer().serializeToString(xmlDoc),
-              (ms) => { void logStep(`XMLSerializer().serializeToString runtime: (${ms}ms) chars=${s.length}`); }
+              (ms) => { void logStep(`XMLSerializer().serializeToString runtime: (${ms}ms) chars=${serialized.length}`); }
             );
-            outer.dataset.osmdXmlChars = String(s.length);
-            loadInput = s;
+            outer.dataset.osmdXmlChars = String(serialized.length);
+            await logStep(`xml serialized chars=${serialized.length}`);
+            loadInput = serialized;
           }
-
-
         } else {
           // Non-API source: pass `src` straight to OSMD.load(...)
           // - If `src` is a URL/path to a plain MusicXML file (e.g. "/scores/foo.musicxml" or "https://…"),
@@ -1961,7 +1959,7 @@ export default function ScoreViewer({
     const vv = typeof window !== "undefined" ? window.visualViewport : undefined;
     if (!vv) { return; }
 
-    const onViewportChange = () => {
+    const onVisualViewportChange = () => {
       if (!readyRef.current) { return; }
 
       // debounce vv events
@@ -1975,7 +1973,7 @@ export default function ScoreViewer({
         // Tag logs with function name; clear phase since this isn't a render/scan/apply phase
         const prevFuncTag = outerNow.dataset.osmdFunc ?? "";
         const prevPhase = outerNow.dataset.osmdPhase ?? "";
-        outerNow.dataset.osmdFunc = "onViewportChange";
+        outerNow.dataset.osmdFunc = "onVisualViewportChange";
         outerNow.dataset.osmdPhase = "";
 
         try {
@@ -2045,11 +2043,11 @@ export default function ScoreViewer({
       }, 200);
     };
 
-    vv.addEventListener("resize", onViewportChange);
-    vv.addEventListener("scroll", onViewportChange);
+    vv.addEventListener("resize", onVisualViewportChange);
+    vv.addEventListener("scroll", onVisualViewportChange);
     return () => {
-      vv.removeEventListener("resize", onViewportChange);
-      vv.removeEventListener("scroll", onViewportChange);
+      vv.removeEventListener("resize", onVisualViewportChange);
+      vv.removeEventListener("scroll", onVisualViewportChange);
       if (vvTimerRef.current) {
         window.clearTimeout(vvTimerRef.current);
         vvTimerRef.current = null;
