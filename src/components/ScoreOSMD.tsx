@@ -649,87 +649,65 @@ export default function ScoreViewer({
     async (
       outer: HTMLDivElement,
       opts?: string | { message?: string; gatePaint?: boolean }
-    ): Promise<void> => {
-      // NEW: temporarily tag logs as coming from spinBegin
-      const prevFuncTag = outer.dataset.osmdFunc ?? "";
-      outer.dataset.osmdFunc = "spinBegin";
-      try {
-        // --- your original body starts here ---
-        const msg =
-          typeof opts === "string" || opts === undefined
-            ? (opts ?? DEFAULT_BUSY)
-            : (opts.message ?? DEFAULT_BUSY);
+    ): Promise<boolean> => {
+      const msg =
+        typeof opts === "string" || opts === undefined
+          ? (opts ?? DEFAULT_BUSY)
+          : (opts.message ?? DEFAULT_BUSY);
 
-        const gatePaint =
-          typeof opts === "object" && opts !== null
-            ? Boolean(opts.gatePaint)
-            : true;
+      const gatePaint =
+        typeof opts === "object" && opts !== null ? Boolean(opts.gatePaint) : true;
 
-        const token = Symbol("spin");
-        spinnerOwnerRef.current = token;
+      const token = Symbol("spin");
+      spinnerOwnerRef.current = token;
 
-        setBusyMsg(msg);
-        setBusy(true);
+      setBusyMsg(msg);
+      setBusy(true);
 
-        // (rest of your existing code stays exactly the same)
-        if (gatePaint) {
-          await new Promise<void>((r) => setTimeout(r, 0));
-          if (document.visibilityState === "visible") {
-            await Promise.race([
-              new Promise<void>((r) => requestAnimationFrame(() => r())),
-              new Promise<void>((r) => setTimeout(r, 120)),
-            ]);
-          }
+      // allow one paint so overlay can actually show
+      if (gatePaint) {
+        await new Promise<void>((r) => setTimeout(r, 0));
+        if (document.visibilityState === "visible") {
+          await Promise.race([
+            new Promise<void>((r) => requestAnimationFrame(() => r())),
+            new Promise<void>((r) => setTimeout(r, 120)),
+          ]);
         }
-
-        const ov = overlayRef.current;
-        const shown = !!ov && ov.style.display !== "none";
-        void logStep(
-          shown ? "spinner is visible" : "spinner requested (visibility pending)",
-          { outer }
-        );
-
-        if (spinnerFailSafeRef.current) {
-          window.clearTimeout(spinnerFailSafeRef.current);
-        }
-        spinnerFailSafeRef.current = window.setTimeout(() => {
-          spinnerOwnerRef.current = null;
-          hideBusy();
-          void logStep("failsafe triggered after 9s; hiding spinner", { outer });
-        }, SPINNER_FAILSAFE_MS);
-        // --- your original body ends here ---
-      } finally {
-        // NEW: restore caller’s func tag no matter what
-        try { outer.dataset.osmdFunc = prevFuncTag; } catch { /* noop */ }
       }
+
+      // start/refresh failsafe
+      if (spinnerFailSafeRef.current) {
+        window.clearTimeout(spinnerFailSafeRef.current);
+      }
+      spinnerFailSafeRef.current = window.setTimeout(() => {
+        spinnerOwnerRef.current = null;
+        hideBusy();
+        void logStep("failsafe triggered after 9s; hiding spinner", { outer });
+      }, SPINNER_FAILSAFE_MS);
+
+      const ov = overlayRef.current;
+      return !!ov && ov.style.display !== "none"; // visible now?
     },
     [hideBusy]
   );
 
   const spinEnd = useCallback(
     async (outer: HTMLDivElement): Promise<void> => {
-      const prevFuncTag = outer.dataset.osmdFunc ?? "";
-      outer.dataset.osmdFunc = "spinEnd";
-      try {
-        spinnerOwnerRef.current = null;
-        if (spinnerFailSafeRef.current) {
-          window.clearTimeout(spinnerFailSafeRef.current);
-          spinnerFailSafeRef.current = null;
-        }
+      spinnerOwnerRef.current = null;
+      if (spinnerFailSafeRef.current) {
+        window.clearTimeout(spinnerFailSafeRef.current);
+        spinnerFailSafeRef.current = null;
+      }
 
-        hideBusy();
+      hideBusy();
 
-        await new Promise<void>((r) => setTimeout(r, 0));
-        if (document.visibilityState === "visible") {
-          await Promise.race([
-            new Promise<void>((r) => requestAnimationFrame(() => r())),
-            new Promise<void>((r) => setTimeout(r, 180)),
-          ]);
-        }
-
-        await logStep("spinner:end", { outer });
-      } finally {
-        try { outer.dataset.osmdFunc = prevFuncTag; } catch { /* noop */ }
+      // small gate so “unbusy” paints before heavy follow-ups
+      await new Promise<void>((r) => setTimeout(r, 0));
+      if (document.visibilityState === "visible") {
+        await Promise.race([
+          new Promise<void>((r) => requestAnimationFrame(() => r())),
+          new Promise<void>((r) => setTimeout(r, 180)),
+        ]);
       }
     },
     [hideBusy]
@@ -1317,6 +1295,7 @@ export default function ScoreViewer({
         } catch { }
 
         await spinBegin(outer, { message: DEFAULT_BUSY, gatePaint: true });
+        await logStep("spinner started", { outer });
 
         const { bands, starts } = await layoutViewer(outer, osmd, {
           gateLabel: "one paint opportunity after first apply",
@@ -1338,6 +1317,7 @@ export default function ScoreViewer({
 
           // spinner end + small paint gate
           await spinEnd(outer);
+          await logStep("spinner stopped", { outer });
 
           // clear breadcrumbs
           outer.dataset.osmdReflowTargetW = "";
@@ -1550,6 +1530,7 @@ export default function ScoreViewer({
         osmdRef.current = osmd;
 
         await spinBegin(outer, { message: DEFAULT_BUSY, gatePaint: true });
+        await logStep("spinner started", { outer });
 
         await logStep("phase finished", { outer });
         outer.dataset.osmdPhase = "load";
@@ -1732,6 +1713,7 @@ export default function ScoreViewer({
         // In the reflow path the spinner is ended in its `finally` block.
         // because a fatal no-VV path sets busy directly and must keep the overlay visible.
         await spinEnd(outer);
+        await logStep("spinner stopped", { outer });
 
       } finally {
         try { outer.dataset.osmdPhase = "finally"; } catch { }
