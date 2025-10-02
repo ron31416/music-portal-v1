@@ -991,6 +991,38 @@ export default function ScoreViewer({
         const EPS = (window.devicePixelRatio || 1) >= 2 ? 0.75 : 0.5;
         const needsMask = nextStartIndex >= 0 && maskTopWithinMusicPx < hVisible - EPS;
 
+        // If anything from the next page peeks into view, push it out by repaginating
+        // with a stricter height (smaller than the visible height by our guards).
+        if (needsMask && nextStartIndex >= 0) {
+          const nextBand = bands[nextStartIndex];
+          if (nextBand) {
+            // Use a conservative height so the last included system is fully visible.
+            const STRICT_H =
+              Math.max(1, hVisible - (PEEK_GUARD + MASK_BOTTOM_SAFETY_PX + 2));
+
+            const fresh = computePageStarts(outer, bands, STRICT_H);
+            if (fresh.length) {
+              // pick the first start >= current startIndex so we "stay" on the same content
+              let lb = fresh.length - 1;
+              for (let i = 0; i < fresh.length; i++) {
+                const s = fresh[i] ?? 0;
+                if (s >= startIndex) { lb = i; break; }
+              }
+
+              const noChange =
+                fresh.length === starts.length &&
+                fresh.every((v, i) => v === (starts[i] ?? -1)) &&
+                lb === clampedPage;
+
+              if (!noChange) {
+                pageStartIdxsRef.current = fresh;
+                applyPage(lb, depth + 1); // bounded by APPLY_MAX_PASSES
+                return;
+              }
+            }
+          }
+        }
+
         // --- main mask (show only when there is actual peek) ---
         let mask = outer.querySelector<HTMLDivElement>("[data-viewer-mask='1']");
         if (!mask) {
