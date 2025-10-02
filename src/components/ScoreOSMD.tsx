@@ -313,10 +313,15 @@ function scanSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[] {
     const MIN_W = 8;
 
     for (const root of roots) {
-      const allG = Array.from(root.querySelectorAll<SVGGElement>("g"));
-      for (const g of allG) {
+      // Include paths/lines/text so pedal brackets & dynamics extend the band
+      const SELECTORS = "g,path,rect,line,polyline,polygon,text";
+      const graphics = Array.from(
+        root.querySelectorAll<SVGGraphicsElement>(SELECTORS)
+      );
+
+      for (const el of graphics) {
         try {
-          const r = g.getBoundingClientRect();
+          const r = el.getBoundingClientRect();
           if (!Number.isFinite(r.top) || !Number.isFinite(r.height) || !Number.isFinite(r.width)) { continue; }
           if (r.height < MIN_H) { continue; }
           if (r.width < MIN_W) { continue; }
