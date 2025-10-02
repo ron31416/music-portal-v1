@@ -1661,13 +1661,16 @@ export default function ScoreViewer({
           }
 
           {
+            let serializeMs = 0;
             const serialized = perfBlock(
               nextPerfUID(outer.dataset.osmdRun),
               () => new XMLSerializer().serializeToString(xmlDoc),
-              (ms) => { void logStep(`XMLSerializer().serializeToString runtime: (${ms}ms) chars=${serialized.length}`); }
+              (ms) => { serializeMs = ms; }
             );
             outer.dataset.osmdXmlChars = String(serialized.length);
-            await logStep(`xml serialized chars=${serialized.length}`);
+            await logStep(
+              `XMLSerializer().serializeToString runtime: (${serializeMs}ms) chars=${serialized.length}`
+            );
             loadInput = serialized;
           }
         } else {
