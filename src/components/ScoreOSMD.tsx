@@ -314,7 +314,7 @@ function scanSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[] {
 
     for (const root of roots) {
       // Include paths/lines/text so pedal brackets & dynamics extend the band
-      const SELECTORS = "g,path,rect,line,polyline,polygon,text";
+      const SELECTORS = "g,use,path,rect,line,polyline,polygon,circle,ellipse,text";
       const graphics = Array.from(
         root.querySelectorAll<SVGGraphicsElement>(SELECTORS)
       );
@@ -351,15 +351,17 @@ function scanSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[] {
       }
     }
 
-    // ↓ Tiny safety expansion so 1-px hairlines don’t get shaved off at page edges
-    const HAIRLINE_PAD = (window.devicePixelRatio || 1) >= 2 ? 2 : 1;
+    // Conservative bottom expansion so thin/used glyphs don't under-measure the system
+    const DECOR_PAD = (window.devicePixelRatio || 1) >= 2 ? 10 : 8;
     for (const band of bands) {
-      band.bottom += HAIRLINE_PAD;
+      band.bottom += DECOR_PAD;
       band.height = band.bottom - band.top;
     }
 
-    void logStep(`bands: ${bands.length}`, { outer });
+    void logStep(`bands: ${bands.length} (pad=${DECOR_PAD})`, { outer });
+
     return bands;
+
   } finally {
     try { outer.dataset.viewerFunc = prevFuncTag; } catch { }
   }
@@ -951,7 +953,8 @@ export default function ScoreViewer({
 
           // Otherwise, hide just the peeking sliver.
           const nudge = (window.devicePixelRatio || 1) >= 2 ? 3 : 2;
-          const low = Math.ceil(relBottom) + MASK_BOTTOM_SAFETY_PX - nudge;
+          const EXTRA_MASK_PAD = (window.devicePixelRatio || 1) >= 2 ? 6 : 5;
+          const low = Math.ceil(relBottom) + MASK_BOTTOM_SAFETY_PX - nudge + EXTRA_MASK_PAD;
           const high = Math.floor(nextTopRel) - PEEK_GUARD;
 
           if (low > high) {
