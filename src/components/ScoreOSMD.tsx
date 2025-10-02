@@ -298,7 +298,6 @@ function isTitleLike(first: Band | undefined, rest: Band[]): boolean {
 function scanSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[] {
   const prevFuncTag = outer.dataset.viewerFunc ?? "";
   outer.dataset.viewerFunc = "scanSystemsPx";
-
   try {
     const pageRoots = Array.from(
       svgRoot.querySelectorAll<SVGGElement>(
@@ -311,14 +310,21 @@ function scanSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[] {
 
     interface Box { top: number; bottom: number; height: number; width: number }
     const boxes: Box[] = [];
-    const MIN_H = 2;
-    const MIN_W = 8;
+
+    // ↓ include very thin items so dynamics/pedals/slurs count
+    const MIN_H = 1;
+    const MIN_W = 6;
 
     for (const root of roots) {
-      const allG = Array.from(root.querySelectorAll<SVGGElement>("g"));
-      for (const g of allG) {
+      // Include groups AND primitive graphics so text/hairlines extend the band
+      const SELECTORS = "g,path,rect,line,polyline,polygon,text";
+      const graphics = Array.from(
+        root.querySelectorAll<SVGGraphicsElement>(SELECTORS)
+      );
+
+      for (const el of graphics) {
         try {
-          const r = g.getBoundingClientRect();
+          const r = el.getBoundingClientRect();
           if (!Number.isFinite(r.top) || !Number.isFinite(r.height) || !Number.isFinite(r.width)) { continue; }
           if (r.height < MIN_H) { continue; }
           if (r.width < MIN_W) { continue; }
@@ -329,7 +335,7 @@ function scanSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[] {
             height: r.height,
             width: r.width,
           });
-        } catch { }
+        } catch { /* ignore */ }
       }
     }
 
@@ -346,6 +352,13 @@ function scanSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[] {
         last.bottom = Math.max(last.bottom, b.bottom);
         last.height = last.bottom - last.top;
       }
+    }
+
+    // Tiny safety expansion so 1-px hairlines aren’t shaved at page edges
+    const HAIRLINE_PAD = (window.devicePixelRatio || 1) >= 2 ? 2 : 1;
+    for (const band of bands) {
+      band.bottom += HAIRLINE_PAD;
+      band.height = band.bottom - band.top;
     }
 
     void logStep(`bands: ${bands.length}`, { outer });
