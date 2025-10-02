@@ -813,7 +813,6 @@ export default function ScoreViewer({
 
         const nextStartIndex = clampedPage + 1 < starts.length ? (starts[clampedPage + 1] ?? -1) : -1;
 
-        const BOTTOM_PEEK_PAD = bottomPeekPad();
         const hVisible = visiblePageHeight(outer);
 
         // unify all repagination to one height
@@ -993,7 +992,11 @@ export default function ScoreViewer({
         }
         mask.style.top = `${Math.max(0, topGutterPx) + maskTopWithinMusicPx}px`;
 
+        // --- bottom cutter (only when there is actual peek) ---
         let bottomCutter = outer.querySelector<HTMLDivElement>("[data-viewer-bottomcutter='1']");
+        const needsMask = nextStartIndex >= 0 && maskTopWithinMusicPx < hVisible;
+        const CUTTER_PX = needsMask ? ((window.devicePixelRatio || 1) >= 2 ? 2 : 1) : 0;
+
         if (!bottomCutter) {
           bottomCutter = document.createElement("div");
           bottomCutter.dataset.viewerBottomcutter = "1";
@@ -1002,15 +1005,15 @@ export default function ScoreViewer({
             left: "0",
             right: "0",
             bottom: "0",
-            height: `${BOTTOM_PEEK_PAD}px`,
             background: "#fff",
             pointerEvents: "none",
             zIndex: "6",
           });
           outer.appendChild(bottomCutter);
-        } else {
-          bottomCutter.style.height = `${BOTTOM_PEEK_PAD}px`;
         }
+        // collapse when not needed; tiny guard only when peek occurs
+        bottomCutter.style.height = `${CUTTER_PX}px`;
+        bottomCutter.style.display = CUTTER_PX === 0 ? "none" : "block";
 
         let topCutter = outer.querySelector<HTMLDivElement>("[data-viewer-topcutter='1']");
         if (!topCutter) {
@@ -1035,7 +1038,7 @@ export default function ScoreViewer({
         try { outer.dataset.viewerFunc = prevFuncTag; } catch { }
       }
     },
-    [visiblePageHeight, topGutterPx, bottomPeekPad, paginationHeight]
+    [visiblePageHeight, topGutterPx, paginationHeight]
   );
 
   // Hide the SVG host while we do heavy work, then restore previous styles.
