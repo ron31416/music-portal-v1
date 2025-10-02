@@ -209,7 +209,7 @@ export async function logStep(
 }
 
 // ---------- DEBUG OVERLAY (visualize bands & starts) ----------
-const DEBUG_BANDS = true; // set true to show guides; false to hide
+const DEBUG_BANDS = false; // set true to show guides; false to hide
 
 type DebugOpts = {
   tag?: string;
@@ -632,6 +632,85 @@ function scanSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[] {
 }
 
 // --- System packing helpers (insert after scanSystemsPx) ---
+
+// Read OSMD page <g> boxes (relative to our wrapper)
+function scanPageBoxes(
+  outer: HTMLDivElement,
+  svgRoot: SVGSVGElement
+): Array<{ top: number; bottom: number; height: number }> {
+  const prev = outer.dataset.viewerFunc ?? "";
+  outer.dataset.viewerFunc = "scanPageBoxes";
+  try {
+    const hostTop = outer.getBoundingClientRect().top;
+    const pageRoots = Array.from(
+      svgRoot.querySelectorAll<SVGGElement>(
+        'g[id^="osmdCanvasPage"], g[id^="Page"], g[class*="Page"], g[class*="page"]'
+      )
+    );
+    if (pageRoots.length === 0) {
+      const r = svgRoot.getBoundingClientRect();
+      return [{ top: 0, bottom: r.height, height: r.height }];
+    }
+    const boxes = pageRoots
+      .map((g) => {
+        const r = g.getBoundingClientRect();
+        return { top: r.top - hostTop, bottom: r.bottom - hostTop, height: r.height };
+      })
+      .sort((a, b) => a.top - b.top);
+    return boxes;
+  } finally {
+    try { outer.dataset.viewerFunc = prev; } catch { }
+  }
+}
+
+/**
+ * Collapse OSMD inter-page gaps so systems from consecutive OSMD pages
+ * sit with only `gapPx` between them in our coordinate space.
+ */
+function flattenBandsByPages(
+  bands: Band[],
+  pages: Array<{ top: number; bottom: number; height: number }>,
+  gapPx: number
+): Band[] {
+  if (bands.length === 0 || pages.length < 2) {
+    return bands.slice();
+  }
+
+  const pageTop: number[] = pages.map((p) => p.top);
+  const pageH: number[] = pages.map((p) => p.height);
+
+  // Compute how much extra vertical space each OSMD page currently has
+  // relative to “tight pack” with `gapPx`. Build a prefix of that extra.
+  const extraOffsetPerPage: number[] = [0];
+  let desiredNextTop = pageTop[0]! + pageH[0]! + gapPx;
+  for (let i = 1; i < pages.length; i++) {
+    const haveTop = pageTop[i]!;
+    const wantTop = desiredNextTop;
+    const extra = haveTop - wantTop;           // positive = extra gap to remove
+    extraOffsetPerPage[i] = extra;
+    desiredNextTop = wantTop + pageH[i]! + gapPx;
+  }
+  const prefixExtra: number[] = [0];
+  for (let i = 1; i < extraOffsetPerPage.length; i++) {
+    prefixExtra[i] = prefixExtra[i - 1]! + (extraOffsetPerPage[i] ?? 0);
+  }
+
+  // Shift every band up by the cumulative extra gap of its page index.
+  const out: Band[] = bands.map((b) => {
+    // page index: last page whose top <= band.top
+    let j = 0;
+    for (let k = 1; k < pageTop.length; k++) {
+      if (b.top >= pageTop[k]!) { j = k; } else { break; }
+    }
+    const shift = prefixExtra[j] ?? 0;
+    const top = b.top - shift;
+    const bottom = b.bottom - shift;
+    return { top, bottom, height: bottom - top };
+  });
+
+  return out;
+}
+
 
 function interSystemPackGapPx(outer: HTMLDivElement): number {
   // Nominal gap between systems when *we* repack them
@@ -1527,16 +1606,17 @@ export default function ScoreViewer({
         }
       }
 
-      const bands = perfBlock(
+      let bands = perfBlock(
         nextPerfUID(outer.dataset.viewerRun),
         () => withSvgAtUnitScale(outer, (svg) => scanSystemsPx(outer, svg)) ?? [],
         (ms) => { void logStep(`scanSystemsPx() runtime: ${ms}ms`, { outer }); }
       );
-      outer.dataset.viewerBands = String(bands.length);
-      if (bands.length === 0) {
-        await logStep("0 bands — abort", { outer });
-        return { bands: [], starts: [0] };
-      }
+
+      // NEW: collapse OSMD page gaps so adjacent systems from different OSMD pages
+      // don’t leave a giant void between them on our screen page.
+      const pageBoxes =
+        withSvgAtUnitScale(outer, (svg) => scanPageBoxes(outer, svg)) ?? [];
+      bands = flattenBandsByPages(bands, pageBoxes, interSystemPackGapPx(outer));
 
       debugDrawBands(outer, bands, {
         tag: "scan",
