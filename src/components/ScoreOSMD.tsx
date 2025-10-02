@@ -973,8 +973,7 @@ export default function ScoreViewer({
         outer.dataset.osmdTy = String(-ySnap + Math.max(0, topGutterPx));
         outer.dataset.osmdH = String(hVisible);
 
-        // Single, serialized logger
-        logStep(`apply page: ${clampedPage + 1}/${pages} start: ${startIndex} nextStart: ${nextStartIndex} 
+        logStep(`apply page: ${clampedPage + 1}/${pages} start: ${startIndex} nextStart: ${nextStartIndex} +
           height: ${hVisible} maskTop: ${maskTopWithinMusicPx}`, { outer }
         );
 
@@ -1959,8 +1958,8 @@ export default function ScoreViewer({
           // Only log when we're going to act; keeps noise down long-term.
           if (widthChanged || heightChanged) {
             await logStep(
-              `wrap=${wrapW}×${wrapH} vv=${vvW}×${vvH} scale=${vvScale.toFixed(3)} ` +
-              `handled=${handledWrapW}×${handledWrapH} ΔW=${widthChanged} ΔH=${heightChanged}`,
+              `wrap: ${wrapW}×${wrapH} vv: ${vvW}×${vvH} scale: ${vvScale.toFixed(3)} ` +
+              `handled: ${handledWrapW}×${handledWrapH} ΔW: ${widthChanged} ΔH: ${heightChanged}`,
               { outer: outerNow }
             );
           } else {
