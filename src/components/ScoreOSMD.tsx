@@ -645,18 +645,19 @@ export default function ScoreViewer({
   // Spinner helpers config (used by both init + reflow)
   const SPINNER_FAILSAFE_MS = 9000 as const;
 
-  const spinBegin = useCallback(
+  const startSpinner = useCallback(
     async (
-      outer: HTMLDivElement,
       opts?: string | { message?: string; gatePaint?: boolean }
-    ): Promise<boolean> => {
+    ): Promise<void> => {
       const msg =
         typeof opts === "string" || opts === undefined
           ? (opts ?? DEFAULT_BUSY)
           : (opts.message ?? DEFAULT_BUSY);
 
       const gatePaint =
-        typeof opts === "object" && opts !== null ? Boolean(opts.gatePaint) : true;
+        typeof opts === "object" && opts !== null
+          ? Boolean(opts.gatePaint)
+          : true;
 
       const token = Symbol("spin");
       spinnerOwnerRef.current = token;
@@ -664,7 +665,7 @@ export default function ScoreViewer({
       setBusyMsg(msg);
       setBusy(true);
 
-      // allow one paint so overlay can actually show
+      // Let overlay mount/paint (best-effort)
       if (gatePaint) {
         await new Promise<void>((r) => setTimeout(r, 0));
         if (document.visibilityState === "visible") {
@@ -675,24 +676,20 @@ export default function ScoreViewer({
         }
       }
 
-      // start/refresh failsafe
+      // (Re)arm fail-safe — silent on fire (per your request)
       if (spinnerFailSafeRef.current) {
         window.clearTimeout(spinnerFailSafeRef.current);
       }
       spinnerFailSafeRef.current = window.setTimeout(() => {
         spinnerOwnerRef.current = null;
         hideBusy();
-        void logStep("failsafe triggered after 9s; hiding spinner", { outer });
       }, SPINNER_FAILSAFE_MS);
-
-      const ov = overlayRef.current;
-      return !!ov && ov.style.display !== "none"; // visible now?
     },
     [hideBusy]
   );
 
-  const spinEnd = useCallback(
-    async (outer: HTMLDivElement): Promise<void> => {
+  const stopSpinner = useCallback(
+    async (): Promise<void> => {
       spinnerOwnerRef.current = null;
       if (spinnerFailSafeRef.current) {
         window.clearTimeout(spinnerFailSafeRef.current);
@@ -701,7 +698,7 @@ export default function ScoreViewer({
 
       hideBusy();
 
-      // small gate so “unbusy” paints before heavy follow-ups
+      // Give the UI a beat to commit the un-busy frame
       await new Promise<void>((r) => setTimeout(r, 0));
       if (document.visibilityState === "visible") {
         await Promise.race([
@@ -1294,7 +1291,7 @@ export default function ScoreViewer({
           outer.dataset.osmdReflowTargetH = String(currH);
         } catch { }
 
-        await spinBegin(outer, { message: DEFAULT_BUSY, gatePaint: true });
+        await startSpinner({ message: DEFAULT_BUSY, gatePaint: true });
         await logStep("spinner started", { outer });
 
         const { bands, starts } = await layoutViewer(outer, osmd, {
@@ -1316,7 +1313,7 @@ export default function ScoreViewer({
           reflowRunningRef.current = false;
 
           // spinner end + small paint gate
-          await spinEnd(outer);
+          await stopSpinner();
           await logStep("spinner stopped", { outer });
 
           // clear breadcrumbs
@@ -1343,7 +1340,7 @@ export default function ScoreViewer({
       }
 
     },
-    [layoutViewer, fmtFlags, spinBegin, spinEnd]
+    [layoutViewer, fmtFlags, startSpinner, stopSpinner]
   );
 
   // keep ref pointing to latest width-reflow callback
@@ -1529,7 +1526,7 @@ export default function ScoreViewer({
         }) as OpenSheetMusicDisplay;
         osmdRef.current = osmd;
 
-        await spinBegin(outer, { message: DEFAULT_BUSY, gatePaint: true });
+        await startSpinner({ message: DEFAULT_BUSY, gatePaint: true });
         await logStep("spinner started", { outer });
 
         await logStep("phase finished", { outer });
@@ -1712,7 +1709,7 @@ export default function ScoreViewer({
         // First page is applied and masking is in place — hide the overlay now.
         // In the reflow path the spinner is ended in its `finally` block.
         // because a fatal no-VV path sets busy directly and must keep the overlay visible.
-        await spinEnd(outer);
+        await stopSpinner();
         await logStep("spinner stopped", { outer });
 
       } finally {
@@ -1726,10 +1723,10 @@ export default function ScoreViewer({
       }
 
     })().catch(async (err: unknown) => {
-      // If init crashed after spinBegin, close the spinner immediately.
+      // If init crashed after startSpinner, close the spinner immediately.
       // (Fatal no-visualViewport path never sets spinnerOwnerRef, so it stays up.)
       if (spinnerOwnerRef.current) {
-        try { await spinEnd(wrapRef.current!); } catch { }
+        try { await stopSpinner(); } catch { }
       } else {
         hideBusy(); // fallback for any older/non-spinner busy state
       }
