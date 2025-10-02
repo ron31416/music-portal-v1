@@ -95,7 +95,7 @@ function makeAfterPaint(outer: HTMLDivElement) {
           const ms = Math.round(now - t0);
           outer.dataset.osmdAfterpaintMs = String(ms);
 
-          void logStep(`[ap] ${label ?? ""} -> ${why} (${ms}ms)`);
+          void logStep(`${label ?? ""} -> ${why} (${ms}ms)`, { outer });
         } catch { }
         resolve();
       }
@@ -300,8 +300,6 @@ function scanSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[] {
   outer.dataset.osmdFunc = "scanSystemsPx";
 
   try {
-    void logStep("enter", { outer }); // one breadcrumb so calls are visible
-
     const pageRoots = Array.from(
       svgRoot.querySelectorAll<SVGGElement>(
         'g[id^="osmdCanvasPage"], g[id^="Page"], g[class*="Page"], g[class*="page"]'
@@ -350,7 +348,7 @@ function scanSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[] {
       }
     }
 
-    void logStep(`exit bands=${bands.length}`, { outer });
+    void logStep(`bands: ${bands.length}`, { outer });
     return bands;
   } finally {
     try { outer.dataset.osmdFunc = prevFuncTag; } catch { }
@@ -364,7 +362,7 @@ function computePageStarts(outer: HTMLDivElement, bands: Band[], viewportH: numb
 
   try {
     if (bands.length === 0 || viewportH <= 0) {
-      void logStep("exit starts=1 (fallback [0])", { outer });
+      void logStep("starts: 1 (fallback [0])", { outer });
       return [0];
     }
 
@@ -396,7 +394,7 @@ function computePageStarts(outer: HTMLDivElement, bands: Band[], viewportH: numb
     }
 
     const out = starts.length ? starts : [0];
-    void logStep(`starts=${out.length}`, { outer });
+    void logStep(`starts: ${out.length}`, { outer });
     return out;
   } finally {
     try { outer.dataset.osmdFunc = prevFuncTag; } catch { }
@@ -575,7 +573,6 @@ export default function ScoreViewer({
 
       const prevFuncTag = outer.dataset.osmdFunc ?? "";
       outer.dataset.osmdFunc = "renderViewer";
-      await logStep("enter", { outer });
 
       // Use our zoom source of truth
       applyZoomFromRef();
@@ -609,20 +606,19 @@ export default function ScoreViewer({
         // Let spinner/host paint before the heavy render
         await waitForPaint(300);
 
-        await logStep(`w=${layoutW} hostW=${hostW} zf=${zf.toFixed(3)} osmd.Zoom=${osmd.Zoom ?? "n/a"}`);
+        await logStep(`w: ${layoutW} hostW: ${hostW} zf: ${zf.toFixed(3)} osmd.Zoom: ${osmd.Zoom ?? "n/a"}`, { outer });
 
         // Timed core render (isolates synchronous OSMD work)
         perfBlock(
           nextPerfUID(outer.dataset.osmdRun),
           () => { osmd.render(); },
-          (ms) => { void logStep(`osmd.render() runtime: (${ms}ms)`); }
+          (ms) => { void logStep(`osmd.render() runtime: ${ms}ms`, { outer }); }
         );
       } catch (e) {
-        void logStep(`render:error ${(e as Error)?.message ?? e}`);
+        void logStep(`render:error ${(e as Error)?.message ?? e}`, { outer });
         throw e;
       } finally {
-        try { await logStep("exit", { outer }); } catch { /* noop */ }
-        try { outer.dataset.osmdFunc = prevFuncTag; } catch { /* noop */ }
+        try { outer.dataset.osmdFunc = prevFuncTag; } catch { }
 
         // Restore EXACT previous inline styles
         host.style.left = prevLeft;
@@ -787,7 +783,7 @@ export default function ScoreViewer({
           return;
         }
 
-        void logStep(`enter pageIdx=${pageIdx} depth=${depth}`, { outer });
+        void logStep(`pageIdx: ${pageIdx} depth: ${depth}`, { outer });
         const svg = getSvg(outer);
         if (!svg) {
           return;
@@ -820,9 +816,9 @@ export default function ScoreViewer({
         const BOTTOM_PEEK_PAD = bottomPeekPad();
         const hVisible = pageHeight(outer);
 
-        // NEW: unify all repagination to one height
+        // unify all repagination to one height
         const TOL = (window.devicePixelRatio || 1) >= 2 ? 2 : 1; // tiny tolerance
-        const PAGE_H = getPAGE_H(outer);                         // unified height
+        const PAGE_H = getPAGE_H(outer);
 
         // If the top of the next system is already inside the window...
         if (nextStartIndex >= 0) {
@@ -863,8 +859,8 @@ export default function ScoreViewer({
 
           for (let i = startIndex; i < bands.length; i++) {
             const b = bands[i];
-            if (!b) { continue; }                        // TS guard: b is Band
-            const relBottom = b.bottom - startBand.top; // bottom within current page
+            if (!b) { continue; }
+            const relBottom = b.bottom - startBand.top;
 
             if (relBottom > hVisible - LAST_PAGE_BOTTOM_PAD_PX) {
               cutIdx = i;
@@ -878,16 +874,16 @@ export default function ScoreViewer({
               freshStarts.push(cutIdx);
               pageStartsRef.current = freshStarts;
             }
-            applyPage(clampedPage, depth + 1);                    // ← depth+1
+            applyPage(clampedPage, depth + 1);
             return;
           }
           // If cutIdx === startIndex, the single system is taller than the page; do nothing.
         }
 
 
-        // ---- stale page-starts guard: recompute if last-included doesn't fit ----
-
-        const SAFETY = (window.devicePixelRatio || 1) >= 2 ? 12 : 10;  // roughly MASK_BOTTOM_SAFETY_PX + (PEEK_GUARD - 2), avoids edge-shave on Hi-DPR
+        // stale page-starts guard: recompute if last-included doesn't fit
+        // roughly MASK_BOTTOM_SAFETY_PX + (PEEK_GUARD - 2), avoids edge-shave on Hi-DPR
+        const SAFETY = (window.devicePixelRatio || 1) >= 2 ? 12 : 10;
         const assumedLastIdx = (clampedPage + 1 < starts.length)
           ? Math.max(startIndex, (starts[clampedPage + 1] ?? startIndex) - 1)
           : Math.max(startIndex, bands.length - 1);
@@ -896,7 +892,7 @@ export default function ScoreViewer({
         const lastBottomRel = assumedLast ? (assumedLast.bottom - startBand.top) : 0;
 
         if (assumedLast && lastBottomRel > hVisible - SAFETY) {
-          const freshStarts = computePageStarts(outer, bands, PAGE_H); // ← PAGE_H
+          const freshStarts = computePageStarts(outer, bands, PAGE_H);
           if (freshStarts.length) {
             let nearest = 0, best = Number.POSITIVE_INFINITY;
             for (let i = 0; i < freshStarts.length; i++) {
@@ -911,15 +907,13 @@ export default function ScoreViewer({
 
             if (!noChange) {
               pageStartsRef.current = freshStarts;
-              applyPage(nearest, depth + 1);                     // ← depth+1
+              applyPage(nearest, depth + 1);
               return;
             }
           }
         }
 
-        // ---- masking: hide anything that belongs to the next page ----
-        //const MASK_BOTTOM_SAFETY_PX = 12;
-        //const PEEK_GUARD = (window.devicePixelRatio || 1) >= 2 ? 7 : 5; // was 4/3
+        // masking: hide anything that belongs to the next page
         const MASK_BOTTOM_SAFETY_PX = REFLOW.MASK_BOTTOM_SAFETY_PX;
         const PEEK_GUARD = (window.devicePixelRatio || 1) >= 2
           ? REFLOW.PEEK_GUARD_HI_DPR
@@ -980,7 +974,9 @@ export default function ScoreViewer({
         outer.dataset.osmdH = String(hVisible);
 
         // Single, serialized logger
-        logStep(`apply page:${clampedPage + 1}/${pages} start:${startIndex} nextStart:${nextStartIndex} h:${hVisible} maskTop:${maskTopWithinMusicPx}`);
+        logStep(`apply page: ${clampedPage + 1}/${pages} start: ${startIndex} nextStart: ${nextStartIndex} 
+          height: ${hVisible} maskTop: ${maskTopWithinMusicPx}`, { outer }
+        );
 
         let mask = outer.querySelector<HTMLDivElement>("[data-osmd-mask='1']");
         if (!mask) {
@@ -1103,7 +1099,7 @@ export default function ScoreViewer({
           async () => { await renderViewer(outer, osmd); },
           (ms) => {
             outer.dataset.osmdRenderMs = String(ms);
-            void logStep(`renderViewer() runtime: (${ms}ms)`);
+            void logStep(`renderViewer() runtime: ${ms}ms`, { outer });
           }
         );
       });
@@ -1117,7 +1113,7 @@ export default function ScoreViewer({
       const bands = perfBlock(
         nextPerfUID(outer.dataset.osmdRun),
         () => withUntransformedSvg(outer, (svg) => scanSystemsPx(outer, svg)) ?? [],
-        (ms) => { void logStep(`scanSystemsPx() runtime: (${ms}ms)`); }
+        (ms) => { void logStep(`scanSystemsPx() runtime: ${ms}ms`, { outer }); }
       );
       outer.dataset.osmdBands = String(bands.length);
       if (bands.length === 0) {
@@ -1129,7 +1125,7 @@ export default function ScoreViewer({
       const starts = perfBlock(
         nextPerfUID(outer.dataset.osmdRun),
         () => computePageStarts(outer, bands, H),
-        (ms) => { void logStep(`computePageStarts() runtime: (${ms}ms) H=${H}`); }
+        (ms) => { void logStep(`computePageStarts() runtime: ${ms}ms H: ${H}`, { outer }); }
       );
 
       await logStep("phase finished", { outer });
@@ -1147,10 +1143,10 @@ export default function ScoreViewer({
           await Promise.race([ap(gateLabel, gateMs), new Promise<void>((r) => setTimeout(r, gateMs))]);
           if (doubleApply) { applyPage(0); }
         },
-        (ms) => { void logStep(`applyPage() runtime: (${ms}ms)`); }
+        (ms) => { void logStep(`applyPage() runtime: ${ms}ms`, { outer }); }
       );
 
-      await logStep(`bands=${bands.length} pages=${starts.length}`, { outer });
+      await logStep(`bands: ${bands.length} pages: ${starts.length}`, { outer });
 
       return { bands, starts };
 
@@ -1180,7 +1176,7 @@ export default function ScoreViewer({
 
       const bands = bandsRef.current;
       if (bands.length === 0) {
-        void logStep("exiting: 0 bands", { outer });
+        void logStep("bands: 0 - exit", { outer });
         return;
       }
 
@@ -1190,7 +1186,7 @@ export default function ScoreViewer({
       const starts = perfBlock(
         nextPerfUID(outer.dataset.osmdRun),
         () => computePageStarts(outer, bands, H),
-        (ms) => { void logStep(`computePageStarts runtime: (${ms}ms) H=${H}`); }
+        (ms) => { void logStep(`computePageStarts runtime: ${ms}ms H: ${H}`, { outer }); }
       );
 
       pageStartsRef.current = starts;
@@ -1200,7 +1196,7 @@ export default function ScoreViewer({
       perfBlock(
         nextPerfUID(outer.dataset.osmdRun),
         () => { applyPage(0); },
-        (ms) => { void logStep(`applyPage runtime: (${ms}ms)`); }
+        (ms) => { void logStep(`applyPage runtime: ${ms}ms`, { outer }); }
       );
 
     } finally {
@@ -1259,7 +1255,7 @@ export default function ScoreViewer({
 
       try {
         if (!osmd) {
-          void logStep("early-bail outer=1 osmd=0");
+          void logStep("early-bail outer=1 osmd=0", { outer });
           return; // finally will restore prevFuncTag
         }
 
@@ -1269,7 +1265,7 @@ export default function ScoreViewer({
           outer.dataset.osmdReflowQueued = String(run);
           outer.dataset.osmdReflowQueueWhy = "reflowRunning";
           outer.dataset.osmdReflowQueuedAt = String(Date.now());
-          void logStep("reflow already in progress; queued follow-up");
+          void logStep("reflow already in progress; queued follow-up", { outer });
           return;
         }
 
@@ -1279,7 +1275,7 @@ export default function ScoreViewer({
 
         const run = (Number(outer.dataset.osmdRun || "0") + 1);
         outer.dataset.osmdRun = String(run);
-        void logStep(`run# ${run} • ${fmtFlags()}`);
+        void logStep(`run: ${run} • ${fmtFlags()}`, { outer });
 
         const currW = outer.clientWidth;
         const currH = outer.clientHeight;
@@ -1327,10 +1323,10 @@ export default function ScoreViewer({
           reflowQueuedCauseRef.current = "";
 
           if (queued === "width") {
-            await logStep(`draining queued width reflow (cause=${cause})`);
+            await logStep(`draining queued width reflow (cause=${cause}, { outer })`);
             setTimeout(() => { reflowFnRef.current(); }, 0);
           } else if (queued === "height") {
-            await logStep(`draining queued height repagination (cause=${cause})`);
+            await logStep(`draining queued height repagination (cause=${cause}, { outer })`);
             setTimeout(() => { repagFnRef.current(); }, 0);
           }
 
@@ -1374,7 +1370,7 @@ export default function ScoreViewer({
     const schedule = (why: "vv-scale" | "dpr") => {
       // Ignore before first layout is fully ready
       if (!readyRef.current) {
-        void logStep(`zoom:ignored (pre-ready) reason=${why}`);
+        void logStep(`ignored (pre-ready) reason=${why}`);
         return;
       }
 
@@ -1389,14 +1385,14 @@ export default function ScoreViewer({
         // Only act if zoom actually changed
         if (Math.abs(zoomFactorRef.current - before) < 0.003) { return; }
 
-        void logStep(`zoom:debounced zf=${zoomFactorRef.current.toFixed(3)} reason=${why}`);
+        void logStep(`debounced zf=${zoomFactorRef.current.toFixed(3)} reason=${why}`);
 
         // Queue only; let our normal drain paths run it when safe
         reflowAgainRef.current = "width";
         reflowQueuedCauseRef.current = `zoom:${why}`;
 
         if (reflowRunningRef.current || repagRunningRef.current || busyRef.current) {
-          void logStep("zoom: queued width reflow (guard busy)");
+          void logStep("queued width reflow (guard busy)");
           return;
         }
 
@@ -1502,7 +1498,7 @@ export default function ScoreViewer({
         const mod = await perfBlockAsync(
           nextPerfUID(outer.dataset.osmdRun),
           async () => await import("opensheetmusicdisplay"),
-          (ms) => { void logStep(`import("opensheetmusicdisplay") runtime: (${ms}ms)`); }
+          (ms) => { void logStep(`import("opensheetmusicdisplay") runtime: ${ms}ms`, { outer }); }
         );
         const { OpenSheetMusicDisplay: OSMDClass } =
           mod as typeof import("opensheetmusicdisplay");
@@ -1548,26 +1544,26 @@ export default function ScoreViewer({
             },
             (ms) => {
               const bytes = outer.dataset.osmdZipBytes ?? "?";
-              void logStep(`fetch() + arrayBuffer() runtime: (${ms}ms) bytes:${bytes}`);
+              void logStep(`fetch() + arrayBuffer() runtime: ${ms}ms bytes: ${bytes}`, { outer });
             }
           );
 
           const uzMod = await perfBlockAsync(
             nextPerfUID(outer.dataset.osmdRun),
             async () => await withTimeout(import("unzipit"), 4000, "unzipit timeout"),
-            (ms) => { void logStep(`import("unzipit") runtime: (${ms}ms)`); }
+            (ms) => { void logStep(`import("unzipit") runtime: ${ms}ms`, { outer }); }
           );
           const { unzip } = uzMod as typeof import("unzipit");
 
           const { entries } = await perfBlockAsync(
             nextPerfUID(outer.dataset.osmdRun),
             async () => await withTimeout(unzip(ab), 8000, "unzip timeout"),
-            (ms) => { void logStep(`unzip() runtime: (${ms}ms)`); }
+            (ms) => { void logStep(`unzip() runtime: ${ms}ms`, { outer }); }
           );
 
           const container = entries["META-INF/container.xml"];
           if (!container) {
-            await logStep("container.xml missing → abort");
+            await logStep("container.xml missing → abort", { outer });
             throw new Error("MXL error: META-INF/container.xml missing");
           }
 
@@ -1580,14 +1576,14 @@ export default function ScoreViewer({
             },
             (ms) => {
               const chars = outer.dataset.osmdContainerChars ?? "?";
-              void logStep(`container.text() runtime: (${ms}ms) chars:${chars}`);
+              void logStep(`container.text() runtime: ${ms}ms chars: ${chars}`, { outer });
             }
           );
 
           const cdoc = perfBlock(
             nextPerfUID(outer.dataset.osmdRun),
             () => new DOMParser().parseFromString(containerXml, "application/xml"),
-            (ms) => { void logStep(`DOMParser().parseFromString() runtime: (${ms}ms)`); }
+            (ms) => { void logStep(`DOMParser().parseFromString() runtime: ${ms}ms`, { outer }); }
           );
 
           const rootEl =
@@ -1602,12 +1598,12 @@ export default function ScoreViewer({
             "";
 
           if (!fullPath) {
-            await logStep("container rootfile path missing → abort");
+            await logStep("container rootfile path missing → abort", { outer });
             throw new Error("MXL error: container.xml lacks a rootfile path");
           }
 
           if (!entries[fullPath]) {
-            await logStep(`container rootfile not in ZIP (${fullPath}) → abort`);
+            await logStep(`container rootfile not in ZIP (${fullPath}) → abort`, { outer });
             throw new Error(`MXL error: rootfile entry not found in archive: ${fullPath}`);
           }
 
@@ -1615,7 +1611,7 @@ export default function ScoreViewer({
           const xmlText = await perfBlockAsync(
             nextPerfUID(outer.dataset.osmdRun),
             async () => await withTimeout(entry.text(), 10000, "entry.text() timeout"),
-            (ms) => { void logStep(`entry.text() runtime: (${ms}ms)`); }
+            (ms) => { void logStep(`entry.text() runtime: ${ms}ms`, { outer }); }
           );
           outer.dataset.osmdZipChosen = fullPath;
           outer.dataset.osmdZipChars = String(xmlText.length);
@@ -1623,7 +1619,7 @@ export default function ScoreViewer({
           const xmlDoc = await perfBlockAsync(
             nextPerfUID(outer.dataset.osmdRun),
             async () => new DOMParser().parseFromString(xmlText, "application/xml"),
-            (ms) => { void logStep(`DOMParser().parseFromString runtime: (${ms}ms)`); }
+            (ms) => { void logStep(`DOMParser().parseFromString runtime: ${ms}ms`, { outer }); }
           );
 
           if (xmlDoc.getElementsByTagName("parsererror").length > 0) {
@@ -1631,9 +1627,7 @@ export default function ScoreViewer({
           }
           const hasPartwise = xmlDoc.getElementsByTagName("score-partwise").length > 0;
           const hasTimewise = xmlDoc.getElementsByTagName("score-timewise").length > 0;
-          await logStep(
-            `xmlDoc.getElementsByTagName() hasPartwise: ${String(hasPartwise)} hasTimewise: ${String(hasTimewise)}`
-          );
+          await logStep(`xmlDoc.getElementsByTagName() hasPartwise: ${String(hasPartwise)} hasTimewise: ${String(hasTimewise)}`, { outer });
           if (!hasPartwise && !hasTimewise) {
             throw new Error("xmlDoc.getElementsByTagName() no partwise or timewise");
           }
@@ -1646,9 +1640,7 @@ export default function ScoreViewer({
               (ms) => { serializeMs = ms; }
             );
             outer.dataset.osmdXmlChars = String(serialized.length);
-            await logStep(
-              `XMLSerializer().serializeToString runtime: (${serializeMs}ms) chars=${serialized.length}`
-            );
+            await logStep(`XMLSerializer().serializeToString runtime: ${serializeMs}ms chars: ${serialized.length}`, { outer });
             loadInput = serialized;
           }
         } else {
@@ -1667,14 +1659,14 @@ export default function ScoreViewer({
             await loadOSMD(osmd, loadInput);
           },
           (ms) => {
-            void logStep(`loadOSMD() runtime: (${ms}ms)`, { outer });
+            void logStep(`loadOSMD() runtime: ${ms}ms`, { outer });
           }
         );
 
         await perfBlockAsync(
           nextPerfUID(outer.dataset.osmdRun),
           async () => { await waitForFonts(); },
-          (ms) => { void logStep(`waitForFonts() runtime: (${ms}ms)`); }
+          (ms) => { void logStep(`waitForFonts() runtime: (${ms}ms)`, { outer }); }
         );
 
         await logStep("phase finished", { outer });
@@ -1739,7 +1731,6 @@ export default function ScoreViewer({
       if (outerNow) {
         outerNow.setAttribute("data-osmd-step", "init-crash");
         outerNow.dataset.osmdErr = String(msg).slice(0, 180);
-        void logStep(`init:crash:${outerNow.dataset.osmdErr}`);
       }
     });
 
