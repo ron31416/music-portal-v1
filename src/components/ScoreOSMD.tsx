@@ -308,7 +308,8 @@ function scanSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[] {
 
     interface Box { top: number; bottom: number; height: number; width: number }
     const boxes: Box[] = [];
-    const MIN_H = 2;
+    // ↓ Include hairline groups (pedals, slurs) that can be <2 CSS px at some zooms
+    const MIN_H = 1;
     const MIN_W = 8;
 
     for (const root of roots) {
@@ -343,6 +344,13 @@ function scanSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[] {
         last.bottom = Math.max(last.bottom, b.bottom);
         last.height = last.bottom - last.top;
       }
+    }
+
+    // ↓ Tiny safety expansion so 1-px hairlines don’t get shaved off at page edges
+    const HAIRLINE_PAD = (window.devicePixelRatio || 1) >= 2 ? 2 : 1;
+    for (const band of bands) {
+      band.bottom += HAIRLINE_PAD;
+      band.height = band.bottom - band.top;
     }
 
     void logStep(`bands: ${bands.length}`, { outer });
