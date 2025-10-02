@@ -730,39 +730,31 @@ function computePageStarts(outer: HTMLDivElement, bands: Band[], viewportH: numb
       return [0];
     }
 
-    const GAP = interSystemPackGapPx(outer);
-    const DPR = window.devicePixelRatio || 1;
-    const NO_CLIP_SAFETY = DPR >= 2 ? 2 : 1;              // cushion for sub-px rounding
-    const budgetH = Math.max(1, Math.floor(viewportH) - NO_CLIP_SAFETY);
+    const TOL = (window.devicePixelRatio || 1) >= 2 ? 2 : 1;
+    const MAX_SPAN = Math.max(1, Math.floor(viewportH) - TOL);
 
     const starts: number[] = [];
     let i = 0;
 
     while (i < bands.length) {
-      const pageStart = i;
-      starts.push(pageStart);
+      starts.push(i);
 
-      let used = 0;
-      while (i < bands.length) {
-        const b = bands[i]!;
-        const h = Math.ceil(b.height);                    // stop sub-px leaks
-        const add = (used === 0 ? 0 : GAP) + h;
-
-        if (add <= (budgetH - used)) {
-          used += add;
-          i += 1;
+      let j = i;
+      while (j + 1 < bands.length) {
+        const nextBottom = bands[j + 1]!.bottom;
+        const trialSpan = nextBottom - bands[i]!.top; // measured, includes real inter-system gap
+        if (trialSpan <= MAX_SPAN) {
+          j += 1;
         } else {
           break;
         }
       }
 
-      // Ensure progress even if a single system is taller than the page
-      if (i === pageStart) {
-        i += 1;
-      }
+      // Always advance by at least one system per page
+      i = Math.max(j + 1, i + 1);
     }
 
-    void logStep(`starts(packed): ${starts.length} gap=${GAP} budgetH=${budgetH}`, { outer });
+    void logStep(`starts(measured-span): ${starts.length} viewportH=${viewportH}`, { outer });
     return starts.length ? starts : [0];
   } finally {
     try { outer.dataset.viewerFunc = prevFuncTag; } catch { /* no-op */ }
