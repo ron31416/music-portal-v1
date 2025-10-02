@@ -973,8 +973,8 @@ export default function ScoreViewer({
         outer.dataset.osmdTy = String(-ySnap + Math.max(0, topGutterPx));
         outer.dataset.osmdH = String(hVisible);
 
-        logStep(`apply page: ${clampedPage + 1}/${pages} start: ${startIndex} nextStart: ${nextStartIndex} ` +
-          `height: ${hVisible} maskTop: ${maskTopWithinMusicPx}`, { outer }
+        logStep(`apply page: ${clampedPage + 1}/${pages} startIndex: ${startIndex} nextStartIndex: ${nextStartIndex} ` +
+          `hVisible: ${hVisible} maskTopWithinMusicPx: ${maskTopWithinMusicPx}`, { outer }
         );
 
         let mask = outer.querySelector<HTMLDivElement>("[data-osmd-mask='1']");
