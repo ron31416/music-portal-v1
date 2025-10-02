@@ -1319,6 +1319,12 @@ export default function ScoreViewer({
           // we finished a run; drop the guard before hiding spinner
           reflowRunningRef.current = false;
 
+          // cheap height-only repagination to settle final viewport height
+          try {
+            paginateViewer();
+            await logStep("post-reflow repaginate", { outer });
+          } catch { /* no-op */ }
+
           // spinner end + small paint gate
           await stopSpinner();
           await logStep("spinner stopped", { outer });
@@ -1348,7 +1354,7 @@ export default function ScoreViewer({
       }
 
     },
-    [layoutViewer, formatRunSnapshot, startSpinner, stopSpinner]
+    [layoutViewer, paginateViewer, formatRunSnapshot, startSpinner, stopSpinner]
   );
 
   // keep ref pointing to latest width-reflow callback
