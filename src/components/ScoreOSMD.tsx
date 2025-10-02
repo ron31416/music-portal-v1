@@ -1404,7 +1404,7 @@ export default function ScoreViewer({
       }, 220);
     };
 
-    const onVV = () => {
+    const onVVScale = () => {
       const s = vv?.scale ?? 1;
       if (Math.abs(s - lastScale) > 0.003) {
         lastScale = s;
@@ -1412,7 +1412,7 @@ export default function ScoreViewer({
       }
     };
 
-    const dprPoll = () => {
+    const pollDPR = () => {
       const d = window.devicePixelRatio || 1;
       if (Math.abs(d - lastDpr) > 0.003) {
         lastDpr = d;
@@ -1420,13 +1420,13 @@ export default function ScoreViewer({
       }
     };
 
-    vv?.addEventListener("resize", onVV);
-    vv?.addEventListener("scroll", onVV);
-    const t = window.setInterval(dprPoll, 400);
+    vv?.addEventListener("resize", onVVScale);
+    vv?.addEventListener("scroll", onVVScale);
+    const t = window.setInterval(pollDPR, 400);
 
     return () => {
-      vv?.removeEventListener("resize", onVV);
-      vv?.removeEventListener("scroll", onVV);
+      vv?.removeEventListener("resize", onVVScale);
+      vv?.removeEventListener("scroll", onVVScale);
       window.clearInterval(t);
       if (kick !== null) { window.clearTimeout(kick); }
     };
@@ -1924,7 +1924,7 @@ export default function ScoreViewer({
     const vv = typeof window !== "undefined" ? window.visualViewport : undefined;
     if (!vv) { return; }
 
-    const onVisualViewportChange = () => {
+    const handleVVChange = () => {
       if (!readyRef.current) { return; }
 
       // debounce vv events
@@ -1936,7 +1936,7 @@ export default function ScoreViewer({
         if (!outerNow) { return; }
 
         const prevFuncTag = outerNow.dataset.osmdFunc ?? "";
-        outerNow.dataset.osmdFunc = "onVisualViewportChange";
+        outerNow.dataset.osmdFunc = "handleVVChange";
 
         try {
           // Current wrapper (host) size in CSS px
@@ -2003,11 +2003,11 @@ export default function ScoreViewer({
       }, 200);
     };
 
-    vv.addEventListener("resize", onVisualViewportChange);
-    vv.addEventListener("scroll", onVisualViewportChange);
+    vv.addEventListener("resize", handleVVChange);
+    vv.addEventListener("scroll", handleVVChange);
     return () => {
-      vv.removeEventListener("resize", onVisualViewportChange);
-      vv.removeEventListener("scroll", onVisualViewportChange);
+      vv.removeEventListener("resize", handleVVChange);
+      vv.removeEventListener("scroll", handleVVChange);
       if (vvTimerRef.current) {
         window.clearTimeout(vvTimerRef.current);
         vvTimerRef.current = null;
