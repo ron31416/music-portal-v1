@@ -310,7 +310,7 @@ function scanSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[] {
     const boxes: Box[] = [];
     // ↓ Include hairline groups (pedals, slurs) that can be <2 CSS px at some zooms
     const MIN_H = 1;
-    const MIN_W = 8;
+    const MIN_W = 1;
 
     for (const root of roots) {
       // Include paths/lines/text so pedal brackets & dynamics extend the band
@@ -352,7 +352,7 @@ function scanSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[] {
     }
 
     // Conservative bottom expansion so thin/used glyphs don't under-measure the system
-    const DECOR_PAD = (window.devicePixelRatio || 1) >= 2 ? 10 : 8;
+    const DECOR_PAD = (window.devicePixelRatio || 1) >= 2 ? 14 : 12;
     for (const band of bands) {
       band.bottom += DECOR_PAD;
       band.height = band.bottom - band.top;
@@ -384,6 +384,10 @@ function computePageStarts(
       return [0];
     }
 
+    // Conservative effective height for the fit test
+    const dpr = (window.devicePixelRatio || 1);
+    const effH = Math.max(1, viewportH - (dpr >= 2 ? 6 : 4));
+
     const starts: number[] = [];
     let i = 0;
     const fuseTitle = allowFirstPageSlack && isTitleLike(bands[0], bands.slice(1));
@@ -400,7 +404,7 @@ function computePageStarts(
           ? Math.min(28, Math.round(viewportH * 0.035))
           : 0;
 
-        if (next.bottom - startTop <= viewportH + slack) {
+        if (next.bottom - startTop <= effH + slack) {
           last++;
         } else {
           break;
