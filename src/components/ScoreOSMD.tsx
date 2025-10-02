@@ -1325,6 +1325,7 @@ export default function ScoreViewer({
           await logStep("phase finished", { outer });
         }
         try { outer.dataset.osmdFunc = prevFuncTag; } catch { }
+        try { outer.dataset.osmdPhase = ""; } catch { }
       }
 
     },
@@ -1702,6 +1703,7 @@ export default function ScoreViewer({
         await logStep("phase finished", { outer });
 
         try { outer.dataset.osmdFunc = prevFuncTag; } catch { }
+        try { outer.dataset.osmdPhase = ""; } catch { }
       }
 
     })().catch(async (err: unknown) => {
