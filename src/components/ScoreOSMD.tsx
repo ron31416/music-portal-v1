@@ -392,6 +392,8 @@ function computePageStarts(
     let i = 0;
     const fuseTitle = allowFirstPageSlack && isTitleLike(bands[0], bands.slice(1));
 
+    const FIT_BIAS_PX = (window.devicePixelRatio || 1) >= 2 ? 6 : 4;
+
     while (i < bands.length) {
       const current = bands[i]!;
       const startTop = current.top;
@@ -400,10 +402,9 @@ function computePageStarts(
       while (last + 1 < bands.length) {
         const next = bands[last + 1]!;
         const isFirstPage = starts.length === 0 && i === 0;
-        const slack = isFirstPage && fuseTitle
-          ? Math.min(28, Math.round(viewportH * 0.035))
-          : 0;
-
+        const slack =
+          (isFirstPage && fuseTitle
+            ? Math.min(28, Math.round(viewportH * 0.035)) : 0) + FIT_BIAS_PX;
         if (next.bottom - startTop <= effH + slack) {
           last++;
         } else {
@@ -840,7 +841,8 @@ export default function ScoreViewer({
 
         const hVisible = visiblePageHeight(outer);
 
-        const TOL = (window.devicePixelRatio || 1) >= 2 ? 2 : 1; // tiny tolerance
+        //const TOL = (window.devicePixelRatio || 1) >= 2 ? 2 : 1; // tiny tolerance
+        const TOL = 0; // repaginate if any part of the next system is visible
 
         // If the top of the next system is already inside the window...
         if (nextStartIndex >= 0) {
@@ -953,7 +955,8 @@ export default function ScoreViewer({
           const nextTopRel = nextBand.top - startBand.top;
 
           // If nothing from the next page peeks into the viewport, don't mask at all.
-          if (nextTopRel >= hVisible - PEEK_GUARD - 1) { return hVisible; }
+          // Treat ANY overlap as a peek.
+          if (nextTopRel >= hVisible - 0.5) { return hVisible; }
 
           // Otherwise, hide just the peeking sliver.
           const nudge = (window.devicePixelRatio || 1) >= 2 ? 3 : 2;
