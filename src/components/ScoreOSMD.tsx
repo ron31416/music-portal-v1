@@ -119,7 +119,7 @@ function getSvg(outer: HTMLDivElement): SVGSVGElement | null {
   return outer.querySelector("svg");
 }
 
-function withUntransformedSvg<T>(outer: HTMLDivElement, fn: (svg: SVGSVGElement) => T): T | null {
+function withSvgAtUnitScale<T>(outer: HTMLDivElement, fn: (svg: SVGSVGElement) => T): T | null {
   const svg = getSvg(outer);
   if (!svg) {
     return null;
@@ -480,20 +480,20 @@ export default function ScoreViewer({
   debugShowAllMeasureNumbers = false,
 }: Props) {
   const wrapRef = useRef<HTMLDivElement | null>(null);
-  const hostRef = useRef<HTMLDivElement | null>(null);
+  const svgHostRef = useRef<HTMLDivElement | null>(null);
   const osmdRef = useRef<OpenSheetMusicDisplay | null>(null);
 
-  const bandsRef = useRef<Band[]>([]);
-  const pageStartsRef = useRef<number[]>([0]);
+  const systemBandsRef = useRef<Band[]>([]);
+  const pageStartIdxsRef = useRef<number[]>([0]);
   const pageIdxRef = useRef<number>(0);
   const readyRef = useRef<boolean>(false);
 
-  const DEFAULT_BUSY = "Please wait…";
+  const DEFAULT_BUSY_MSG = "Please wait…";
 
   // Busy lock (blocks input while OSMD works)
   const [busy, setBusy] = useState<boolean>(false);
   const overlayRef = useRef<HTMLDivElement | null>(null);
-  const [busyMsg, setBusyMsg] = useState<string>(DEFAULT_BUSY);
+  const [busyMsg, setBusyMsg] = useState<string>(DEFAULT_BUSY_MSG);
 
   // Spinner ownership + fail-safe timer (used by zoom reflow)
   const spinnerOwnerRef = useRef<symbol | null>(null);
@@ -524,7 +524,7 @@ export default function ScoreViewer({
   const reflowRunningRef = useRef(false);   // guards width reflow
   const reflowAgainRef = useRef<"none" | "width" | "height">("none");
   const reflowQueuedCauseRef = useRef<string>("");   // ← remember why a reflow was queued
-  const repagRunningRef = useRef(false);    // guards height-only repagination
+  const repaginationRunningRef = useRef(false);    // guards height-only repagination
 
   // Track browser zoom relative to mount
   const baseScaleRef = useRef<number>(1);
@@ -569,7 +569,7 @@ export default function ScoreViewer({
       outer: HTMLDivElement,
       osmd: OpenSheetMusicDisplay
     ): Promise<void> => {
-      const host = hostRef.current;
+      const host = svgHostRef.current;
       if (!host || !outer) { return; }
 
       const prevFuncTag = outer.dataset.viewerFunc ?? "";
@@ -635,7 +635,7 @@ export default function ScoreViewer({
 
   const hideBusy = useCallback(() => {
     setBusy(false);
-    setBusyMsg(DEFAULT_BUSY);
+    setBusyMsg(DEFAULT_BUSY_MSG);
   }, []);
 
 
@@ -648,8 +648,8 @@ export default function ScoreViewer({
     ): Promise<void> => {
       const msg =
         typeof opts === "string" || opts === undefined
-          ? (opts ?? DEFAULT_BUSY)
-          : (opts.message ?? DEFAULT_BUSY);
+          ? (opts ?? DEFAULT_BUSY_MSG)
+          : (opts.message ?? DEFAULT_BUSY_MSG);
 
       const gatePaint =
         typeof opts === "object" && opts !== null
@@ -707,9 +707,9 @@ export default function ScoreViewer({
     [hideBusy]
   );
 
-  // --- LOG SNAPSHOT (lean) ---
-  const fmtFlags = useCallback((): string => {
-    const pages = Math.max(1, pageStartsRef.current.length);
+  // Log snapshot (lean)
+  const formatRunSnapshot = useCallback((): string => {
+    const pages = Math.max(1, pageStartIdxsRef.current.length);
     const page = Math.max(1, Math.min(pageIdxRef.current + 1, pages));
     const queued = reflowAgainRef.current; // "none" | "width" | "height"
     const zf = (zoomFactorRef.current ?? 1).toFixed(3);
@@ -789,8 +789,8 @@ export default function ScoreViewer({
           return;
         }
 
-        const bands = bandsRef.current;
-        const starts = pageStartsRef.current;
+        const bands = systemBandsRef.current;
+        const starts = pageStartIdxsRef.current;
         if (bands.length === 0 || starts.length === 0) {
           return;
         }
@@ -842,7 +842,7 @@ export default function ScoreViewer({
                   lb === clampedPage;
 
                 if (!noChange) {
-                  pageStartsRef.current = fresh;
+                  pageStartIdxsRef.current = fresh;
                   applyPage(lb, depth + 1); // ← pass recursion depth
                   return;
                 }
@@ -872,7 +872,7 @@ export default function ScoreViewer({
             const freshStarts = starts.slice(0, clampedPage + 1);
             if (freshStarts[freshStarts.length - 1] !== cutIdx) {
               freshStarts.push(cutIdx);
-              pageStartsRef.current = freshStarts;
+              pageStartIdxsRef.current = freshStarts;
             }
             applyPage(clampedPage, depth + 1);
             return;
@@ -906,7 +906,7 @@ export default function ScoreViewer({
               nearest === clampedPage;
 
             if (!noChange) {
-              pageStartsRef.current = freshStarts;
+              pageStartIdxsRef.current = freshStarts;
               applyPage(nearest, depth + 1);
               return;
             }
@@ -953,7 +953,7 @@ export default function ScoreViewer({
                 fresh.every((v, i) => v === (starts[i] ?? -1)) &&
                 nearest === clampedPage;
               if (!same) {
-                pageStartsRef.current = fresh;
+                pageStartIdxsRef.current = fresh;
                 applyPage(nearest, depth + 1);
                 return hVisible;
               }
@@ -1043,7 +1043,7 @@ export default function ScoreViewer({
     outer: HTMLDivElement,
     work: () => Promise<T>
   ): Promise<T> => {
-    const host = hostRef.current;
+    const host = svgHostRef.current;
     let prevVis = "";
     let prevCv = "";
     if (host) {
@@ -1111,7 +1111,7 @@ export default function ScoreViewer({
 
       const bands = perfBlock(
         nextPerfUID(outer.dataset.viewerRun),
-        () => withUntransformedSvg(outer, (svg) => scanSystemsPx(outer, svg)) ?? [],
+        () => withSvgAtUnitScale(outer, (svg) => scanSystemsPx(outer, svg)) ?? [],
         (ms) => { void logStep(`scanSystemsPx() runtime: ${ms}ms`, { outer }); }
       );
       outer.dataset.viewerBands = String(bands.length);
@@ -1131,8 +1131,8 @@ export default function ScoreViewer({
       outer.dataset.viewerPhase = "apply";
       await logStep("phase starting", { outer });
 
-      pageStartsRef.current = starts;
-      bandsRef.current = bands;
+      pageStartIdxsRef.current = starts;
+      systemBandsRef.current = bands;
       pageIdxRef.current = 0;
 
       await perfBlockAsync(
@@ -1161,8 +1161,8 @@ export default function ScoreViewer({
     if (!outer) { return; }
 
     // Prevent overlap
-    if (repagRunningRef.current) { return; }
-    repagRunningRef.current = true;
+    if (repaginationRunningRef.current) { return; }
+    repaginationRunningRef.current = true;
 
     const prevFuncTag = outer.dataset.viewerFunc ?? "";
     outer.dataset.viewerFunc = "paginateViewer";
@@ -1170,23 +1170,21 @@ export default function ScoreViewer({
     try {
       outer.dataset.viewerRecompute = String(Date.now());
 
-      const bands = bandsRef.current;
+      const bands = systemBandsRef.current;
       if (bands.length === 0) {
         void logStep("bands: 0 - exit", { outer });
         return;
       }
 
-      const H = paginationHeight(outer);
-
       // Recompute page starts for the current *unified* page height
       const paginationH = paginationHeight(outer);
       const starts = perfBlock(
         nextPerfUID(outer.dataset.viewerRun),
-        () => computePageStarts(outer, bands, H),
+        () => computePageStarts(outer, bands, paginationH),
         (ms) => { void logStep(`computePageStarts runtime: ${ms}ms paginationH: ${paginationH}`, { outer }); }
       );
 
-      pageStartsRef.current = starts;
+      pageStartIdxsRef.current = starts;
       outer.dataset.viewerPages = String(starts.length);
 
       // Always reset to page 1 after repagination
@@ -1211,7 +1209,7 @@ export default function ScoreViewer({
       // Update “handled” height so future VV height changes compare against it
       handledHRef.current = outer.clientHeight || handledHRef.current;
 
-      repagRunningRef.current = false;
+      repaginationRunningRef.current = false;
 
       outer.dataset.viewerFunc = prevFuncTag;
     }
@@ -1268,7 +1266,7 @@ export default function ScoreViewer({
 
         const run = (Number(outer.dataset.viewerRun || "0") + 1);
         outer.dataset.viewerRun = String(run);
-        void logStep(`run: ${run} • ${fmtFlags()}`, { outer });
+        void logStep(`run: ${run} • ${formatRunSnapshot()}`, { outer });
 
         const currW = outer.clientWidth;
         const currH = outer.clientHeight;
@@ -1280,7 +1278,7 @@ export default function ScoreViewer({
           outer.dataset.viewerReflowTargetH = String(currH);
         } catch { }
 
-        await startSpinner({ message: DEFAULT_BUSY, gatePaint: true });
+        await startSpinner({ message: DEFAULT_BUSY_MSG, gatePaint: true });
         await logStep("spinner started", { outer });
 
         const { bands, starts } = await layoutViewer(outer, osmd, {
@@ -1316,10 +1314,10 @@ export default function ScoreViewer({
           reflowQueuedCauseRef.current = "";
 
           if (queued === "width") {
-            await logStep(`draining queued width reflow (cause=${cause}), { outer }`);
+            await logStep(`draining queued width reflow (cause=${cause})`, { outer });
             setTimeout(() => { reflowFnRef.current(); }, 0);
           } else if (queued === "height") {
-            await logStep(`draining queued height repagination (cause=${cause}), { outer }`);
+            await logStep(`draining queued height repagination (cause=${cause})`, { outer });
             setTimeout(() => { repagFnRef.current(); }, 0);
           }
 
@@ -1330,7 +1328,7 @@ export default function ScoreViewer({
       }
 
     },
-    [layoutViewer, fmtFlags, startSpinner, stopSpinner]
+    [layoutViewer, formatRunSnapshot, startSpinner, stopSpinner]
   );
 
   // keep ref pointing to latest width-reflow callback
@@ -1385,7 +1383,7 @@ export default function ScoreViewer({
         reflowAgainRef.current = "width";
         reflowQueuedCauseRef.current = `zoom:${why}`;
 
-        if (reflowRunningRef.current || repagRunningRef.current || busyRef.current) {
+        if (reflowRunningRef.current || repaginationRunningRef.current || busyRef.current) {
           void logStep("queued width reflow (guard busy)");
           return;
         }
@@ -1395,7 +1393,7 @@ export default function ScoreViewer({
           if (
             reflowAgainRef.current === "width" &&
             !reflowRunningRef.current &&
-            !repagRunningRef.current &&
+            !repaginationRunningRef.current &&
             !busyRef.current
           ) {
             reflowAgainRef.current = "none";
@@ -1442,7 +1440,7 @@ export default function ScoreViewer({
    */
   useEffect(function initViewer() {
     (async () => {
-      const host = hostRef.current;
+      const host = svgHostRef.current;
       const outer = wrapRef.current;
       if (!host || !outer) { return; }
 
@@ -1515,7 +1513,7 @@ export default function ScoreViewer({
         }) as OpenSheetMusicDisplay;
         osmdRef.current = osmd;
 
-        await startSpinner({ message: DEFAULT_BUSY, gatePaint: true });
+        await startSpinner({ message: DEFAULT_BUSY_MSG, gatePaint: true });
         await logStep("spinner started", { outer });
 
         await logStep("phase finished", { outer });
@@ -1752,7 +1750,7 @@ export default function ScoreViewer({
     (dir: 1 | -1) => {
       if (busyRef.current) { return; }
 
-      const starts = pageStartsRef.current;
+      const starts = pageStartIdxsRef.current;
       const pages = starts.length;
       if (!pages) { return; }
 
@@ -1772,10 +1770,10 @@ export default function ScoreViewer({
         const outer = wrapRef.current;
         if (!outer) { return; }
 
-        const fresh = computePageStarts(outer, bandsRef.current, paginationHeight(outer));
+        const fresh = computePageStarts(outer, systemBandsRef.current, paginationHeight(outer));
         if (!fresh.length) { return; }
 
-        pageStartsRef.current = fresh;
+        pageStartIdxsRef.current = fresh;
 
         // pick first start >= desiredStart (forward) or last start <= desiredStart (backward)
         let idx: number;
@@ -1829,7 +1827,7 @@ export default function ScoreViewer({
         applyPage(0);
       } else if (e.key === "End") {
         e.preventDefault();
-        const last = Math.max(0, pageStartsRef.current.length - 1);
+        const last = Math.max(0, pageStartIdxsRef.current.length - 1);
         applyPage(last);
       }
     };
@@ -1981,7 +1979,7 @@ export default function ScoreViewer({
             reflowQueuedCauseRef.current = `vv:guard-reflow:${kind}`;
             return;
           }
-          if (repagRunningRef.current) {
+          if (repaginationRunningRef.current) {
             reflowAgainRef.current = kind;
             reflowQueuedCauseRef.current = `vv:guard-repag:${kind}`;
             return;
@@ -2105,7 +2103,7 @@ export default function ScoreViewer({
     cursor: "wait",
   };
 
-  const stop = (e: React.SyntheticEvent) => {
+  const stopEvent = (e: React.SyntheticEvent) => {
     e.preventDefault();
     e.stopPropagation();
   };
@@ -2119,7 +2117,7 @@ export default function ScoreViewer({
       style={{ /* outline: "4px solid fuchsia", */ ...outerStyle, ...style }}
     >
       {/* OSMD host (SVG goes here) */}
-      <div ref={hostRef} style={hostStyle} />
+      <div ref={svgHostRef} style={hostStyle} />
 
       {/* Input-blocking overlay while busy */}
       <div
@@ -2129,15 +2127,15 @@ export default function ScoreViewer({
         aria-live="polite"
         aria-atomic="true"
         style={blockerStyle}
-        onPointerDown={stop}
-        onPointerMove={stop}
-        onPointerUp={stop}
-        onTouchStart={stop}
-        onTouchMove={stop}
-        onWheel={stop}
-        onScroll={stop}
-        onMouseDown={stop}
-        onContextMenu={stop}
+        onPointerDown={stopEvent}
+        onPointerMove={stopEvent}
+        onPointerUp={stopEvent}
+        onTouchStart={stopEvent}
+        onTouchMove={stopEvent}
+        onWheel={stopEvent}
+        onScroll={stopEvent}
+        onMouseDown={stopEvent}
+        onContextMenu={stopEvent}
       >
         <div
           style={{
@@ -2162,7 +2160,7 @@ export default function ScoreViewer({
               animation: "viewer-spin 0.9s linear infinite",
             }}
           />
-          <div>{busyMsg || DEFAULT_BUSY}</div>
+          <div>{busyMsg || DEFAULT_BUSY_MSG}</div>
         </div>
       </div>
 
