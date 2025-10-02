@@ -357,6 +357,7 @@ function scanSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[] {
 
 /** Compute page start *indices* so each page shows only full systems */
 function computePageStarts(outer: HTMLDivElement, bands: Band[], viewportH: number): number[] {
+
   const prevFuncTag = outer.dataset.osmdFunc ?? "";
   outer.dataset.osmdFunc = "computePageStarts";
 
@@ -770,7 +771,6 @@ export default function ScoreViewer({
       const outer = wrapRef.current;
       if (!outer) { return; }
 
-      // Temporary func tag for crisp, aligned prefixes in logs.
       const prevFuncTag = outer.dataset.osmdFunc ?? "";
       outer.dataset.osmdFunc = "applyPage";
 
@@ -1165,11 +1165,8 @@ export default function ScoreViewer({
     if (repagRunningRef.current) { return; }
     repagRunningRef.current = true;
 
-    // Preserve caller’s func/phase; make logs show this function name; keep phase blank
     const prevFuncTag = outer.dataset.osmdFunc ?? "";
-    const prevPhase = outer.dataset.osmdPhase ?? "";
     outer.dataset.osmdFunc = "paginateViewer";
-    outer.dataset.osmdPhase = "";
 
     try {
       outer.dataset.osmdRecompute = String(Date.now());
@@ -1216,9 +1213,7 @@ export default function ScoreViewer({
 
       repagRunningRef.current = false;
 
-      // Restore caller’s func/phase so subsequent logs tag correctly
       outer.dataset.osmdFunc = prevFuncTag;
-      outer.dataset.osmdPhase = prevPhase;
     }
   }, [applyPage, getPAGE_H, nextPerfUID]);
 
@@ -1244,10 +1239,8 @@ export default function ScoreViewer({
         return;
       }
 
-      // Tag this path and set initial phase so logStep prefixes are correct.
       const prevFuncTag = outer.dataset.osmdFunc ?? "";
       outer.dataset.osmdFunc = "reflowViewer";
-
       outer.dataset.osmdPhase = "prep";
       await logStep("phase starting", { outer });
 
@@ -1256,7 +1249,7 @@ export default function ScoreViewer({
       try {
         if (!osmd) {
           void logStep("early-bail outer=1 osmd=0", { outer });
-          return; // finally will restore prevFuncTag
+          return;
         }
 
         if (reflowRunningRef.current) {
@@ -1452,7 +1445,6 @@ export default function ScoreViewer({
       const outer = wrapRef.current;
       if (!host || !outer) { return; }
 
-      // Match reflowViewer: capture, set our func-tag + phase, log start.
       const prevFuncTag = outer.dataset.osmdFunc ?? "";
       outer.dataset.osmdFunc = "initViewer";
       outer.dataset.osmdPhase = "prep";
@@ -1710,7 +1702,6 @@ export default function ScoreViewer({
 
         await logStep("phase finished", { outer });
 
-        // Restore previous func-tag (exactly like reflowViewer).
         try { outer.dataset.osmdFunc = prevFuncTag; } catch { }
       }
 
@@ -1943,11 +1934,8 @@ export default function ScoreViewer({
         const outerNow = wrapRef.current;
         if (!outerNow) { return; }
 
-        // Tag logs with function name; clear phase since this isn't a render/scan/apply phase
         const prevFuncTag = outerNow.dataset.osmdFunc ?? "";
-        const prevPhase = outerNow.dataset.osmdPhase ?? "";
         outerNow.dataset.osmdFunc = "onVisualViewportChange";
-        outerNow.dataset.osmdPhase = "";
 
         try {
           // Current wrapper (host) size in CSS px
@@ -2009,9 +1997,7 @@ export default function ScoreViewer({
             handledHRef.current = wrapH;
           }
         } finally {
-          // Restore previous tags so later logs show the right context
           outerNow.dataset.osmdFunc = prevFuncTag;
-          outerNow.dataset.osmdPhase = prevPhase;
         }
       }, 200);
     };
