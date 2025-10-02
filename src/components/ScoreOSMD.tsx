@@ -875,6 +875,53 @@ export default function ScoreViewer({
           }
         }
 
+        // --- underfill guard: if we have room and the next band would fit, include it ---
+        if (nextStartIndex >= 0) {
+          const nextBand = bands[nextStartIndex];
+          if (nextBand) {
+            // Last included band on this page is the one just before nextStartIndex
+            const lastIncludedIdx = Math.max(startIndex, nextStartIndex - 1);
+            const lastIncluded = bands[lastIncludedIdx];
+
+            if (lastIncluded) {
+              const lastBottomRel = lastIncluded.bottom - startBand.top; // bottom of current page content
+              const freeSpace = hVisible - lastBottomRel;
+
+              // How much "obvious whitespace" to consider worth filling
+              const UNDERFILL_SLACK = (window.devicePixelRatio || 1) >= 2 ? 10 : 8;
+
+              // A tiny safety when testing if next band would fit fully
+              const FIT_SLACK = (window.devicePixelRatio || 1) >= 2 ? 6 : 4;
+
+              // Would the next band's *bottom* still be inside this page?
+              const nextBottomRel = nextBand.bottom - startBand.top;
+
+              if (freeSpace > UNDERFILL_SLACK && nextBottomRel <= hVisible + FIT_SLACK) {
+                const fresh = computePageStarts(outer, bands, pageHeightForStarts(outer), false);
+                if (fresh.length) {
+                  // Pick the first page in 'fresh' whose start is >= our current startIndex
+                  let lb = fresh.length - 1;
+                  for (let i = 0; i < fresh.length; i++) {
+                    const s = fresh[i] ?? 0;
+                    if (s >= startIndex) { lb = i; break; }
+                  }
+
+                  const same =
+                    fresh.length === starts.length &&
+                    fresh.every((v, i) => v === (starts[i] ?? -1)) &&
+                    lb === clampedPage;
+
+                  if (!same) {
+                    pageStartIdxsRef.current = fresh;
+                    applyPage(lb, depth + 1);
+                    return;
+                  }
+                }
+              }
+            }
+          }
+        }
+
         // --- last-page margin rule: push final system to a new page if too close ---
         const LAST_PAGE_BOTTOM_PAD_PX = REFLOW.LAST_PAGE_BOTTOM_PAD_PX;
 
