@@ -639,12 +639,19 @@ function scanSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[] {
 
     // IMPORTANT: merge threshold is derived from the *packing* gap,
     // minus DPR jitter and a 1px strictness margin (done inside dynamicBandGapPx).
-    const GAP = dynamicBandGapPx(outer);
+    const THRESH = dynamicBandGapPx(outer);
 
     const bands: Band[] = [];
     for (const b of boxes) {
       const last = bands.length ? bands[bands.length - 1] : undefined;
-      if (!last || b.top - last.bottom > GAP) {
+      if (!last) {
+        bands.push({ top: b.top, bottom: b.bottom, height: b.height });
+        continue;
+      }
+
+      // Integerize to kill sub-px wobbles, then make the test inclusive.
+      const gapPx = Math.floor(b.top) - Math.ceil(last.bottom);
+      if (gapPx >= THRESH) {
         bands.push({ top: b.top, bottom: b.bottom, height: b.height });
       } else {
         last.top = Math.min(last.top, b.top);
