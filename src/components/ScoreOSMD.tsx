@@ -593,11 +593,11 @@ function scanSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[] {
 
     // Include very thin graphics so text/hairlines extend each band.
     const MIN_H = 1;
-    const MIN_W = 6;
+    const MIN_W = 2;  // was 6 — include skinny dots/accents so tops/bottoms are accurate
 
     for (const root of roots) {
       // Groups + primitive graphics → dynamics/pedals/slurs count
-      const SELECTORS = "g,path,rect,line,polyline,polygon,text";
+      const SELECTORS = "g,path,rect,line,polyline,polygon,text,use,circle,ellipse";
       const graphics = Array.from(root.querySelectorAll<SVGGraphicsElement>(SELECTORS));
 
       // Detect the top of the first real system on this page, if the DOM exposes system groups.
@@ -660,8 +660,8 @@ function scanSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[] {
       }
     }
 
-    // Tiny safety expansion so 1-px hairlines aren’t shaved at page edges
-    const HAIRLINE_PAD = (window.devicePixelRatio || 1) >= 2 ? 2 : 1;
+    // Slightly larger safety so we never shave ties/slurs at page edges
+    const HAIRLINE_PAD = (window.devicePixelRatio || 1) >= 2 ? 3 : 2;
     for (const band of bands) {
       band.bottom += HAIRLINE_PAD;
       band.height = band.bottom - band.top;
@@ -848,23 +848,21 @@ function computePageStarts(
       return [0];
     }
 
-    // Keep the page height exactly aligned with what masking uses
+    // Same height the mask uses
     const TOL = (window.devicePixelRatio || 1) >= 2 ? 2 : 1;
     const PAGE_H = Math.max(1, Math.floor(viewportH) - TOL);
 
-    // Fixed virtual gap we pack with
     const GAP = interSystemPackGapPx(outer);
-
     const starts: number[] = [];
-    let i = 0;
 
+    let i = 0;
     while (i < bands.length) {
       starts.push(i);
 
-      // Greedy pack systems until the next one would overflow PAGE_H
-      let used = bands[i]!.height; // first system height
+      let used = bands[i]!.height;
       let j = i;
 
+      // Greedy pack while the next one fits strictly
       while (j + 1 < bands.length) {
         const nextUsed = used + GAP + bands[j + 1]!.height;
         if (nextUsed <= PAGE_H) {
@@ -875,8 +873,15 @@ function computePageStarts(
         }
       }
 
-      // next page starts after the last system we could fit
-      i = j + 1;
+      // Widow rule: if the remainder is very small and we packed >1 system,
+      // move the last one to the next page to avoid a huge blank tail.
+      const remainder = PAGE_H - used;
+      if (remainder < REFLOW.LAST_PAGE_BOTTOM_PAD_PX && j > i) {
+        used -= (GAP + bands[j]!.height);
+        j -= 1;
+      }
+
+      i = j + 1; // next page starts after the last we kept
     }
 
     void logStep(`starts(packed): ${starts.length} PAGE_H=${PAGE_H} gap=${GAP}`, { outer });
@@ -1306,7 +1311,7 @@ export default function ScoreViewer({
         if (!startBand) { return; }
 
         // Translate the music so that startBand aligns with the top gutter
-        const ySnap = Math.round(startBand.top);
+        const ySnap = Math.ceil(startBand.top);
         svg.style.transform = `translateY(${-ySnap + Math.max(0, topGutterPx)}px)`;
         svg.style.transformOrigin = "top left";
         svg.style.willChange = "transform";
@@ -1339,11 +1344,16 @@ export default function ScoreViewer({
         // --- MASK: cut exactly at the next system’s top, or just past the last one on final page
         let maskTopWithinMusicPx = PAGE_H;
         if (nextStartIndex >= 0) {
+          // Non-last page: stay just above the next system so nothing peeks
           const nextTopRel = bands[nextStartIndex]!.top - ySnap;
           maskTopWithinMusicPx = Math.min(PAGE_H, Math.max(0, Math.floor(nextTopRel) - 1));
         } else {
+          // Last page: push the cut a little lower so we never shave slur/pedal tails
           const lastRel = bands[last]!.bottom - ySnap;
-          maskTopWithinMusicPx = Math.min(PAGE_H, Math.max(0, Math.ceil(lastRel) + 1));
+          maskTopWithinMusicPx = Math.min(
+            PAGE_H,
+            Math.max(0, Math.ceil(lastRel) + REFLOW.MASK_BOTTOM_SAFETY_PX) // was +1
+          );
         }
 
         // Persist breadcrumbs for debugging
