@@ -844,14 +844,10 @@ function computePageStarts(
       ) {
         j += 1;
       }
-
-      // (No widow rule here — keep everything that fits)
-
-      // Next page starts after the last one we kept
       i = j + 1;
     }
 
-    void logStep(`starts: ${starts.length} PAGE_H=${PAGE_H}`, { outer });
+    void logStep(`starts: ${starts.length} PAGE_H: ${PAGE_H}`, { outer });
     return starts.length ? starts : [0];
   } finally {
     try { outer.dataset.viewerFunc = prevFuncTag; } catch { /* no-op */ }
@@ -1193,18 +1189,6 @@ export default function ScoreViewer({
     [hideBusy]
   );
 
-  // Log snapshot (lean)
-  const formatRunSnapshot = useCallback((): string => {
-    const pages = Math.max(1, pageStartIdxsRef.current.length);
-    const page = Math.max(1, Math.min(pageIdxRef.current + 1, pages));
-    const queued = reflowAgainRef.current; // "none" | "width" | "height"
-    const zf = (zoomFactorRef.current ?? 1).toFixed(3);
-
-    const parts = [`page=${page}/${pages}`, `zf=${zf}`];
-    if (queued !== "none") { parts.push(`queued=${queued}`); }
-    return parts.join(" ");
-  }, []);
-
   // ---- callback ref proxies (used by queued window.setTimeouts) ----
   const reflowFnRef = useRef<ReflowCallback>(async () => { });
 
@@ -1478,7 +1462,7 @@ export default function ScoreViewer({
 
       // NEW: soft-check — do NOT throw if system groups are missing
       const sysCount0 = systemGroupCount(svgForPack);
-      await logStep(`scan: sysCount=${sysCount0}`, { outer });
+      await logStep(`sysCount: ${sysCount0}`, { outer });
 
       // Only repack systems when groups actually exist
       if (sysCount0 > 0) {
@@ -1489,9 +1473,9 @@ export default function ScoreViewer({
       let preBands: Band[] = [];
       try {
         preBands = withSvgAtUnitScale(outer, (svg) => scanSystemsPx(outer, svg)) ?? [];
-        await logStep(`scan: preBands=${preBands.length}`, { outer });
+        await logStep(`preBands: ${preBands.length}`, { outer });
       } catch (e) {
-        await logStep(`scan: scanSystemsPx threw: ${(e as Error).message}`, { outer });
+        await logStep(`scanSystemsPx threw: ${(e as Error).message}`, { outer });
         throw e;
       }
 
@@ -1527,8 +1511,8 @@ export default function ScoreViewer({
 
       try {
         await logStep(
-          `bands=${bands.length} starts=[${starts.join(",")}] ` +
-          `visibleH=${visiblePageHeight(outer)} paginationH=${paginationHeight(outer)}`,
+          `bands: ${bands.length} starts: [${starts.join(",")}] ` +
+          `visibleH: ${visiblePageHeight(outer)} paginationH: ${paginationHeight(outer)}`,
           { outer }
         );
 
@@ -1734,7 +1718,10 @@ export default function ScoreViewer({
 
         const run = (Number(outer.dataset.viewerRun || "0") + 1);
         outer.dataset.viewerRun = String(run);
-        void logStep(`run: ${run} • ${formatRunSnapshot()}`, { outer });
+
+        const pages = Math.max(1, pageStartIdxsRef.current.length);
+        const page = Math.max(1, Math.min(pageIdxRef.current + 1, pages));
+        void logStep(`run: ${run} page: ${page}/${pages}`, { outer });
 
         const currW = outer.clientWidth;
         const currH = outer.clientHeight;
@@ -1796,7 +1783,7 @@ export default function ScoreViewer({
       }
 
     },
-    [layoutViewer, formatRunSnapshot, startSpinner, stopSpinner]
+    [layoutViewer, startSpinner, stopSpinner]
   );
 
   // keep ref pointing to latest width-reflow callback
