@@ -718,6 +718,82 @@ function flattenEngravedSeams(
   }
 }
 
+/**
+ * Repack systems *inside each engraved OSMD page* so consecutive systems
+ * are separated only by our nominal gap. This removes the huge leftover
+ * whitespace when an OSMD "printed page" only had 1 system.
+ *
+ * Safe: it only touches <g> groups whose id/class contains "system".
+ * If none are found, it does nothing.
+ */
+function packSystemsWithinPages(
+  outer: HTMLDivElement,
+  svgRoot: SVGSVGElement
+): void {
+  const GAP = interSystemPackGapPx(outer);
+
+  // One page at a time
+  const pages = getPageRoots(svgRoot);
+  const pageGroups: Array<SVGGElement | SVGSVGElement> =
+    pages.length ? pages : [svgRoot];
+
+  const hostTop = outer.getBoundingClientRect().top;
+
+  for (const page of pageGroups) {
+    // Try to find system containers the way OSMD names them
+    const systems = Array.from(
+      page.querySelectorAll<SVGGElement>(
+        "g[id*='system' i], g[class*='system' i]"
+      )
+    );
+
+    if (systems.length === 0) {
+      continue; // nothing recognizable to repack on this page
+    }
+
+    // Measure each system bbox (in host coords), discard zero-height ones
+    const boxes = systems
+      .map((g) => {
+        try {
+          const r = g.getBoundingClientRect();
+          return {
+            g,
+            top: r.top - hostTop,
+            bottom: r.bottom - hostTop,
+            height: r.height,
+          };
+        } catch {
+          return null;
+        }
+      })
+      .filter((v): v is { g: SVGGElement; top: number; bottom: number; height: number } =>
+        !!v && Number.isFinite(v.top) && v.height > 0
+      )
+      .sort((a, b) => a.top - b.top);
+
+    if (boxes.length === 0) {
+      continue;
+    }
+
+    // Desired stacked positions (top of first system stays where it is)
+    let y = boxes[0]!.top;
+    for (let i = 0; i < boxes.length; i++) {
+      const b = boxes[i]!;
+      const desiredTop = Math.round(y);
+      const delta = Math.round(desiredTop - b.top);
+
+      if (Math.abs(delta) >= 1) {
+        // Append a translateY without nuking any existing transform
+        const prev = b.g.style.transform || "";
+        b.g.style.transform = `${prev} translateY(${delta}px)`;
+      }
+
+      // next desired top = this bottom (after move) + nominal gap
+      y = desiredTop + b.height + (i < boxes.length - 1 ? GAP : 0);
+    }
+  }
+}
+
 /** Compute page starts by PACKING system heights + a fixed inter-system gap. */
 function computePageStarts(outer: HTMLDivElement, bands: Band[], viewportH: number): number[] {
   const prevFuncTag = outer.dataset.viewerFunc ?? "";
@@ -1526,13 +1602,16 @@ export default function ScoreViewer({
       outer.dataset.viewerPhase = "scan";
       await logStep("phase starting", { outer });
 
-      // --- NEW: pre-scan + flatten engraved seams, then re-scan ---
-      const svgForFlatten = getSvg(outer);
-      if (svgForFlatten) {
-        // Pre-scan to get rough bands for page anchoring (pre-transform)
+      // --- PACK systems inside pages, THEN flatten seams between pages ---
+      const svgForPack = getSvg(outer);
+      if (svgForPack) {
+        // 1) Collapse big intra-page gaps (even when OSMD printed page had only 1 system)
+        packSystemsWithinPages(outer, svgForPack);
+
+        // 2) Then reduce the gap *between* engraved pages to our nominal gap
         const preBands = withSvgAtUnitScale(outer, (svg) => scanSystemsPx(outer, svg)) ?? [];
         if (preBands.length) {
-          flattenEngravedSeams(outer, svgForFlatten, preBands);
+          flattenEngravedSeams(outer, svgForPack, preBands);
         }
       }
 
