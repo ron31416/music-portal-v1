@@ -557,26 +557,19 @@ function useVisibleViewportHeight() {
 
   return vpRef; // latest visible height in px
 }
-
+/*
 function dprRoundingJitterPx(): number {
   const dpr = (typeof window !== "undefined" ? window.devicePixelRatio : 1) || 1;
   if (dpr >= 3) { return 3; }  // very high DPR: allow more wobble
   if (dpr >= 2) { return 2; }  // common Hi-DPR screens
   return 1;                    // low/normal DPR
 }
-
+*/
 function dynamicBandGapPx(outer: HTMLDivElement): number {
-  // The gap we *pack to* when we reposition systems.
   const packGap = interSystemPackGapPx(outer);
-
-  // Rounding / subpixel safety so merge-threshold stays clearly below packGap.
-  const jitter = dprRoundingJitterPx();
-
-  // Enforce a strict separation of at least 1px below packGap after jitter.
-  const strictness = 2;
-
-  // Never let the merge threshold reach the packing gap; also keep a sane floor.
-  return Math.max(6, packGap - jitter - strictness);
+  // Anything with a vertical gap strictly LESS than the actual inter-system gap
+  // is part of the same system. Keep 1px headroom for rounding.
+  return Math.max(8, packGap - 1);
 }
 
 function scanSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[] {
@@ -651,7 +644,7 @@ function scanSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[] {
 
       // Integerize to kill sub-px wobbles, then make the test inclusive.
       const gapPx = Math.floor(b.top) - Math.ceil(last.bottom);
-      if (gapPx >= THRESH) {
+      if (gapPx > THRESH) {            // NOTE: strict ">" pairs with packGap-1 above
         bands.push({ top: b.top, bottom: b.bottom, height: b.height });
       } else {
         last.top = Math.min(last.top, b.top);
@@ -834,14 +827,14 @@ function packSystemsWithinPages(
   }
 }
 
-/** Deterministic page starts from measured system rectangles (no slop). */
+/** Deterministic page starts from measured system rectangles (strict, bottom-based). */
 function computePageStarts(
   outer: HTMLDivElement,
   bands: Band[],
   viewportH: number
 ): number[] {
   const prevFuncTag = outer.dataset.viewerFunc ?? "";
-  outer.dataset.viewerFunc = "computePageStarts";
+  outer.dataset.viewerFunc = "computePageStarts:strict";
   try {
     if (bands.length === 0 || viewportH <= 0) {
       void logStep("starts: 1 (fallback [0])", { outer });
@@ -852,39 +845,34 @@ function computePageStarts(
     const TOL = (window.devicePixelRatio || 1) >= 2 ? 2 : 1;
     const PAGE_H = Math.max(1, Math.floor(viewportH) - TOL);
 
-    const GAP = interSystemPackGapPx(outer);
     const starts: number[] = [];
-
     let i = 0;
+
     while (i < bands.length) {
       starts.push(i);
 
-      let used = bands[i]!.height;
-      let j = i;
+      // Snap page to the actual top of the first system
+      const ySnap = Math.ceil(bands[i]!.top);
 
-      // Greedy pack while the next one fits strictly
-      while (j + 1 < bands.length) {
-        const nextUsed = used + GAP + bands[j + 1]!.height;
-        if (nextUsed <= PAGE_H) {
-          used = nextUsed;
-          j += 1;
-        } else {
-          break;
+      // Greedily include next systems while their measured bottom still fits
+      let j = i;
+      while (j + 1 < bands.length && (bands[j + 1]!.bottom - ySnap) <= PAGE_H) {
+        j += 1;
+      }
+
+      // Widow rule: avoid tiny tail space; only if page would have >1 system
+      if (j > i) {
+        const used = bands[j]!.bottom - ySnap; // actual used height on the page
+        const remainder = PAGE_H - used;
+        if (remainder < REFLOW.LAST_PAGE_BOTTOM_PAD_PX) {
+          j -= 1;
         }
       }
 
-      // Widow rule: if the remainder is very small and we packed >1 system,
-      // move the last one to the next page to avoid a huge blank tail.
-      const remainder = PAGE_H - used;
-      if (remainder < REFLOW.LAST_PAGE_BOTTOM_PAD_PX && j > i) {
-        used -= (GAP + bands[j]!.height);
-        j -= 1;
-      }
-
-      i = j + 1; // next page starts after the last we kept
+      i = j + 1; // next page starts after the last one we kept
     }
 
-    void logStep(`starts(packed): ${starts.length} PAGE_H=${PAGE_H} gap=${GAP}`, { outer });
+    void logStep(`starts(strict): ${starts.length} PAGE_H=${PAGE_H}`, { outer });
     return starts.length ? starts : [0];
   } finally {
     try { outer.dataset.viewerFunc = prevFuncTag; } catch { /* no-op */ }
@@ -1329,6 +1317,12 @@ export default function ScoreViewer({
           last++;
         }
         const nextStartIndex = (last + 1 < bands.length) ? (last + 1) : -1;
+
+        // Safety: if rounding/padding pushed the last system past the page, drop it.
+        const lastBottomRel = bands[last]!.bottom - ySnap;
+        if (lastBottomRel > PAGE_H && last > startIndex) {
+          last -= 1;
+        }
 
         // If our precomputed starts disagree with what actually fits, recompute once
         if (p + 1 < starts.length && starts[p + 1] !== nextStartIndex) {
