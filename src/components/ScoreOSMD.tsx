@@ -1387,6 +1387,13 @@ export default function ScoreViewer({
           ? REFLOW.PEEK_GUARD_HI_DPR
           : REFLOW.PEEK_GUARD_LO_DPR;
 
+        /**
+         * Compute the mask top in *page-local* music space.
+         * Goals:
+         *  - Never create a large blank band at the bottom if nothing actually peeks.
+         *  - If geometry is contradictory (low>high), prefer “no mask” over over-cutting.
+         *  - Give page 1 a small extra lenience (headers).
+         */
         const maskTopWithinMusicPx = (() => {
           // Last page → never mask; show full height
           if (nextStartIndex < 0) { return hVisible; }
@@ -1400,15 +1407,20 @@ export default function ScoreViewer({
           const nextTopRel = (flow.top[nextStartIndex] ?? nextBand.top) - flowStartTop;
 
           // If nothing from the next page peeks into the viewport, don't mask at all.
-          if (nextTopRel >= hVisible - PEEK_GUARD - 1) { return hVisible; }
+          // (Page 1 gets a tiny extra lenience for header interactions.)
+          const firstPageExtra = (clampedPage === 0) ? 2 : 0;
+          if (nextTopRel >= hVisible - (PEEK_GUARD + 1 + firstPageExtra)) {
+            return hVisible;
+          }
 
           // Otherwise, hide just the peeking sliver.
           const nudge = (window.devicePixelRatio || 1) >= 2 ? 3 : 2;
           const low = Math.ceil(relBottom) + MASK_BOTTOM_SAFETY_PX - nudge;
           const high = Math.floor(nextTopRel) - PEEK_GUARD;
 
+          // If bounds are inverted (e.g., rounding), try one page-start recompute once.
           if (low > high) {
-            const fresh = computePageStarts(outer, bands, PAGE_H);
+            const fresh = computePageStarts(outer, bands, hVisible);
             if (fresh.length) {
               let nearest = 0, best = Number.POSITIVE_INFINITY;
               for (let i = 0; i < fresh.length; i++) {
@@ -1420,16 +1432,22 @@ export default function ScoreViewer({
                 fresh.length === starts.length &&
                 fresh.every((v, i) => v === (starts[i] ?? -1)) &&
                 nearest === clampedPage;
+
               if (!same) {
                 pageStartIdxsRef.current = fresh;
                 applyPage(nearest, depth + 1);
-                return hVisible;
+                return hVisible; // will be recomputed by the recursive call
               }
             }
+            // If no change, **fail safe**: show full height rather than over-cut.
+            return hVisible;
           }
 
-          const m = Math.min(hVisible, Math.max(0, Math.max(low, Math.min(high, hVisible))));
-          return Math.floor(m);
+          // Normal case: clamp inside [low, high], then lightly cap how far above
+          // the bottom we’re allowed to cut to avoid big cosmetic gaps.
+          const raw = Math.min(hVisible, Math.max(0, Math.max(low, Math.min(high, hVisible))));
+          const MAX_MASK_GAP = (window.devicePixelRatio || 1) >= 2 ? 12 : 10; // px from the bottom
+          return Math.max(hVisible - MAX_MASK_GAP, raw);
         })();
 
         // Breadcrumbs
@@ -1446,6 +1464,7 @@ export default function ScoreViewer({
         );
 
         {
+          /*
           const translateY = -ySnap + Math.max(0, topGutterPx);
 
           drawHud(outer, {
@@ -1475,6 +1494,7 @@ export default function ScoreViewer({
             ySnap,
             Math.max(0, topGutterPx)
           );
+          */
         }
 
         debugDrawBands(outer, bands, {
