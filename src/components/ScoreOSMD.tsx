@@ -693,14 +693,17 @@ function getPageRoots(svgRoot: SVGSVGElement): SVGGElement[] {
   return roots.length ? roots : [];
 }
 
+/** Hard-fail if the SVG has no per-system groups at all. */
 function assertHasSystemGroups(outer: HTMLDivElement, svgRoot: SVGSVGElement): void {
   const systems = Array.from(
     svgRoot.querySelectorAll<SVGGElement>("g[id*='system' i], g[class*='system' i]")
   ).filter(g => g.ownerSVGElement === svgRoot);
 
   if (systems.length === 0) {
+    // breadcrumbs for quick diagnosis
     outer.dataset.viewerFatal = "no-system-groups";
     outer.dataset.viewerErr = "OSMD SVG missing per-system groups";
+    // hard fail (you asked for this behavior)
     throw new Error("OSMD SVG missing per-system groups (no id/class contains 'system').");
   }
 }
@@ -715,6 +718,8 @@ function flattenEngravedSeams(
   if (pages.length <= 1 || preBands.length === 0) { return; }
 
   const hostTop = outer.getBoundingClientRect().top;
+
+  pages.forEach(p => p.removeAttribute("transform"));
 
   const pageRects = pages.map(p => {
     const r = p.getBoundingClientRect();
@@ -753,7 +758,7 @@ function flattenEngravedSeams(
     const curr = ends[i];
     if (!prev || !curr) { continue; }
     const originalGap = curr.firstTop - prev.lastBottom;
-    if (originalGap <= desiredGap + 1) { continue; } // already tight
+    if (originalGap <= desiredGap + 1) { continue; }
     const deltaY = desiredGap - originalGap; // negative moves up
     accDelta += deltaY;
     appendTranslateAttr(pages[i]!, accDelta);
@@ -777,10 +782,12 @@ function packSystemsWithinPages(
     );
 
     if (systems.length === 0) {
-      outer.dataset.viewerFatal = "page-has-no-systems";
-      outer.dataset.viewerErr = "One engraved page in the OSMD SVG contains no <system> groups.";
-      throw new Error("OSMD per-page guard: page contains no <system> groups");
+      const n = Number(outer.dataset.viewerWarnEmptyPage || "0") + 1;
+      outer.dataset.viewerWarnEmptyPage = String(n);
+      continue;
     }
+
+    systems.forEach(g => { g.style.transform = ""; });
 
     const boxes = systems
       .map((g) => {
@@ -794,22 +801,20 @@ function packSystemsWithinPages(
       )
       .sort((a, b) => a.top - b.top);
 
-    if (boxes.length === 0) {
-      // (Optional: if you also want to hard-fail when all system boxes collapse to 0 height)
-      outer.dataset.viewerFatal = "page-systems-unmeasurable";
-      outer.dataset.viewerErr = "System groups found but no measurable bounding boxes.";
-      throw new Error("OSMD per-page guard: system groups present but unmeasurable");
-    }
+    if (boxes.length === 0) { continue; }
 
-    let y = boxes[0]!.top; // keep the first system where it is
+    let y = boxes[0]!.top;
     for (let i = 0; i < boxes.length; i++) {
       const b = boxes[i]!;
       const desiredTop = Math.round(y);
       const delta = Math.round(desiredTop - b.top);
+
       if (Math.abs(delta) >= 1) {
-        const prev = b.g.style.transform || "";
-        b.g.style.transform = `${prev} translateY(${delta}px)`;
+        b.g.style.transform = `translateY(${delta}px)`;
+      } else {
+        b.g.style.transform = ""; // keep it clean if no move
       }
+
       y = desiredTop + b.height + (i < boxes.length - 1 ? GAP : 0);
     }
   }
@@ -828,7 +833,7 @@ function computePageStarts(outer: HTMLDivElement, bands: Band[], viewportH: numb
     const TOL = (window.devicePixelRatio || 1) >= 2 ? 2 : 1;
     const PAGE_H = Math.max(1, Math.floor(viewportH) - TOL);
 
-    const GAP = interSystemPackGapPx(outer);   // fixed *virtual* gap we pack with
+    const GAP = interSystemPackGapPx(outer); // fixed virtual gap between systems
 
     const starts: number[] = [];
     let i = 0;
@@ -836,10 +841,10 @@ function computePageStarts(outer: HTMLDivElement, bands: Band[], viewportH: numb
     while (i < bands.length) {
       starts.push(i);
 
-      let used = bands[i]!.height; // height of first system on the page
+      let used = bands[i]!.height; // first system height
       let j = i;
 
-      // keep adding systems while (used + GAP + next.height) fits in PAGE_H
+      // Keep packing next systems while the packed height fits into PAGE_H
       while (j + 1 < bands.length) {
         const nextUsed = used + GAP + bands[j + 1]!.height;
         if (nextUsed <= PAGE_H) {
@@ -850,7 +855,7 @@ function computePageStarts(outer: HTMLDivElement, bands: Band[], viewportH: numb
         }
       }
 
-      i = j + 1; // advance at least one system per page
+      i = j + 1; // advance to the next page start
     }
 
     void logStep(`starts(packed): ${starts.length} PAGE_H=${PAGE_H} gap=${GAP}`, { outer });
