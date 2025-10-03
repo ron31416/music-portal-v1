@@ -1318,19 +1318,16 @@ export default function ScoreViewer({
         const relBottom = lastBand.bottom - ySnap;
         const nextTopRel = (nextStartIndex >= 0 ? bands[nextStartIndex]!.top - ySnap : Number.POSITIVE_INFINITY);
 
-        // Only mask if something from the next page would peek into this viewport
-        const peeks = nextTopRel < (hVisible - (PEEK_GUARD + 1));
-        let maskTopWithinMusicPx = hVisible;
+        // Always cut right under the last included system.
+        // If the next system is near, also respect a guard below its top.
+        const LOW_NUDGE = (window.devicePixelRatio || 1) >= 2 ? 2 : 1;
+        const low = Math.ceil(relBottom) + Math.max(0, MASK_BOTTOM_SAFETY_PX - LOW_NUDGE);
+        const high = Math.min(hVisible, Math.floor(nextTopRel) - PEEK_GUARD);
 
-        if (peeks) {
-          // Cut right under the last included system so there is *no mid-page gulf*
-          const LOW_NUDGE = (window.devicePixelRatio || 1) >= 2 ? 2 : 1;
-          const low = Math.ceil(relBottom) + Math.max(0, MASK_BOTTOM_SAFETY_PX - LOW_NUDGE);
-          const high = Math.min(hVisible, Math.floor(nextTopRel) - PEEK_GUARD);
-
-          // Prefer the low edge; if bounds are inverted by rounding, just clamp to low (bounded by hVisible)
-          maskTopWithinMusicPx = (low <= high) ? Math.max(low, 0) : Math.min(Math.max(low, 0), hVisible);
-        }
+        // Prefer the low edge; if bounds invert by rounding, clamp to visible height.
+        // (This removes the need for a "peeks" boolean so the mask never leaves a large gulf.)
+        const maskTopWithinMusicPx =
+          (low <= high) ? Math.max(0, low) : Math.min(Math.max(0, low), hVisible);
 
         // Breadcrumbs
         outer.dataset.viewerLastApply = String(Date.now());
@@ -1410,7 +1407,7 @@ export default function ScoreViewer({
 
         // --- bottom cutter (only when there is actual peek) ---
         let bottomCutter = outer.querySelector<HTMLDivElement>("[data-viewer-bottomcutter='1']");
-        const needsMask = peeks && maskTopWithinMusicPx < hVisible;
+        const needsMask = maskTopWithinMusicPx < hVisible;
         // Keep the cutter minimal; its only job is to hide sub-pixel slivers at the very bottom edge
         const CUTTER_PX = needsMask ? 1 : 0;
 
