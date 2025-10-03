@@ -573,7 +573,7 @@ function dynamicBandGapPx(outer: HTMLDivElement): number {
   const jitter = dprRoundingJitterPx();
 
   // Enforce a strict separation of at least 1px below packGap after jitter.
-  const strictness = 1;
+  const strictness = 2;
 
   // Never let the merge threshold reach the packing gap; also keep a sane floor.
   return Math.max(6, packGap - jitter - strictness);
@@ -700,7 +700,13 @@ function getPageRoots(svgRoot: SVGSVGElement): SVGGElement[] {
   return roots.length ? roots : [];
 }
 
-/** Hard-fail if the SVG has no per-system groups at all. */
+function systemGroupCount(svgRoot: SVGSVGElement): number {
+  return Array.from(
+    svgRoot.querySelectorAll<SVGGElement>("g[id*='system' i], g[class*='system' i]")
+  ).filter(g => g.ownerSVGElement === svgRoot).length;
+}
+
+/*
 function assertHasSystemGroups(outer: HTMLDivElement, svgRoot: SVGSVGElement): void {
   const systems = Array.from(
     svgRoot.querySelectorAll<SVGGElement>("g[id*='system' i], g[class*='system' i]")
@@ -714,6 +720,7 @@ function assertHasSystemGroups(outer: HTMLDivElement, svgRoot: SVGSVGElement): v
     throw new Error("OSMD SVG missing per-system groups (no id/class contains 'system').");
   }
 }
+*/
 
 /** Collapse big gaps *between* OSMD’s engraved pages to our nominal gap. */
 function flattenEngravedSeams(
@@ -1612,14 +1619,27 @@ export default function ScoreViewer({
         outer.dataset.viewerErr = "OSMD did not produce an <svg> element.";
         throw new Error("No SVG produced by OSMD render");
       }
-      assertHasSystemGroups(outer, svgForPack);
 
-      // 1) pack within pages
-      packSystemsWithinPages(outer, svgForPack);
+      // NEW: soft-check — do NOT throw if system groups are missing
+      const sysCount0 = systemGroupCount(svgForPack);
+      await logStep(`scan: sysCount=${sysCount0}`, { outer });
 
-      // 2) flatten seams between pages
-      const preBands = withSvgAtUnitScale(outer, (svg) => scanSystemsPx(outer, svg)) ?? [];
-      if (preBands.length) {
+      // Only repack systems when groups actually exist
+      if (sysCount0 > 0) {
+        packSystemsWithinPages(outer, svgForPack);
+      }
+
+      // First quick read to optionally flatten engraved page seams
+      let preBands: Band[] = [];
+      try {
+        preBands = withSvgAtUnitScale(outer, (svg) => scanSystemsPx(outer, svg)) ?? [];
+        await logStep(`scan: preBands=${preBands.length}`, { outer });
+      } catch (e) {
+        await logStep(`scan: scanSystemsPx threw: ${(e as Error).message}`, { outer });
+        throw e;
+      }
+
+      if (preBands.length && sysCount0 > 0) {
         flattenEngravedSeams(outer, svgForPack, preBands);
       }
 
