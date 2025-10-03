@@ -15,6 +15,8 @@ interface Props {
   style?: React.CSSProperties;
   topGutterPx?: number; // default: 3 (small white space at very top)
   debugShowAllMeasureNumbers?: boolean; // default: false (dev aid)
+  /** show HUD/guide overlays (default: false) */
+  debugOverlays?: boolean;
 }
 
 interface Band { top: number; bottom: number; height: number }
@@ -209,7 +211,7 @@ export async function logStep(
 }
 
 // ---------- DEBUG OVERLAY (visualize bands & starts) ----------
-const DEBUG_BANDS = false; // set true to show guides; false to hide
+let DEBUG_BANDS = false; // set true to show guides; false to hide
 
 type DebugOpts = {
   tag?: string;
@@ -487,7 +489,19 @@ function drawSystemEdgeLines(
     layer.appendChild(botLine);
   }
 }
-// === /HUD & edge-lines
+
+/** Remove any debug layers if they exist. */
+function clearDebugLayers(outer: HTMLDivElement): void {
+  if (!outer) { return; }
+  const sels = [
+    "[data-viewer-debug='1']",
+    "[data-viewer-hud='1']",
+    "[data-viewer-edgelines='1']",
+  ];
+  for (const sel of sels) {
+    outer.querySelectorAll(sel).forEach((n) => n.remove());
+  }
+}
 
 
 /** Wait for web fonts to be ready (bounded; prevents rare long hangs) */
@@ -634,21 +648,31 @@ function scanSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[] {
 // --- System packing helpers (insert after scanSystemsPx) ---
 
 function interSystemPackGapPx(outer: HTMLDivElement): number {
-  // Nominal gap between systems when *we* repack them
   const h = outer.clientHeight || 0;
-  const dpr = typeof window !== "undefined" ? (window.devicePixelRatio || 1) : 1;
-  let gap = 12;                 // base
-  if (h <= 750) { gap += 2; }   // small visible height → a hair more spacing
+  const dpr = (typeof window !== "undefined" ? window.devicePixelRatio : 1) || 1;
+  let gap = 10;                 // tighter base so the 2nd system sits closer
+  if (h <= 750) { gap += 1; }   // small visible height → a touch more
   if (dpr >= 2) { gap += 1; }   // Hi-DPR hairline safety
   return gap;
 }
 
 function getPageRoots(svgRoot: SVGSVGElement): SVGGElement[] {
-  return Array.from(
-    svgRoot.querySelectorAll<SVGGElement>(
-      'g[id^="osmdCanvasPage"], g[id^="Page"], g[class*="Page"], g[class*="page"]'
-    )
-  );
+  // OSMD uses a few different ids/classes across versions.
+  const selector = [
+    'g[id^="osmdSvgPage"]',       // most recent OSMD
+    'g[id^="osmdCanvasPage"]',    // older OSMD
+    'g[id^="Page"]',
+    'g[class*="osmdSvgPage"]',
+    'g[class*="osmdCanvasPage"]',
+    'g[class*="Page"]',
+    'g[class*="page"]',
+  ].join(',');
+
+  // Prefer direct children of the root SVG — those are the page <g> groups.
+  const all = Array.from(svgRoot.querySelectorAll<SVGGElement>(selector));
+  const roots = all.filter(g => g.ownerSVGElement === svgRoot);
+
+  return roots.length ? roots : [];
 }
 
 /**
@@ -666,30 +690,26 @@ function flattenEngravedSeams(
   const pages = getPageRoots(svgRoot);
   if (pages.length <= 1 || preBands.length === 0) { return; }
 
-  // Measure each page's top/bottom in the host coordinate space (pre-transform).
   const hostTop = outer.getBoundingClientRect().top;
+
+  // Measure current page rectangles BEFORE we add our own transforms.
   const pageRects = pages.map(p => {
     const r = p.getBoundingClientRect();
     return { top: r.top - hostTop, bottom: r.bottom - hostTop };
   });
 
-  // Assign each band to the page whose rect contains its center.
-  const bandPageIdx: number[] = preBands.map((b) => {
+  // Map each band to the page whose rect contains its center.
+  const bandToPage: number[] = preBands.map((b) => {
     const mid = (b.top + b.bottom) / 2;
-    let idx = pages.length - 1;
-    for (let i = 0; i < pageRects.length; i++) {
-      const pr = pageRects[i]!;
-      if (mid >= pr.top && mid < pr.bottom) { idx = i; break; }
-    }
-    return idx;
+    const idx = pageRects.findIndex(pr => mid >= pr.top && mid < pr.bottom);
+    return idx >= 0 ? idx : (pageRects.length - 1);
   });
 
-  // For each page, find first/last band inside it.
-  type PageEnds = { firstTop: number; lastBottom: number } | null;
-  const ends: PageEnds[] = pages.map(() => null);
-  for (let i = 0; i < preBands.length; i++) {
-    const p = bandPageIdx[i]!;
-    const b = preBands[i]!;
+  // For each page, track the first and last band.
+  type Ends = { firstTop: number; lastBottom: number };
+  const ends: Array<Ends | null> = pages.map(() => null);
+  preBands.forEach((b, i) => {
+    const p = bandToPage[i]!;
     const e = ends[p];
     if (!e) {
       ends[p] = { firstTop: b.top, lastBottom: b.bottom };
@@ -697,24 +717,33 @@ function flattenEngravedSeams(
       e.firstTop = Math.min(e.firstTop, b.top);
       e.lastBottom = Math.max(e.lastBottom, b.bottom);
     }
-  }
+  });
 
   const desiredGap = interSystemPackGapPx(outer);
   let accDelta = 0;
 
-  // Page 0 stays put; subsequent pages are shifted upward by accumulated deltas.
+  // Use the SVG *attribute* transform so we compose with OSMD's own transforms reliably.
+  const appendTranslateAttr = (g: SVGGElement, dy: number) => {
+    const prevAttr = g.getAttribute("transform") || "";
+    g.setAttribute("transform", `${prevAttr} translate(0 ${Math.round(dy)})`);
+  };
+
   for (let i = 1; i < pages.length; i++) {
     const prev = ends[i - 1];
     const curr = ends[i];
     if (!prev || !curr) { continue; }
 
     const originalGap = curr.firstTop - prev.lastBottom;
-    const deltaThisPage = desiredGap - originalGap; // positive = move up, negative = move down
-    accDelta += deltaThisPage;
 
-    const g = pages[i]!;
-    const prevStyle = g.style.transform || "";
-    g.style.transform = `${prevStyle} translateY(${Math.round(accDelta)}px)`;
+    // If OSMD already packed tightly, don't touch it.
+    if (originalGap <= desiredGap + 1) { continue; }
+
+    // Move page i UP so that the gap equals our desired inter-system gap.
+    // (negative translateY moves up in SVG/CSS coordinates)
+    const deltaY = desiredGap - originalGap; // e.g. 12 - 338 = -326 (move up)
+    accDelta += deltaY;
+
+    appendTranslateAttr(pages[i]!, accDelta);
   }
 }
 
@@ -916,9 +945,13 @@ export default function ScoreViewer({
   height = 600,
   className = "",
   style,
-  topGutterPx = 3, // small white strip at the very top
+  topGutterPx = 3,
   debugShowAllMeasureNumbers = false,
+  debugOverlays = false,
 }: Props) {
+  // turn overlays on/off per prop (off by default)
+  DEBUG_BANDS = !!debugOverlays;
+
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const svgHostRef = useRef<HTMLDivElement | null>(null);
   const osmdRef = useRef<OpenSheetMusicDisplay | null>(null);
@@ -1418,52 +1451,22 @@ export default function ScoreViewer({
           `hVisible: ${hVisible} maskTopWithinMusicPx: ${maskTopWithinMusicPx}`, { outer }
         );
 
-        {
-          /*
-          const translateY = -ySnap + Math.max(0, topGutterPx);
-
-          drawHud(outer, {
-            pageIdx: clampedPage,
-            pages,
+        if (debugOverlays) {
+          debugDrawBands(outer, bands, {
+            tag: `apply p${clampedPage + 1}`,
+            starts,
             startIndex,
             nextStartIndex,
-            ySnap,
-            translateY,
-            visibleH: hVisible,
-            paginationH: PAGE_H,
-            maskTop: maskTopWithinMusicPx,
-            startTop: startBand.top,
-            startBottom: startBand.bottom,
-            nextTop: nextStartIndex >= 0 ? bands[nextStartIndex]?.top : undefined,
-            nextBottom: nextStartIndex >= 0 ? bands[nextStartIndex]?.bottom : undefined,
+            ySnap,                       // ceil(startBand.top)
+            drawPageLocal: true,
+            visibleAbsY: Math.max(0, topGutterPx) + hVisible,
+            pageAbsY: Math.max(0, topGutterPx) + paginationHeight(outer),
+            maskAbsY: Math.max(0, topGutterPx) + maskTopWithinMusicPx,
+            topGutter: Math.max(0, topGutterPx),
           });
-
-          const edgeIdxs: number[] = [startIndex];
-          if (nextStartIndex >= 0) { edgeIdxs.push(nextStartIndex); }
-
-          drawSystemEdgeLines(
-            outer,
-            bands,
-            edgeIdxs,
-            "applied",
-            ySnap,
-            Math.max(0, topGutterPx)
-          );
-          */
+        } else {
+          clearDebugLayers(outer);
         }
-
-        debugDrawBands(outer, bands, {
-          tag: `apply p${clampedPage + 1}`,
-          starts,
-          startIndex,
-          nextStartIndex,
-          ySnap,                          // NEW: ceil(startBand.top) from above
-          drawPageLocal: true,            // NEW: draw page-local system lines
-          visibleAbsY: Math.max(0, topGutterPx) + hVisible,
-          pageAbsY: Math.max(0, topGutterPx) + paginationHeight(outer),
-          maskAbsY: Math.max(0, topGutterPx) + maskTopWithinMusicPx,
-          topGutter: Math.max(0, topGutterPx),
-        });
 
         let mask = outer.querySelector<HTMLDivElement>("[data-viewer-mask='1']");
         if (!mask) {
@@ -1528,7 +1531,7 @@ export default function ScoreViewer({
         try { outer.dataset.viewerFunc = prevFuncTag; } catch { }
       }
     },
-    [visiblePageHeight, topGutterPx, paginationHeight]
+    [visiblePageHeight, topGutterPx, paginationHeight, debugOverlays]
   );
 
   // Hide the SVG host while we do heavy work, then restore previous styles.
@@ -1623,12 +1626,16 @@ export default function ScoreViewer({
 
       rebuildFlowMap(outer, bands);
 
-      debugDrawBands(outer, bands, {
-        tag: "scan",
-        visibleAbsY: Math.max(0, topGutterPx) + visiblePageHeight(outer),
-        pageAbsY: Math.max(0, topGutterPx) + paginationHeight(outer),
-        topGutter: Math.max(0, topGutterPx),
-      });
+      if (debugOverlays) {
+        debugDrawBands(outer, bands, {
+          tag: "scan",
+          visibleAbsY: Math.max(0, topGutterPx) + visiblePageHeight(outer),
+          pageAbsY: Math.max(0, topGutterPx) + paginationHeight(outer),
+          topGutter: Math.max(0, topGutterPx),
+        });
+      } else {
+        clearDebugLayers(outer);
+      }
 
       const visH = visiblePageHeight(outer);
       const starts = perfBlock(
@@ -1662,15 +1669,18 @@ export default function ScoreViewer({
 
       } catch { }
 
-      debugDrawBands(outer, bands, {
-        tag: "starts",
-        starts,
-        visibleAbsY: Math.max(0, topGutterPx) + visiblePageHeight(outer),
-        pageAbsY: Math.max(0, topGutterPx) + paginationHeight(outer),
-        topGutter: Math.max(0, topGutterPx),
-      });
+      if (debugOverlays) {
+        debugDrawBands(outer, bands, {
+          tag: "starts",
+          starts,
+          visibleAbsY: Math.max(0, topGutterPx) + visiblePageHeight(outer),
+          pageAbsY: Math.max(0, topGutterPx) + paginationHeight(outer),
+          topGutter: Math.max(0, topGutterPx),
+        });
+      }
 
-      {
+      // HUD & edge-lines (debug only)
+      if (debugOverlays) {
         const startIndex0 = starts[0] ?? 0;
         const nextIndex0 = starts.length > 1 ? (starts[1] ?? -1) : -1;
         const ySnap0 = Math.ceil(bands[startIndex0]?.top ?? 0);
@@ -1708,13 +1718,6 @@ export default function ScoreViewer({
       outer.dataset.viewerPhase = "apply";
       await logStep("phase starting", { outer });
 
-      debugDrawBands(outer, bands, {
-        tag: "scan",
-        visibleAbsY: Math.max(0, topGutterPx) + visiblePageHeight(outer),
-        pageAbsY: Math.max(0, topGutterPx) + paginationHeight(outer),
-        topGutter: Math.max(0, topGutterPx),
-      });
-
       pageStartIdxsRef.current = starts;
       systemBandsRef.current = bands;
       pageIdxRef.current = 0;
@@ -1736,7 +1739,7 @@ export default function ScoreViewer({
     } finally {
       try { outer.dataset.viewerFunc = prevFuncTag; } catch { }
     }
-  }, [nextPerfUID, renderViewer, withHostHidden, paginationHeight, applyPage, visiblePageHeight, topGutterPx]);
+  }, [nextPerfUID, renderViewer, withHostHidden, paginationHeight, applyPage, visiblePageHeight, topGutterPx, debugOverlays]);
 
 
   // --- HEIGHT-ONLY REPAGINATION (no OSMD re-init) ---
@@ -1762,6 +1765,7 @@ export default function ScoreViewer({
 
       // Recompute page starts using the SAME height that masking uses
       rebuildFlowMap(outer, bands);
+
       const visH = visiblePageHeight(outer);
       const starts = perfBlock(
         nextPerfUID(outer.dataset.viewerRun),
