@@ -1400,11 +1400,11 @@ export default function ScoreViewer({
           const nextBand = bands[nextStartIndex];
           if (!lastBand || !nextBand) { return hVisible; }
 
-          const relBottom = lastBand.bottom - ySnap;
-          const nextTopRel = nextBand.top - ySnap;
+          const relBottom = lastBand.bottom - ySnap;   // measured space
+          const nextTopRel = nextBand.top - ySnap;     // measured space
 
           // If nothing from the next page peeks into the viewport, don't mask at all.
-          // (Page 1 gets a tiny extra lenience for header interactions.)
+          // (Give page 1 a tiny lenience for header interactions.)
           const firstPageExtra = (clampedPage === 0) ? 2 : 0;
           if (nextTopRel >= hVisible - (PEEK_GUARD + 1 + firstPageExtra)) {
             return hVisible;
@@ -1415,7 +1415,7 @@ export default function ScoreViewer({
           const low = Math.ceil(relBottom) + MASK_BOTTOM_SAFETY_PX - nudge;
           const high = Math.floor(nextTopRel) - PEEK_GUARD;
 
-          // If bounds are inverted (e.g., rounding), try one page-start recompute once.
+          // If bounds are inverted (rounding oddity), try one recompute; otherwise fail-safe to no-mask.
           if (low > high) {
             const fresh = computePageStarts(outer, bands, hVisible);
             if (fresh.length) {
@@ -1433,18 +1433,14 @@ export default function ScoreViewer({
               if (!same) {
                 pageStartIdxsRef.current = fresh;
                 applyPage(nearest, depth + 1);
-                return hVisible; // will be recomputed by the recursive call
+                return hVisible; // will be recomputed by recursion
               }
             }
-            // If no change, **fail safe**: show full height rather than over-cut.
-            return hVisible;
+            return hVisible; // fail safe: never over-cut
           }
 
-          // Normal case: clamp inside [low, high], then lightly cap how far above
-          // the bottom we’re allowed to cut to avoid big cosmetic gaps.
-          const raw = Math.min(hVisible, Math.max(0, Math.max(low, Math.min(high, hVisible))));
-          const MAX_MASK_GAP = (window.devicePixelRatio || 1) >= 2 ? 12 : 10; // px from the bottom
-          return Math.max(hVisible - MAX_MASK_GAP, raw);
+          // Normal case: pick a value within [low, high]
+          return Math.min(hVisible, Math.max(0, Math.max(low, Math.min(high, hVisible))));
         })();
 
         // Breadcrumbs
@@ -1804,13 +1800,13 @@ export default function ScoreViewer({
         return;
       }
 
-      // Recompute page starts for the current *unified* page height
+      // Recompute page starts using the SAME height that masking uses
       rebuildFlowMap(outer, bands);
-      const paginationH = paginationHeight(outer);
+      const visH = visiblePageHeight(outer);
       const starts = perfBlock(
         nextPerfUID(outer.dataset.viewerRun),
-        () => computePageStarts(outer, bands, paginationH),
-        (ms) => { void logStep(`computePageStarts runtime: ${ms}ms paginationH: ${paginationH}`, { outer }); }
+        () => computePageStarts(outer, bands, visH),
+        (ms) => { void logStep(`computePageStarts runtime: ${ms}ms visibleH: ${visH}`, { outer }); }
       );
 
       pageStartIdxsRef.current = starts;
@@ -1842,7 +1838,7 @@ export default function ScoreViewer({
 
       outer.dataset.viewerFunc = prevFuncTag;
     }
-  }, [applyPage, paginationHeight, nextPerfUID]);
+  }, [applyPage, visiblePageHeight, nextPerfUID]);
 
 
   // keep ref pointing to latest repagination callback
