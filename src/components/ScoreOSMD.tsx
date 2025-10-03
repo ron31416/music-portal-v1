@@ -47,10 +47,6 @@ const REFLOW = {
   BOTTOM_PEEK_PAD_HI_DPR: 6,
 } as const;
 
-// Allow up to 3 recursive passes of applyPage to settle layout.
-// Bail on the 4th to prevent oscillation.
-//const APPLY_MAX_PASSES = 3 as const;
-
 async function withTimeout<T>(p: Promise<T>, ms: number, tag: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const t = window.setTimeout(() => reject(new Error(tag)), ms);
@@ -157,6 +153,7 @@ async function waitForPaint(timeoutMs = 450): Promise<void> {
 
 // Flip this to disable all on-page logging in one place.
 const DEBUG_LOG = true;
+const DEBUG_PAGINATION_DIAG = false;
 
 export async function logStep(
   message: string,
@@ -698,22 +695,6 @@ function systemGroupCount(svgRoot: SVGSVGElement): number {
     svgRoot.querySelectorAll<SVGGElement>("g[id*='system' i], g[class*='system' i]")
   ).filter(g => g.ownerSVGElement === svgRoot).length;
 }
-
-/*
-function assertHasSystemGroups(outer: HTMLDivElement, svgRoot: SVGSVGElement): void {
-  const systems = Array.from(
-    svgRoot.querySelectorAll<SVGGElement>("g[id*='system' i], g[class*='system' i]")
-  ).filter(g => g.ownerSVGElement === svgRoot);
-
-  if (systems.length === 0) {
-    // breadcrumbs for quick diagnosis
-    outer.dataset.viewerFatal = "no-system-groups";
-    outer.dataset.viewerErr = "OSMD SVG missing per-system groups";
-    // hard fail (you asked for this behavior)
-    throw new Error("OSMD SVG missing per-system groups (no id/class contains 'system').");
-  }
-}
-*/
 
 /** Collapse big gaps *between* OSMD’s engraved pages to our nominal gap. */
 function flattenEngravedSeams(
@@ -1545,28 +1526,26 @@ export default function ScoreViewer({
       );
 
       try {
-        // 1) Lightweight human-readable lines via logStep (eslint-ok inside logStep)
         await logStep(
           `bands=${bands.length} starts=[${starts.join(",")}] ` +
           `visibleH=${visiblePageHeight(outer)} paginationH=${paginationHeight(outer)}`,
           { outer }
         );
 
-        // If you want per-band rows (still short enough to read in DevTools Console column)
-        const rows = bands.map((b, i) =>
-          `#${i} top=${Math.round(b.top)} bottom=${Math.round(b.bottom)} h=${Math.round(b.height)}`
-        );
-        // Split into a few chunks so each line stays short
-        for (let k = 0; k < rows.length; k += 10) {
-          await logStep(`bandRows ${k}-${Math.min(k + 9, rows.length - 1)}: ${rows.slice(k, k + 10).join(" | ")}`, { outer });
+        if (DEBUG_PAGINATION_DIAG) {
+          const rows = bands.map((b, i) =>
+            `#${i} top=${Math.round(b.top)} bottom=${Math.round(b.bottom)} h=${Math.round(b.height)}`
+          );
+
+          for (let k = 0; k < rows.length; k += 10) {
+            await logStep(`bandRows ${k}-${Math.min(k + 9, rows.length - 1)}: ${rows.slice(k, k + 10).join(" | ")}`, { outer });
+          }
+
+          outer.dataset.viewerBandsDump = JSON.stringify(
+            bands.map((b, i) => ({ i, top: Math.round(b.top), bottom: Math.round(b.bottom), height: Math.round(b.height) }))
+          );
+          outer.dataset.viewerStartsDump = JSON.stringify(starts);
         }
-
-        // 2) Machine-friendly dump on the wrapper (inspect via Elements → dataset)
-        outer.dataset.viewerBandsDump = JSON.stringify(
-          bands.map((b, i) => ({ i, top: Math.round(b.top), bottom: Math.round(b.bottom), height: Math.round(b.height) }))
-        );
-        outer.dataset.viewerStartsDump = JSON.stringify(starts);
-
       } catch { }
 
       if (debugOverlays) {
