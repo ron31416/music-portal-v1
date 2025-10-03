@@ -1269,11 +1269,10 @@ export default function ScoreViewer({
           return;
         }
 
-        const flow = flowMapRef.current;
-        const flowStartTop = Math.ceil(flow.top[startIndex] ?? startBand.top);
-        const ySnap = flowStartTop; // keep the HUD/edge-lines variable name
+        // Use measured geometry, not virtual flow, for the actual display translate
+        const ySnap = Math.ceil(startBand.top);
 
-        svg.style.transform = `translateY(${-flowStartTop + Math.max(0, topGutterPx)}px)`;
+        svg.style.transform = `translateY(${-ySnap + Math.max(0, topGutterPx)}px)`;
         svg.style.transformOrigin = "top left";
         svg.style.willChange = "transform";
 
@@ -1290,7 +1289,7 @@ export default function ScoreViewer({
         if (nextStartIndex >= 0) {
           const nextBand = bands[nextStartIndex];
           if (nextBand) {
-            const nextBottomRel = (flow.bottom[nextStartIndex] ?? nextBand.bottom) - flowStartTop;
+            const nextBottomRel = nextBand.bottom - ySnap;
 
             if (nextBottomRel > hVisible - TOL) {
               const fresh = computePageStarts(outer, bands, PAGE_H);
@@ -1326,7 +1325,7 @@ export default function ScoreViewer({
           for (let i = startIndex; i < bands.length; i++) {
             const b = bands[i];
             if (!b) { continue; }
-            const relBottom = (flow.bottom[i] ?? b.bottom) - flowStartTop;
+            const relBottom = b.bottom - ySnap;
 
             if (relBottom > hVisible - LAST_PAGE_BOTTOM_PAD_PX) {
               cutIdx = i;
@@ -1355,9 +1354,7 @@ export default function ScoreViewer({
           : Math.max(startIndex, bands.length - 1);
 
         const assumedLast = bands[assumedLastIdx];
-        const lastBottomRel = assumedLast
-          ? ((flow.bottom[assumedLastIdx] ?? assumedLast.bottom) - flowStartTop)
-          : 0;
+        const lastBottomRel = assumedLast ? (assumedLast.bottom - ySnap) : 0;
 
         if (assumedLast && lastBottomRel > hVisible - SAFETY) {
           const freshStarts = computePageStarts(outer, bands, PAGE_H);
@@ -1403,8 +1400,8 @@ export default function ScoreViewer({
           const nextBand = bands[nextStartIndex];
           if (!lastBand || !nextBand) { return hVisible; }
 
-          const relBottom = (flow.bottom[lastIncludedIdx] ?? lastBand.bottom) - flowStartTop;
-          const nextTopRel = (flow.top[nextStartIndex] ?? nextBand.top) - flowStartTop;
+          const relBottom = lastBand.bottom - ySnap;
+          const nextTopRel = nextBand.top - ySnap;
 
           // If nothing from the next page peeks into the viewport, don't mask at all.
           // (Page 1 gets a tiny extra lenience for header interactions.)
