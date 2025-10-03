@@ -849,6 +849,7 @@ function computePageStarts(
     let i = 0;
 
     while (i < bands.length) {
+      // Start a new page at band i
       starts.push(i);
 
       // Snap page to the actual top of the first system
@@ -856,20 +857,17 @@ function computePageStarts(
 
       // Greedily include next systems while their measured bottom still fits
       let j = i;
-      while (j + 1 < bands.length && (bands[j + 1]!.bottom - ySnap) <= PAGE_H) {
+      while (
+        j + 1 < bands.length &&
+        (bands[j + 1]!.bottom - ySnap) <= PAGE_H
+      ) {
         j += 1;
       }
 
-      // Widow rule: avoid tiny tail space; only if page would have >1 system
-      if (j > i) {
-        const used = bands[j]!.bottom - ySnap; // actual used height on the page
-        const remainder = PAGE_H - used;
-        if (remainder < REFLOW.LAST_PAGE_BOTTOM_PAD_PX) {
-          j -= 1;
-        }
-      }
+      // (No widow rule here — keep everything that fits)
 
-      i = j + 1; // next page starts after the last one we kept
+      // Next page starts after the last one we kept
+      i = j + 1;
     }
 
     void logStep(`starts(strict): ${starts.length} PAGE_H=${PAGE_H}`, { outer });
@@ -1274,12 +1272,12 @@ export default function ScoreViewer({
   // Apply the chosen page to the viewport: translate the SVG to its start and mask/cut to hide any next-page peek.
   // May recompute page starts and re-apply to preserve whole systems; bounded recursion prevents oscillation.
   const applyPage = useCallback(
-    (pageIdx: number, depth: number = 0): void => {
+    (pageIdx: number): void => {
       const outer = wrapRef.current;
       if (!outer) { return; }
 
       const prevFuncTag = outer.dataset.viewerFunc ?? "";
-      outer.dataset.viewerFunc = "applyPage:strict";
+      outer.dataset.viewerFunc = "applyPage:stable";
 
       try {
         const svg = getSvg(outer);
@@ -1298,59 +1296,38 @@ export default function ScoreViewer({
         const startBand = bands[startIndex];
         if (!startBand) { return; }
 
-        // Translate the music so that startBand aligns with the top gutter
+        // NEXT page start (or -1 on last page) — this fixes the “line disappears” issue
+        const nextStartIndex = (p + 1 < pages) ? starts[p + 1]! : -1;
+
+        // Align the music so the start band sits at the top gutter
         const ySnap = Math.ceil(startBand.top);
         svg.style.transform = `translateY(${-ySnap + Math.max(0, topGutterPx)}px)`;
         svg.style.transformOrigin = "top left";
         svg.style.willChange = "transform";
 
-        // Visible height available for music (already excludes top gutter & bottom pad)
+        // Height available to show content
         const hVisible = visiblePageHeight(outer);
         const PAGE_H = hVisible;
 
-        // Strict inclusion: include systems while their *measured* bottom fits
-        let last = startIndex;
-        while (
-          last + 1 < bands.length &&
-          (bands[last + 1]!.bottom - ySnap) <= PAGE_H
-        ) {
-          last++;
-        }
-        const nextStartIndex = (last + 1 < bands.length) ? (last + 1) : -1;
+        // Last band we want to *show* on this page (based only on starts[])
+        const lastIdxThisPage = nextStartIndex >= 0 ? nextStartIndex - 1 : (bands.length - 1);
 
-        // Safety: if rounding/padding pushed the last system past the page, drop it.
-        const lastBottomRel = bands[last]!.bottom - ySnap;
-        if (lastBottomRel > PAGE_H && last > startIndex) {
-          last -= 1;
-        }
-
-        // If our precomputed starts disagree with what actually fits, recompute once
-        if (p + 1 < starts.length && starts[p + 1] !== nextStartIndex) {
-          const fresh = computePageStarts(outer, bands, PAGE_H);
-          pageStartIdxsRef.current = fresh;
-
-          // Re-open the same logical page (startIndex) in the new list
-          const samePage = Math.max(0, fresh.findIndex(s => s === startIndex));
-          applyPage(samePage >= 0 ? samePage : 0, depth + 1);
-          return;
-        }
-
-        // --- MASK: cut exactly at the next system’s top, or just past the last one on final page
+        // --- MASK: cut exactly at the next system’s top, or just past the last on final page
         let maskTopWithinMusicPx = PAGE_H;
         if (nextStartIndex >= 0) {
-          // Non-last page: stay just above the next system so nothing peeks
+          // Non-last page: stop just above the next system so nothing peeks
           const nextTopRel = bands[nextStartIndex]!.top - ySnap;
           maskTopWithinMusicPx = Math.min(PAGE_H, Math.max(0, Math.floor(nextTopRel) - 1));
         } else {
-          // Last page: push the cut a little lower so we never shave slur/pedal tails
-          const lastRel = bands[last]!.bottom - ySnap;
+          // Last page: allow a safety pad to avoid shaving hairpins/slurs
+          const lastRel = bands[lastIdxThisPage]!.bottom - ySnap;
           maskTopWithinMusicPx = Math.min(
             PAGE_H,
-            Math.max(0, Math.ceil(lastRel) + REFLOW.MASK_BOTTOM_SAFETY_PX) // was +1
+            Math.max(0, Math.ceil(lastRel) + REFLOW.MASK_BOTTOM_SAFETY_PX)
           );
         }
 
-        // Persist breadcrumbs for debugging
+        // Breadcrumbs for debugging
         outer.dataset.viewerPage = String(p);
         outer.dataset.viewerPages = String(pages);
         outer.dataset.viewerH = String(hVisible);
@@ -1358,7 +1335,7 @@ export default function ScoreViewer({
         outer.dataset.viewerTy = String(-ySnap + Math.max(0, topGutterPx));
         outer.dataset.viewerStarts = starts.slice(0, 12).join(',');
 
-        // Create/update the mask & cutters
+        // Create/update mask & cutters
         let mask = outer.querySelector<HTMLDivElement>("[data-viewer-mask='1']");
         if (!mask) {
           mask = document.createElement("div");
@@ -1420,10 +1397,10 @@ export default function ScoreViewer({
             starts,
             startIndex,
             nextStartIndex,
-            ySnap: Math.ceil(startBand.top),
+            ySnap,
             drawPageLocal: true,
             visibleAbsY: Math.max(0, topGutterPx) + hVisible,
-            pageAbsY: Math.max(0, topGutterPx) + hVisible, // identical now
+            pageAbsY: Math.max(0, topGutterPx) + hVisible,
             maskAbsY: Math.max(0, topGutterPx) + maskTopWithinMusicPx,
             topGutter: Math.max(0, topGutterPx),
           });
