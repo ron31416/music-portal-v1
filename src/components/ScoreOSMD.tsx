@@ -824,7 +824,7 @@ function computePageStarts(
 
     // Same height the mask uses
     const TOL = (window.devicePixelRatio || 1) >= 2 ? 2 : 1;
-    const PAGE_H = Math.max(1, Math.floor(viewportH) - TOL);
+    const pageHeightPx = Math.max(1, Math.floor(viewportH) - TOL);
 
     const starts: number[] = [];
     let i = 0;
@@ -840,14 +840,14 @@ function computePageStarts(
       let j = i;
       while (
         j + 1 < bands.length &&
-        (bands[j + 1]!.bottom - ySnap) <= PAGE_H
+        (bands[j + 1]!.bottom - ySnap) <= pageHeightPx
       ) {
         j += 1;
       }
       i = j + 1;
     }
 
-    void logStep(`starts: ${starts.length} PAGE_H: ${PAGE_H}`, { outer });
+    void logStep(`starts: ${starts.length} pageHeightPx: ${pageHeightPx}`, { outer });
     return starts.length ? starts : [0];
   } finally {
     try { outer.dataset.viewerFunc = prevFuncTag; } catch { /* no-op */ }
