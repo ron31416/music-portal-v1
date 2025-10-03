@@ -633,87 +633,6 @@ function scanSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[] {
 
 // --- System packing helpers (insert after scanSystemsPx) ---
 
-// Read OSMD page <g> boxes (relative to our wrapper)
-/*
-function scanPageBoxes(
-  outer: HTMLDivElement,
-  svgRoot: SVGSVGElement
-): Array<{ top: number; bottom: number; height: number }> {
-  const prev = outer.dataset.viewerFunc ?? "";
-  outer.dataset.viewerFunc = "scanPageBoxes";
-  try {
-    const hostTop = outer.getBoundingClientRect().top;
-    const pageRoots = Array.from(
-      svgRoot.querySelectorAll<SVGGElement>(
-        'g[id^="osmdCanvasPage"], g[id^="Page"], g[class*="Page"], g[class*="page"]'
-      )
-    );
-    if (pageRoots.length === 0) {
-      const r = svgRoot.getBoundingClientRect();
-      return [{ top: 0, bottom: r.height, height: r.height }];
-    }
-    const boxes = pageRoots
-      .map((g) => {
-        const r = g.getBoundingClientRect();
-        return { top: r.top - hostTop, bottom: r.bottom - hostTop, height: r.height };
-      })
-      .sort((a, b) => a.top - b.top);
-    return boxes;
-  } finally {
-    try { outer.dataset.viewerFunc = prev; } catch { }
-  }
-}
-*/
-/**
- * Collapse OSMD inter-page gaps so systems from consecutive OSMD pages
- * sit with only `gapPx` between them in our coordinate space.
- */
-/*
-function flattenBandsByPages(
-  bands: Band[],
-  pages: Array<{ top: number; bottom: number; height: number }>,
-  gapPx: number
-): Band[] {
-  if (bands.length === 0 || pages.length < 2) {
-    return bands.slice();
-  }
-
-  const pageTop: number[] = pages.map((p) => p.top);
-  const pageH: number[] = pages.map((p) => p.height);
-
-  // Compute how much extra vertical space each OSMD page currently has
-  // relative to “tight pack” with `gapPx`. Build a prefix of that extra.
-  const extraOffsetPerPage: number[] = [0];
-  let desiredNextTop = pageTop[0]! + pageH[0]! + gapPx;
-  for (let i = 1; i < pages.length; i++) {
-    const haveTop = pageTop[i]!;
-    const wantTop = desiredNextTop;
-    const extra = haveTop - wantTop;           // positive = extra gap to remove
-    extraOffsetPerPage[i] = extra;
-    desiredNextTop = wantTop + pageH[i]! + gapPx;
-  }
-  const prefixExtra: number[] = [0];
-  for (let i = 1; i < extraOffsetPerPage.length; i++) {
-    prefixExtra[i] = prefixExtra[i - 1]! + (extraOffsetPerPage[i] ?? 0);
-  }
-
-  // Shift every band up by the cumulative extra gap of its page index.
-  const out: Band[] = bands.map((b) => {
-    // page index: last page whose top <= band.top
-    let j = 0;
-    for (let k = 1; k < pageTop.length; k++) {
-      if (b.top >= pageTop[k]!) { j = k; } else { break; }
-    }
-    const shift = prefixExtra[j] ?? 0;
-    const top = b.top - shift;
-    const bottom = b.bottom - shift;
-    return { top, bottom, height: bottom - top };
-  });
-
-  return out;
-}
-*/
-
 function interSystemPackGapPx(outer: HTMLDivElement): number {
   // Nominal gap between systems when *we* repack them
   const h = outer.clientHeight || 0;
@@ -799,12 +718,10 @@ function flattenEngravedSeams(
   }
 }
 
-
 /** Compute page starts by PACKING system heights + a fixed inter-system gap. */
 function computePageStarts(outer: HTMLDivElement, bands: Band[], viewportH: number): number[] {
   const prevFuncTag = outer.dataset.viewerFunc ?? "";
   outer.dataset.viewerFunc = "computePageStarts";
-
   try {
     if (bands.length === 0 || viewportH <= 0) {
       void logStep("starts: 1 (fallback [0])", { outer });
@@ -812,7 +729,10 @@ function computePageStarts(outer: HTMLDivElement, bands: Band[], viewportH: numb
     }
 
     const TOL = (window.devicePixelRatio || 1) >= 2 ? 2 : 1;
-    const MAX_SPAN = Math.max(1, Math.floor(viewportH) - TOL);
+    const PAGE_H = Math.max(1, Math.floor(viewportH) - TOL);
+
+    const GAP = interSystemPackGapPx(outer);       // <- our *virtual* gap
+    const MAX_SYS_PER_PAGE = 2;                    // <- hard ceiling
 
     const starts: number[] = [];
     let i = 0;
@@ -820,27 +740,26 @@ function computePageStarts(outer: HTMLDivElement, bands: Band[], viewportH: numb
     while (i < bands.length) {
       starts.push(i);
 
-      const MAX_SYS_PER_PAGE = 2; // hard ceiling: never show more than 2 systems per page
+      let used = bands[i]!.height;                 // height of first system on page
+      let count = 1;
       let j = i;
-      while (j + 1 < bands.length) {
-        // how many systems are already packed on this page?
-        const alreadyPacked = j - i + 1;
-        if (alreadyPacked >= MAX_SYS_PER_PAGE) { break; }
 
-        const nextBottom = bands[j + 1]!.bottom;
-        const trialSpan = nextBottom - bands[i]!.top; // measured, includes real inter-system gap
-        if (trialSpan <= MAX_SPAN) {
+      // Try to add one more system using *packed* height (height + fixed gap)
+      while (j + 1 < bands.length && count < MAX_SYS_PER_PAGE) {
+        const nextUsed = used + GAP + bands[j + 1]!.height;
+        if (nextUsed <= PAGE_H) {
+          used = nextUsed;
           j += 1;
+          count += 1;
         } else {
           break;
         }
       }
 
-      // Always advance by at least one system per page
-      i = Math.max(j + 1, i + 1);
+      i = j + 1;                                   // always advance by at least one
     }
 
-    void logStep(`starts(measured-span): ${starts.length} viewportH=${viewportH}`, { outer });
+    void logStep(`starts(packed): ${starts.length} PAGE_H=${PAGE_H} gap=${GAP}`, { outer });
     return starts.length ? starts : [0];
   } finally {
     try { outer.dataset.viewerFunc = prevFuncTag; } catch { /* no-op */ }
@@ -1385,70 +1304,33 @@ export default function ScoreViewer({
           }
         }
 
-        // masking: hide anything that belongs to the next page
+        // --- compute mask top in page-local space (music coords relative to ySnap) ---
         const MASK_BOTTOM_SAFETY_PX = REFLOW.MASK_BOTTOM_SAFETY_PX;
         const PEEK_GUARD = (window.devicePixelRatio || 1) >= 2
           ? REFLOW.PEEK_GUARD_HI_DPR
           : REFLOW.PEEK_GUARD_LO_DPR;
 
-        /**
-         * Compute the mask top in *page-local* music space.
-         * Goals:
-         *  - Never create a large blank band at the bottom if nothing actually peeks.
-         *  - If geometry is contradictory (low>high), prefer “no mask” over over-cutting.
-         *  - Give page 1 a small extra lenience (headers).
-         */
-        const maskTopWithinMusicPx = (() => {
-          // Last page → never mask; show full height
-          if (nextStartIndex < 0) { return hVisible; }
+        const lastIncludedIdx = (nextStartIndex >= 0)
+          ? Math.max(startIndex, nextStartIndex - 1)
+          : Math.max(startIndex, bands.length - 1);
 
-          const lastIncludedIdx = Math.max(startIndex, nextStartIndex - 1);
-          const lastBand = bands[lastIncludedIdx];
-          const nextBand = bands[nextStartIndex];
-          if (!lastBand || !nextBand) { return hVisible; }
+        const lastBand = bands[lastIncludedIdx]!;
+        const relBottom = lastBand.bottom - ySnap;
+        const nextTopRel = (nextStartIndex >= 0 ? bands[nextStartIndex]!.top - ySnap : Number.POSITIVE_INFINITY);
 
-          const relBottom = lastBand.bottom - ySnap;   // measured space
-          const nextTopRel = nextBand.top - ySnap;     // measured space
+        // Only mask if something from the next page would peek into this viewport
+        const peeks = nextTopRel < (hVisible - (PEEK_GUARD + 1));
+        let maskTopWithinMusicPx = hVisible;
 
-          // If nothing from the next page peeks into the viewport, don't mask at all.
-          // (Give page 1 a tiny lenience for header interactions.)
-          const firstPageExtra = (clampedPage === 0) ? 2 : 0;
-          if (nextTopRel >= hVisible - (PEEK_GUARD + 1 + firstPageExtra)) {
-            return hVisible;
-          }
+        if (peeks) {
+          // Cut right under the last included system so there is *no mid-page gulf*
+          const LOW_NUDGE = (window.devicePixelRatio || 1) >= 2 ? 2 : 1;
+          const low = Math.ceil(relBottom) + Math.max(0, MASK_BOTTOM_SAFETY_PX - LOW_NUDGE);
+          const high = Math.min(hVisible, Math.floor(nextTopRel) - PEEK_GUARD);
 
-          // Otherwise, hide just the peeking sliver.
-          const nudge = (window.devicePixelRatio || 1) >= 2 ? 3 : 2;
-          const low = Math.ceil(relBottom) + MASK_BOTTOM_SAFETY_PX - nudge;
-          const high = Math.floor(nextTopRel) - PEEK_GUARD;
-
-          // If bounds are inverted (rounding oddity), try one recompute; otherwise fail-safe to no-mask.
-          if (low > high) {
-            const fresh = computePageStarts(outer, bands, hVisible);
-            if (fresh.length) {
-              let nearest = 0, best = Number.POSITIVE_INFINITY;
-              for (let i = 0; i < fresh.length; i++) {
-                const s = fresh[i] ?? 0;
-                const d = Math.abs(s - startIndex);
-                if (d < best) { best = d; nearest = i; }
-              }
-              const same =
-                fresh.length === starts.length &&
-                fresh.every((v, i) => v === (starts[i] ?? -1)) &&
-                nearest === clampedPage;
-
-              if (!same) {
-                pageStartIdxsRef.current = fresh;
-                applyPage(nearest, depth + 1);
-                return hVisible; // will be recomputed by recursion
-              }
-            }
-            return hVisible; // fail safe: never over-cut
-          }
-
-          // Normal case: pick a value within [low, high]
-          return Math.min(hVisible, Math.max(0, Math.max(low, Math.min(high, hVisible))));
-        })();
+          // Prefer the low edge; if bounds are inverted by rounding, just clamp to low (bounded by hVisible)
+          maskTopWithinMusicPx = (low <= high) ? Math.max(low, 0) : Math.min(Math.max(low, 0), hVisible);
+        }
 
         // Breadcrumbs
         outer.dataset.viewerLastApply = String(Date.now());
@@ -1528,8 +1410,9 @@ export default function ScoreViewer({
 
         // --- bottom cutter (only when there is actual peek) ---
         let bottomCutter = outer.querySelector<HTMLDivElement>("[data-viewer-bottomcutter='1']");
-        const needsMask = nextStartIndex >= 0 && maskTopWithinMusicPx < hVisible;
-        const CUTTER_PX = needsMask ? ((window.devicePixelRatio || 1) >= 2 ? 2 : 1) : 0;
+        const needsMask = peeks && maskTopWithinMusicPx < hVisible;
+        // Keep the cutter minimal; its only job is to hide sub-pixel slivers at the very bottom edge
+        const CUTTER_PX = needsMask ? 1 : 0;
 
         if (!bottomCutter) {
           bottomCutter = document.createElement("div");
