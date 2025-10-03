@@ -634,6 +634,7 @@ function scanSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[] {
 // --- System packing helpers (insert after scanSystemsPx) ---
 
 // Read OSMD page <g> boxes (relative to our wrapper)
+/*
 function scanPageBoxes(
   outer: HTMLDivElement,
   svgRoot: SVGSVGElement
@@ -662,11 +663,12 @@ function scanPageBoxes(
     try { outer.dataset.viewerFunc = prev; } catch { }
   }
 }
-
+*/
 /**
  * Collapse OSMD inter-page gaps so systems from consecutive OSMD pages
  * sit with only `gapPx` between them in our coordinate space.
  */
+/*
 function flattenBandsByPages(
   bands: Band[],
   pages: Array<{ top: number; bottom: number; height: number }>,
@@ -710,7 +712,7 @@ function flattenBandsByPages(
 
   return out;
 }
-
+*/
 
 function interSystemPackGapPx(outer: HTMLDivElement): number {
   // Nominal gap between systems when *we* repack them
@@ -818,8 +820,13 @@ function computePageStarts(outer: HTMLDivElement, bands: Band[], viewportH: numb
     while (i < bands.length) {
       starts.push(i);
 
+      const MAX_SYS_PER_PAGE = 2; // hard ceiling: never show more than 2 systems per page
       let j = i;
       while (j + 1 < bands.length) {
+        // how many systems are already packed on this page?
+        const alreadyPacked = j - i + 1;
+        if (alreadyPacked >= MAX_SYS_PER_PAGE) { break; }
+
         const nextBottom = bands[j + 1]!.bottom;
         const trialSpan = nextBottom - bands[i]!.top; // measured, includes real inter-system gap
         if (trialSpan <= MAX_SPAN) {
@@ -1269,8 +1276,8 @@ export default function ScoreViewer({
           return;
         }
 
-        // Use measured geometry, not virtual flow, for the actual display translate
-        const ySnap = Math.ceil(startBand.top);
+        // Snap *at or below* the measured top to avoid shaving the first staff by a px.
+        const ySnap = Math.floor(startBand.top);
 
         svg.style.transform = `translateY(${-ySnap + Math.max(0, topGutterPx)}px)`;
         svg.style.transformOrigin = "top left";
@@ -1649,17 +1656,11 @@ export default function ScoreViewer({
         }
       }
 
-      let bands = perfBlock(
+      const bands = perfBlock(
         nextPerfUID(outer.dataset.viewerRun),
         () => withSvgAtUnitScale(outer, (svg) => scanSystemsPx(outer, svg)) ?? [],
         (ms) => { void logStep(`scanSystemsPx() runtime: ${ms}ms`, { outer }); }
       );
-
-      // NEW: collapse OSMD page gaps so adjacent systems from different OSMD pages
-      // don’t leave a giant void between them on our screen page.
-      const pageBoxes =
-        withSvgAtUnitScale(outer, (svg) => scanPageBoxes(outer, svg)) ?? [];
-      bands = flattenBandsByPages(bands, pageBoxes, interSystemPackGapPx(outer));
 
       rebuildFlowMap(outer, bands);
 
