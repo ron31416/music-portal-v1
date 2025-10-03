@@ -600,6 +600,23 @@ function scanSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[] {
       const SELECTORS = "g,path,rect,line,polyline,polygon,text";
       const graphics = Array.from(root.querySelectorAll<SVGGraphicsElement>(SELECTORS));
 
+      // Detect the top of the first real system on this page, if the DOM exposes system groups.
+      // We’ll drop any elements fully above that line (i.e., titles/credits).
+      const SYS_SEL = "g[id*='system' i], g[class*='system' i]";
+      let pageContentTop = Number.NEGATIVE_INFINITY;
+      try {
+        const sysRects = Array
+          .from(root.querySelectorAll<SVGGElement>(SYS_SEL))
+          .map(g => g.getBoundingClientRect())
+          .filter(r => Number.isFinite(r.top) && Number.isFinite(r.height) && r.height > 0);
+
+        if (sysRects.length) {
+          const minSysTop = Math.min(...sysRects.map(r => r.top));
+          const HEADER_GUARD_PX = 12; // allow hairpins/dynamics just above the staff
+          pageContentTop = Math.floor(minSysTop - hostTop) - HEADER_GUARD_PX;
+        }
+      } catch { }
+
       for (const el of graphics) {
         try {
           const r = el.getBoundingClientRect();
@@ -607,13 +624,14 @@ function scanSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[] {
           if (r.height < MIN_H) { continue; }
           if (r.width < MIN_W) { continue; }
 
-          boxes.push({
-            top: r.top - hostTop,
-            bottom: r.bottom - hostTop,
-            height: r.height,
-            width: r.width,
-          });
-        } catch { /* ignore */ }
+          const top = r.top - hostTop;
+          const bottom = r.bottom - hostTop;
+
+          // If we detected a system top, ignore pure title/credit elements above it
+          if (Number.isFinite(pageContentTop) && bottom < pageContentTop) { continue; }
+
+          boxes.push({ top, bottom, height: r.height, width: r.width });
+        } catch { }
       }
     }
 
@@ -788,8 +806,7 @@ function computePageStarts(outer: HTMLDivElement, bands: Band[], viewportH: numb
     const TOL = (window.devicePixelRatio || 1) >= 2 ? 2 : 1;
     const PAGE_H = Math.max(1, Math.floor(viewportH) - TOL);
 
-    const GAP = interSystemPackGapPx(outer);       // <- our *virtual* gap
-    const MAX_SYS_PER_PAGE = 2;                    // <- hard ceiling
+    const GAP = interSystemPackGapPx(outer);   // virtual inter-system gap we pack to
 
     const starts: number[] = [];
     let i = 0;
@@ -797,23 +814,23 @@ function computePageStarts(outer: HTMLDivElement, bands: Band[], viewportH: numb
     while (i < bands.length) {
       starts.push(i);
 
-      let used = bands[i]!.height;                 // height of first system on page
-      let count = 1;
+      // always include the first system on the page
+      let used = bands[i]!.height;
       let j = i;
 
-      // Try to add one more system using *packed* height (height + fixed gap)
-      while (j + 1 < bands.length && count < MAX_SYS_PER_PAGE) {
+      // keep adding systems as long as the packed height fits the page
+      while (j + 1 < bands.length) {
         const nextUsed = used + GAP + bands[j + 1]!.height;
         if (nextUsed <= PAGE_H) {
           used = nextUsed;
           j += 1;
-          count += 1;
         } else {
           break;
         }
       }
 
-      i = j + 1;                                   // always advance by at least one
+      // advance to the first system that didn't fit (or next page if none left)
+      i = j + 1;
     }
 
     void logStep(`starts(packed): ${starts.length} PAGE_H=${PAGE_H} gap=${GAP}`, { outer });
