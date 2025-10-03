@@ -693,6 +693,18 @@ function getPageRoots(svgRoot: SVGSVGElement): SVGGElement[] {
   return roots.length ? roots : [];
 }
 
+function assertHasSystemGroups(outer: HTMLDivElement, svgRoot: SVGSVGElement): void {
+  const systems = Array.from(
+    svgRoot.querySelectorAll<SVGGElement>("g[id*='system' i], g[class*='system' i]")
+  ).filter(g => g.ownerSVGElement === svgRoot);
+
+  if (systems.length === 0) {
+    outer.dataset.viewerFatal = "no-system-groups";
+    outer.dataset.viewerErr = "OSMD SVG missing per-system groups";
+    throw new Error("OSMD SVG missing per-system groups (no id/class contains 'system').");
+  }
+}
+
 /** Collapse big gaps *between* OSMD’s engraved pages to our nominal gap. */
 function flattenEngravedSeams(
   outer: HTMLDivElement,
@@ -763,7 +775,12 @@ function packSystemsWithinPages(
     const systems = Array.from(
       page.querySelectorAll<SVGGElement>("g[id*='system' i], g[class*='system' i]")
     );
-    if (systems.length === 0) { continue; }
+
+    if (systems.length === 0) {
+      outer.dataset.viewerFatal = "page-has-no-systems";
+      outer.dataset.viewerErr = "One engraved page in the OSMD SVG contains no <system> groups.";
+      throw new Error("OSMD per-page guard: page contains no <system> groups");
+    }
 
     const boxes = systems
       .map((g) => {
@@ -777,7 +794,12 @@ function packSystemsWithinPages(
       )
       .sort((a, b) => a.top - b.top);
 
-    if (boxes.length === 0) { continue; }
+    if (boxes.length === 0) {
+      // (Optional: if you also want to hard-fail when all system boxes collapse to 0 height)
+      outer.dataset.viewerFatal = "page-systems-unmeasurable";
+      outer.dataset.viewerErr = "System groups found but no measurable bounding boxes.";
+      throw new Error("OSMD per-page guard: system groups present but unmeasurable");
+    }
 
     let y = boxes[0]!.top; // keep the first system where it is
     for (let i = 0; i < boxes.length; i++) {
@@ -806,7 +828,7 @@ function computePageStarts(outer: HTMLDivElement, bands: Band[], viewportH: numb
     const TOL = (window.devicePixelRatio || 1) >= 2 ? 2 : 1;
     const PAGE_H = Math.max(1, Math.floor(viewportH) - TOL);
 
-    const GAP = interSystemPackGapPx(outer);   // virtual inter-system gap we pack to
+    const GAP = interSystemPackGapPx(outer);   // fixed *virtual* gap we pack with
 
     const starts: number[] = [];
     let i = 0;
@@ -814,11 +836,10 @@ function computePageStarts(outer: HTMLDivElement, bands: Band[], viewportH: numb
     while (i < bands.length) {
       starts.push(i);
 
-      // always include the first system on the page
-      let used = bands[i]!.height;
+      let used = bands[i]!.height; // height of first system on the page
       let j = i;
 
-      // keep adding systems as long as the packed height fits the page
+      // keep adding systems while (used + GAP + next.height) fits in PAGE_H
       while (j + 1 < bands.length) {
         const nextUsed = used + GAP + bands[j + 1]!.height;
         if (nextUsed <= PAGE_H) {
@@ -829,8 +850,7 @@ function computePageStarts(outer: HTMLDivElement, bands: Band[], viewportH: numb
         }
       }
 
-      // advance to the first system that didn't fit (or next page if none left)
-      i = j + 1;
+      i = j + 1; // advance at least one system per page
     }
 
     void logStep(`starts(packed): ${starts.length} PAGE_H=${PAGE_H} gap=${GAP}`, { outer });
@@ -1574,17 +1594,21 @@ export default function ScoreViewer({
       outer.dataset.viewerPhase = "scan";
       await logStep("phase starting", { outer });
 
-      // --- PACK systems inside pages, THEN flatten seams between pages ---
       const svgForPack = getSvg(outer);
-      if (svgForPack) {
-        // 1) Collapse big intra-page gaps (even when OSMD printed page had only 1 system)
-        packSystemsWithinPages(outer, svgForPack);
+      if (!svgForPack) {
+        outer.dataset.viewerFatal = "no-svg";
+        outer.dataset.viewerErr = "OSMD did not produce an <svg> element.";
+        throw new Error("No SVG produced by OSMD render");
+      }
+      assertHasSystemGroups(outer, svgForPack);
 
-        // 2) Then reduce the gap *between* engraved pages to our nominal gap
-        const preBands = withSvgAtUnitScale(outer, (svg) => scanSystemsPx(outer, svg)) ?? [];
-        if (preBands.length) {
-          flattenEngravedSeams(outer, svgForPack, preBands);
-        }
+      // 1) pack within pages
+      packSystemsWithinPages(outer, svgForPack);
+
+      // 2) flatten seams between pages
+      const preBands = withSvgAtUnitScale(outer, (svg) => scanSystemsPx(outer, svg)) ?? [];
+      if (preBands.length) {
+        flattenEngravedSeams(outer, svgForPack, preBands);
       }
 
       const bands = perfBlock(
