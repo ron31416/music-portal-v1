@@ -558,29 +558,32 @@ function useVisibleViewportHeight() {
   return vpRef; // latest visible height in px
 }
 
-// Heuristics to improve first-page layout and prevent system splitting on phones
+function dprRoundingJitterPx(): number {
+  const dpr = (typeof window !== "undefined" ? window.devicePixelRatio : 1) || 1;
+  if (dpr >= 3) { return 3; }  // very high DPR: allow more wobble
+  if (dpr >= 2) { return 2; }  // common Hi-DPR screens
+  return 1;                    // low/normal DPR
+}
+
 function dynamicBandGapPx(outer: HTMLDivElement): number {
-  const h = outer.clientHeight || 0;
-  const dpr = typeof window !== 'undefined' && window.devicePixelRatio ? window.devicePixelRatio : 1;
-  let gap = 18;            // base
-  if (h <= 750) {
-    gap += 6;
-  }  // small visible height => merge more
-  if (dpr >= 2) {
-    gap += 4;
-  }  // high-DPR rounding safety
-  return gap;
+  // The gap we *pack to* when we reposition systems.
+  const packGap = interSystemPackGapPx(outer);
+
+  // Rounding / subpixel safety so merge-threshold stays clearly below packGap.
+  const jitter = dprRoundingJitterPx();
+
+  // Enforce a strict separation of at least 1px below packGap after jitter.
+  const strictness = 1;
+
+  // Never let the merge threshold reach the packing gap; also keep a sane floor.
+  return Math.max(6, packGap - jitter - strictness);
 }
 
 function scanSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[] {
   const prevFuncTag = outer.dataset.viewerFunc ?? "";
   outer.dataset.viewerFunc = "scanSystemsPx";
   try {
-    const pageRoots = Array.from(
-      svgRoot.querySelectorAll<SVGGElement>(
-        'g[id^="osmdCanvasPage"], g[id^="Page"], g[class*="Page"], g[class*="page"]'
-      )
-    );
+    const pageRoots = getPageRoots(svgRoot);
     const roots: Array<SVGGElement | SVGSVGElement> = pageRoots.length ? pageRoots : [svgRoot];
 
     const hostTop = outer.getBoundingClientRect().top;
@@ -588,16 +591,14 @@ function scanSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[] {
     interface Box { top: number; bottom: number; height: number; width: number }
     const boxes: Box[] = [];
 
-    // ↓ include very thin items so dynamics/pedals/slurs count
+    // Include very thin graphics so text/hairlines extend each band.
     const MIN_H = 1;
     const MIN_W = 6;
 
     for (const root of roots) {
-      // Include groups AND primitive graphics so text/hairlines extend the band
+      // Groups + primitive graphics → dynamics/pedals/slurs count
       const SELECTORS = "g,path,rect,line,polyline,polygon,text";
-      const graphics = Array.from(
-        root.querySelectorAll<SVGGraphicsElement>(SELECTORS)
-      );
+      const graphics = Array.from(root.querySelectorAll<SVGGraphicsElement>(SELECTORS));
 
       for (const el of graphics) {
         try {
@@ -618,7 +619,10 @@ function scanSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[] {
 
     boxes.sort((a, b) => a.top - b.top);
 
+    // IMPORTANT: merge threshold is derived from the *packing* gap,
+    // minus DPR jitter and a 1px strictness margin (done inside dynamicBandGapPx).
     const GAP = dynamicBandGapPx(outer);
+
     const bands: Band[] = [];
     for (const b of boxes) {
       const last = bands.length ? bands[bands.length - 1] : undefined;
@@ -650,38 +654,28 @@ function scanSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[] {
 function interSystemPackGapPx(outer: HTMLDivElement): number {
   const h = outer.clientHeight || 0;
   const dpr = (typeof window !== "undefined" ? window.devicePixelRatio : 1) || 1;
-  let gap = 10;                 // tighter base so the 2nd system sits closer
+  let gap = 10;                 // nominal inter-system gap (keeps 2nd line close)
   if (h <= 750) { gap += 1; }   // small visible height → a touch more
-  if (dpr >= 2) { gap += 1; }   // Hi-DPR hairline safety
+  if (dpr >= 2) { gap += 1; }   // Hi-DPR safety
   return gap;
 }
 
 function getPageRoots(svgRoot: SVGSVGElement): SVGGElement[] {
-  // OSMD uses a few different ids/classes across versions.
   const selector = [
-    'g[id^="osmdSvgPage"]',       // most recent OSMD
-    'g[id^="osmdCanvasPage"]',    // older OSMD
+    'g[id^="osmdSvgPage"]',
+    'g[id^="osmdCanvasPage"]',
     'g[id^="Page"]',
     'g[class*="osmdSvgPage"]',
     'g[class*="osmdCanvasPage"]',
     'g[class*="Page"]',
     'g[class*="page"]',
   ].join(',');
-
-  // Prefer direct children of the root SVG — those are the page <g> groups.
   const all = Array.from(svgRoot.querySelectorAll<SVGGElement>(selector));
   const roots = all.filter(g => g.ownerSVGElement === svgRoot);
-
   return roots.length ? roots : [];
 }
 
-/**
- * Collapse OSMD's engraved page seams so that the *first system* on page N+1
- * sits a nominal gap below the *last system* on page N. We do that by
- * translating each page <g> by an accumulated delta in CSS pixels.
- *
- * Call this *after* osmd.render() and *before* the final scan for bands.
- */
+/** Collapse big gaps *between* OSMD’s engraved pages to our nominal gap. */
 function flattenEngravedSeams(
   outer: HTMLDivElement,
   svgRoot: SVGSVGElement,
@@ -692,20 +686,17 @@ function flattenEngravedSeams(
 
   const hostTop = outer.getBoundingClientRect().top;
 
-  // Measure current page rectangles BEFORE we add our own transforms.
   const pageRects = pages.map(p => {
     const r = p.getBoundingClientRect();
     return { top: r.top - hostTop, bottom: r.bottom - hostTop };
   });
 
-  // Map each band to the page whose rect contains its center.
   const bandToPage: number[] = preBands.map((b) => {
     const mid = (b.top + b.bottom) / 2;
     const idx = pageRects.findIndex(pr => mid >= pr.top && mid < pr.bottom);
     return idx >= 0 ? idx : (pageRects.length - 1);
   });
 
-  // For each page, track the first and last band.
   type Ends = { firstTop: number; lastBottom: number };
   const ends: Array<Ends | null> = pages.map(() => null);
   preBands.forEach((b, i) => {
@@ -722,7 +713,6 @@ function flattenEngravedSeams(
   const desiredGap = interSystemPackGapPx(outer);
   let accDelta = 0;
 
-  // Use the SVG *attribute* transform so we compose with OSMD's own transforms reliably.
   const appendTranslateAttr = (g: SVGGElement, dy: number) => {
     const prevAttr = g.getAttribute("transform") || "";
     g.setAttribute("transform", `${prevAttr} translate(0 ${Math.round(dy)})`);
@@ -732,92 +722,54 @@ function flattenEngravedSeams(
     const prev = ends[i - 1];
     const curr = ends[i];
     if (!prev || !curr) { continue; }
-
     const originalGap = curr.firstTop - prev.lastBottom;
-
-    // If OSMD already packed tightly, don't touch it.
-    if (originalGap <= desiredGap + 1) { continue; }
-
-    // Move page i UP so that the gap equals our desired inter-system gap.
-    // (negative translateY moves up in SVG/CSS coordinates)
-    const deltaY = desiredGap - originalGap; // e.g. 12 - 338 = -326 (move up)
+    if (originalGap <= desiredGap + 1) { continue; } // already tight
+    const deltaY = desiredGap - originalGap; // negative moves up
     accDelta += deltaY;
-
     appendTranslateAttr(pages[i]!, accDelta);
   }
 }
 
-/**
- * Repack systems *inside each engraved OSMD page* so consecutive systems
- * are separated only by our nominal gap. This removes the huge leftover
- * whitespace when an OSMD "printed page" only had 1 system.
- *
- * Safe: it only touches <g> groups whose id/class contains "system".
- * If none are found, it does nothing.
- */
+/** Repack systems *inside* each engraved page to the nominal gap. */
 function packSystemsWithinPages(
   outer: HTMLDivElement,
   svgRoot: SVGSVGElement
 ): void {
   const GAP = interSystemPackGapPx(outer);
-
-  // One page at a time
   const pages = getPageRoots(svgRoot);
-  const pageGroups: Array<SVGGElement | SVGSVGElement> =
-    pages.length ? pages : [svgRoot];
+  const pageGroups: Array<SVGGElement | SVGSVGElement> = pages.length ? pages : [svgRoot];
 
   const hostTop = outer.getBoundingClientRect().top;
 
   for (const page of pageGroups) {
-    // Try to find system containers the way OSMD names them
     const systems = Array.from(
-      page.querySelectorAll<SVGGElement>(
-        "g[id*='system' i], g[class*='system' i]"
-      )
+      page.querySelectorAll<SVGGElement>("g[id*='system' i], g[class*='system' i]")
     );
+    if (systems.length === 0) { continue; }
 
-    if (systems.length === 0) {
-      continue; // nothing recognizable to repack on this page
-    }
-
-    // Measure each system bbox (in host coords), discard zero-height ones
     const boxes = systems
       .map((g) => {
         try {
           const r = g.getBoundingClientRect();
-          return {
-            g,
-            top: r.top - hostTop,
-            bottom: r.bottom - hostTop,
-            height: r.height,
-          };
-        } catch {
-          return null;
-        }
+          return { g, top: r.top - hostTop, bottom: r.bottom - hostTop, height: r.height };
+        } catch { return null; }
       })
       .filter((v): v is { g: SVGGElement; top: number; bottom: number; height: number } =>
         !!v && Number.isFinite(v.top) && v.height > 0
       )
       .sort((a, b) => a.top - b.top);
 
-    if (boxes.length === 0) {
-      continue;
-    }
+    if (boxes.length === 0) { continue; }
 
-    // Desired stacked positions (top of first system stays where it is)
-    let y = boxes[0]!.top;
+    let y = boxes[0]!.top; // keep the first system where it is
     for (let i = 0; i < boxes.length; i++) {
       const b = boxes[i]!;
       const desiredTop = Math.round(y);
       const delta = Math.round(desiredTop - b.top);
-
       if (Math.abs(delta) >= 1) {
-        // Append a translateY without nuking any existing transform
         const prev = b.g.style.transform || "";
         b.g.style.transform = `${prev} translateY(${delta}px)`;
       }
-
-      // next desired top = this bottom (after move) + nominal gap
       y = desiredTop + b.height + (i < boxes.length - 1 ? GAP : 0);
     }
   }
