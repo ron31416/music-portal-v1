@@ -164,8 +164,8 @@ export async function logStep(
   const { paint = false, outer = null } = opts;
 
   // Fixed DevTools console column widths (tweak as needed) 
-  const FN_COL = 20;
-  const PHASE_COL = 10;
+  const FN_COL = 18;
+  const PHASE_COL = 8;
 
   // Local helper: truncate to the column width and pad to that width.
   const pad = (s: string, w: number): string =>
@@ -815,7 +815,7 @@ function computePageStarts(
   viewportH: number
 ): number[] {
   const prevFuncTag = outer.dataset.viewerFunc ?? "";
-  outer.dataset.viewerFunc = "computePageStarts:strict";
+  outer.dataset.viewerFunc = "computePageStarts";
   try {
     if (bands.length === 0 || viewportH <= 0) {
       void logStep("starts: 1 (fallback [0])", { outer });
@@ -851,7 +851,7 @@ function computePageStarts(
       i = j + 1;
     }
 
-    void logStep(`starts(strict): ${starts.length} PAGE_H=${PAGE_H}`, { outer });
+    void logStep(`starts: ${starts.length} PAGE_H=${PAGE_H}`, { outer });
     return starts.length ? starts : [0];
   } finally {
     try { outer.dataset.viewerFunc = prevFuncTag; } catch { /* no-op */ }
@@ -1093,7 +1093,7 @@ export default function ScoreViewer({
         // Let spinner/host paint before the heavy render
         await waitForPaint(300);
 
-        await logStep(`layoutW: ${layoutW} hostW: ${hostW} zf: ${zf.toFixed(3)} osmd.Zoom: ${osmd.Zoom ?? "n/a"}`, { outer });
+        await logStep(`layoutW: ${layoutW} hostW: ${hostW} zf: ${zf.toFixed(3)}}`, { outer });
 
         // Timed core render (isolates synchronous OSMD work)
         perfBlock(
