@@ -744,111 +744,143 @@ function flattenEngravedSeams(
   outer.dataset.viewerFunc = "flattenEngravedSeams";
 
   try {
-    const pages = getPageRoots(svgRoot);
+    const pageRoots: Array<SVGSVGElement | SVGGElement> = getPageRoots(svgRoot);
 
-    // Diagnostics
     if (DEBUG_PAGINATION_DIAG) {
-      void logStep(`pages: ${pages.length}`, { outer });
-
-      if (pages.length === 0) {
+      void logStep(`pageRoots: ${pageRoots.length}`, { outer });
+      if (pageRoots.length === 0) {
         const peekNodes = Array.from(
-          svgRoot.querySelectorAll<SVGGraphicsElement>('[id*="page" i], [class*="page" i]')
+          svgRoot.querySelectorAll<SVGElement>('[id*="page" i], [class*="page" i]')
         ).slice(0, 8);
-
-        const fmt = (n: SVGGraphicsElement) => {
-          const id = n.id || "(no-id)";
-          // For SVG, className is SVGAnimatedString
-          const cls = n.className && typeof n.className.baseVal === "string"
-            ? n.className.baseVal
-            : "";
+        const peek = peekNodes.map((n) => {
+          const id = n.getAttribute("id") || "(no-id)";
+          const cls = n.getAttribute("class") || "";
           return `${n.tagName.toLowerCase()}#${id}.${cls}`;
-        };
-
-        void logStep(`pages: 0 peek: ${peekNodes.map(fmt).join(" | ")}`, { outer });
+        });
+        if (peek.length > 0) {
+          void logStep(`pageRoots=0 peek: ${peek.join(" | ")}`, { outer });
+        }
       }
     }
 
-    // Nothing to do if only one page or no bands
-    if (pages.length <= 1 || preBands.length === 0) {
+    if (pageRoots.length <= 1) {
+      if (DEBUG_PAGINATION_DIAG) {
+        void logStep(
+          `flatten: skipped — pageRoots<=1 (${pageRoots.length}) preBands=${preBands.length}`,
+          { outer }
+        );
+      }
+      return;
+    }
+
+    if (preBands.length === 0) {
+      if (DEBUG_PAGINATION_DIAG) {
+        void logStep("flatten: skipped — preBands=0", { outer });
+      }
       return;
     }
 
     const hostTop = outer.getBoundingClientRect().top;
 
-    // Clear previous shifts before measuring fresh
-    for (const el of pages) {
-      if (el instanceof SVGGElement) {
+    // Clear transforms before measuring
+    for (let i = 0; i < pageRoots.length; i++) {
+      const el = pageRoots[i];
+      if (el !== undefined) {
         el.removeAttribute("transform");
-      } else {
-        (el as SVGSVGElement).style.transform = "";
       }
     }
 
-    // Measure each page block relative to the viewer
-    const pageRects = pages.map((p) => {
+    // Page rects relative to host
+    const pageRects = pageRoots.map((p) => {
       const r = p.getBoundingClientRect();
       return { top: r.top - hostTop, bottom: r.bottom - hostTop };
     });
 
-    // Assign each band to a page by midpoint
-    const bandToPage: number[] = preBands.map((b) => {
-      const mid = (b.top + b.bottom) / 2;
-      const idx = pageRects.findIndex((pr) => mid >= pr.top && mid < pr.bottom);
-      return idx >= 0 ? idx : (pageRects.length - 1);
-    });
-
-    // Track the first/last band verticals per page
-    type Ends = { firstTop: number; lastBottom: number };
-    const ends: Array<Ends | null> = pages.map(() => null);
-
-    preBands.forEach((b, i) => {
-      const p = bandToPage[i]!;
-      const e = ends[p];
-      if (!e) {
-        ends[p] = { firstTop: b.top, lastBottom: b.bottom };
-      } else {
-        e.firstTop = Math.min(e.firstTop, b.top);
-        e.lastBottom = Math.max(e.lastBottom, b.bottom);
+    // Map each band midpoint to a page index
+    const bandToPage: number[] = new Array(preBands.length);
+    for (let i = 0; i < preBands.length; i++) {
+      const b = preBands[i];
+      if (b === undefined) {
+        bandToPage[i] = 0;
+        continue;
       }
-    });
+      const mid = (b.top + b.bottom) / 2;
+      let idx = -1;
+      for (let pi = 0; pi < pageRects.length; pi++) {
+        const pr = pageRects[pi];
+        if (pr !== undefined) {
+          if (mid >= pr.top && mid < pr.bottom) {
+            idx = pi;
+            break;
+          }
+        }
+      }
+      if (idx < 0) {
+        idx = pageRects.length - 1;
+      }
+      bandToPage[i] = idx;
+    }
+
+    type Ends = { firstTop: number; lastBottom: number };
+    const ends: Array<Ends | null> = Array(pageRoots.length).fill(null);
+
+    // Aggregate first/last band extents per page
+    for (let i = 0; i < preBands.length; i++) {
+      const b = preBands[i];
+      if (b === undefined) {
+        continue;
+      }
+      const idx = bandToPage[i];
+      if (idx === undefined || idx < 0 || idx >= ends.length) {
+        continue;
+      }
+      const existing = ends[idx] ?? null;
+      if (existing === null) {
+        ends[idx] = { firstTop: b.top, lastBottom: b.bottom };
+      } else {
+        if (b.top < existing.firstTop) {
+          existing.firstTop = b.top;
+        }
+        if (b.bottom > existing.lastBottom) {
+          existing.lastBottom = b.bottom;
+        }
+      }
+    }
 
     const desiredGap = interSystemPackGapPx(outer);
     let accDelta = 0;
 
-    // Apply vertical shift per page (SVG <g> via attribute; <svg> via CSS)
-    const shiftPage = (el: SVGGElement | SVGSVGElement, dy: number) => {
-      const rounded = Math.round(dy);
-      if (el instanceof SVGGElement) {
-        const prev = el.getAttribute("transform") || "";
-        el.setAttribute("transform", `${prev} translate(0 ${rounded})`);
-      } else {
-        const svg = el as SVGSVGElement;
-        const prev = svg.style.transform || "";
-        svg.style.transform = `${prev} translateY(${rounded}px)`;
-      }
+    const appendTranslateAttr = (el: SVGSVGElement | SVGGElement, dy: number): void => {
+      const prevAttr = el.getAttribute("transform") || "";
+      const sep = prevAttr.length > 0 ? " " : "";
+      el.setAttribute("transform", `${prevAttr}${sep}translate(0 ${Math.round(dy)})`);
     };
 
-    // Close excessive inter-page gaps by pulling later pages upward
-    for (let i = 1; i < pages.length; i++) {
-      const prev = ends[i - 1];
-      const curr = ends[i];
-      if (!prev || !curr) {
+    // Nudge each subsequent page to reduce oversized seams
+    for (let i = 1; i < pageRoots.length; i++) {
+      const prevEnds = ends[i - 1] ?? null;
+      const currEnds = ends[i] ?? null;
+      if (prevEnds === null || currEnds === null) {
         continue;
       }
 
-      const originalGap = curr.firstTop - prev.lastBottom;
-      if (originalGap <= desiredGap + 1) {
+      const originalGap = currEnds.firstTop - prevEnds.lastBottom;
+      if (originalGap <= (desiredGap + 1)) {
         continue;
       }
 
-      const deltaY = desiredGap - originalGap; // negative => move up
+      const deltaY = desiredGap - originalGap; // negative moves up
       accDelta += deltaY;
-      shiftPage(pages[i]!, accDelta);
+
+      const el = pageRoots[i];
+      if (el !== undefined) {
+        appendTranslateAttr(el, accDelta);
+      }
     }
 
     if (DEBUG_PAGINATION_DIAG) {
       void logStep(
-        `pages: ${pages.length} desiredGap: ${desiredGap} totalShift: ${Math.round(accDelta)}`,
+        `flatten summary: pageRoots=${pageRoots.length} desiredGap=${desiredGap} totalShift=${Math.round(accDelta)}`,
         { outer }
       );
     }
