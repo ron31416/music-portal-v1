@@ -702,69 +702,78 @@ function flattenEngravedSeams(
   svgRoot: SVGSVGElement,
   preBands: Band[]
 ): void {
-  const pages = getPageRoots(svgRoot);
 
-  if (DEBUG_PAGINATION_DIAG) {
-    void logStep(
-      `pageRoots: ${pages.length}${pages.length <= 1 ? " — skipping flattenEngravedSeams" : ""}`,
-      { outer }
-    );
-  }
+  const prevFuncTag = outer.dataset.viewerFunc ?? "";
+  outer.dataset.viewerFunc = "flattenEngravedSeams";
 
-  if (pages.length <= 1 || preBands.length === 0) { return; }
+  try {
+    const pages = getPageRoots(svgRoot);
 
-  const hostTop = outer.getBoundingClientRect().top;
-
-  pages.forEach(p => p.removeAttribute("transform"));
-
-  const pageRects = pages.map(p => {
-    const r = p.getBoundingClientRect();
-    return { top: r.top - hostTop, bottom: r.bottom - hostTop };
-  });
-
-  const bandToPage: number[] = preBands.map((b) => {
-    const mid = (b.top + b.bottom) / 2;
-    const idx = pageRects.findIndex(pr => mid >= pr.top && mid < pr.bottom);
-    return idx >= 0 ? idx : (pageRects.length - 1);
-  });
-
-  type Ends = { firstTop: number; lastBottom: number };
-  const ends: Array<Ends | null> = pages.map(() => null);
-  preBands.forEach((b, i) => {
-    const p = bandToPage[i]!;
-    const e = ends[p];
-    if (!e) {
-      ends[p] = { firstTop: b.top, lastBottom: b.bottom };
-    } else {
-      e.firstTop = Math.min(e.firstTop, b.top);
-      e.lastBottom = Math.max(e.lastBottom, b.bottom);
+    // Log how many page roots we found (so we know if flattening is possible)
+    if (DEBUG_PAGINATION_DIAG) {
+      void logStep(
+        `pageRoots: ${pages.length}${pages.length <= 1 ? " — skipping flattenEngravedSeams" : ""}`,
+        { outer }
+      );
     }
-  });
+    if (pages.length <= 1 || preBands.length === 0) { return; }
 
-  const desiredGap = interSystemPackGapPx(outer);
-  let accDelta = 0;
+    const hostTop = outer.getBoundingClientRect().top;
 
-  const appendTranslateAttr = (g: SVGGElement, dy: number) => {
-    const prevAttr = g.getAttribute("transform") || "";
-    g.setAttribute("transform", `${prevAttr} translate(0 ${Math.round(dy)})`);
-  };
+    // Clear any previous translates so we measure fresh
+    pages.forEach(p => p.removeAttribute("transform"));
 
-  for (let i = 1; i < pages.length; i++) {
-    const prev = ends[i - 1];
-    const curr = ends[i];
-    if (!prev || !curr) { continue; }
-    const originalGap = curr.firstTop - prev.lastBottom;
-    if (originalGap <= desiredGap + 1) { continue; }
-    const deltaY = desiredGap - originalGap; // negative moves up
-    accDelta += deltaY;
-    appendTranslateAttr(pages[i]!, accDelta);
-  }
+    const pageRects = pages.map(p => {
+      const r = p.getBoundingClientRect();
+      return { top: r.top - hostTop, bottom: r.bottom - hostTop };
+    });
 
-  if (DEBUG_PAGINATION_DIAG) {
-    void logStep(
-      `pages: ${pages.length} desiredGap: ${desiredGap} totalShift: ${Math.round(accDelta)}`,
-      { outer }
-    );
+    const bandToPage: number[] = preBands.map((b) => {
+      const mid = (b.top + b.bottom) / 2;
+      const idx = pageRects.findIndex(pr => mid >= pr.top && mid < pr.bottom);
+      return idx >= 0 ? idx : (pageRects.length - 1);
+    });
+
+    type Ends = { firstTop: number; lastBottom: number };
+    const ends: Array<Ends | null> = pages.map(() => null);
+    preBands.forEach((b, i) => {
+      const p = bandToPage[i]!;
+      const e = ends[p];
+      if (!e) {
+        ends[p] = { firstTop: b.top, lastBottom: b.bottom };
+      } else {
+        e.firstTop = Math.min(e.firstTop, b.top);
+        e.lastBottom = Math.max(e.lastBottom, b.bottom);
+      }
+    });
+
+    const desiredGap = interSystemPackGapPx(outer);
+    let accDelta = 0;
+
+    const appendTranslateAttr = (g: SVGGElement, dy: number) => {
+      const prevAttr = g.getAttribute("transform") || "";
+      g.setAttribute("transform", `${prevAttr} translate(0 ${Math.round(dy)})`);
+    };
+
+    for (let i = 1; i < pages.length; i++) {
+      const prev = ends[i - 1];
+      const curr = ends[i];
+      if (!prev || !curr) { continue; }
+      const originalGap = curr.firstTop - prev.lastBottom;
+      if (originalGap <= desiredGap + 1) { continue; }
+      const deltaY = desiredGap - originalGap; // negative moves up
+      accDelta += deltaY;
+      appendTranslateAttr(pages[i]!, accDelta);
+    }
+
+    if (DEBUG_PAGINATION_DIAG) {
+      void logStep(
+        `pages: ${pages.length} desiredGap: ${desiredGap} totalShift: ${Math.round(accDelta)}`,
+        { outer }
+      );
+    }
+  } finally {
+    try { outer.dataset.viewerFunc = prevFuncTag; } catch { /* no-op */ }
   }
 }
 
@@ -1511,7 +1520,7 @@ export default function ScoreViewer({
         throw e;
       }
 
-      if (preBands.length && sysCount0 > 0) {
+      if (preBands.length) {
         flattenEngravedSeams(outer, svgForPack, preBands);
       }
 
