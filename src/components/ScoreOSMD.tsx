@@ -1611,20 +1611,15 @@ export default function ScoreViewer({
         throw new Error("No SVG produced by OSMD render");
       }
 
-      // soft-check — do NOT throw if system groups are missing
-      const sysCount0 = systemGroupCount(svgForPack);
-      if (sysCount0 > 0) {
-        const gap = interSystemPackGapPx(outer);
-        await logStep(`sysCount: ${sysCount0} — repacking systems with GAP=${gap}`, { outer });
-        packSystemsWithinPages(outer, svgForPack);
-      } else {
-        await logStep(`sysCount: 0 — skipping packSystemsWithinPages`, { outer });
-      }
-
-      // Only repack systems when groups actually exist
-      if (sysCount0 > 0) {
-        packSystemsWithinPages(outer, svgForPack);
-      }
+      // Always attempt to repack systems within each page.
+      // Even if the top-level SVG doesn't expose system groups, the packer no-ops per page.
+      const sysCountTopSvg = systemGroupCount(svgForPack);
+      const gap = interSystemPackGapPx(outer);
+      await logStep(
+        `sysCount(top-svg): ${sysCountTopSvg} — running packSystemsWithinPages (GAP=${gap})`,
+        { outer }
+      );
+      packSystemsWithinPages(outer, svgForPack);
 
       // First quick read to optionally flatten engraved page seams
       let preBands: Band[] = [];
