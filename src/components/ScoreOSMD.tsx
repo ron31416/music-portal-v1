@@ -675,19 +675,30 @@ function interSystemPackGapPx(outer: HTMLDivElement): number {
   return gap;
 }
 
-function getPageRoots(svgRoot: SVGSVGElement): SVGGElement[] {
+function getPageRoots(svgRoot: SVGSVGElement): Array<SVGGElement | SVGSVGElement> {
   const selector = [
-    'g[id^="osmdSvgPage"]',
-    'g[id^="osmdCanvasPage"]',
-    'g[id^="Page"]',
-    'g[class*="osmdSvgPage"]',
-    'g[class*="osmdCanvasPage"]',
-    'g[class*="Page"]',
-    'g[class*="page"]',
+    // Typical OSMD patterns (case-insensitive)
+    'g[id^="osmdSvgPage" i]',
+    'svg[id^="osmdSvgPage" i]',
+    'g[id^="osmdCanvasPage" i]',
+    'svg[id^="osmdCanvasPage" i]',
+    // Generic "page" fallbacks
+    'g[id^="page" i]',
+    'svg[id^="page" i]',
+    'g[class*="osmdSvgPage" i]',
+    'svg[class*="osmdSvgPage" i]',
+    'g[class*="osmdCanvasPage" i]',
+    'svg[class*="osmdCanvasPage" i]',
+    'g[class*="Page" i]',
+    'svg[class*="Page" i]',
+    'g[class*="page" i]',
+    'svg[class*="page" i]',
   ].join(',');
-  const all = Array.from(svgRoot.querySelectorAll<SVGGElement>(selector));
-  const roots = all.filter(g => g.ownerSVGElement === svgRoot);
-  return roots.length ? roots : [];
+
+  const all = Array.from(svgRoot.querySelectorAll<SVGGraphicsElement>(selector));
+  // Keep only elements that belong to the top-level svgRoot
+  const roots = all.filter(el => el.ownerSVGElement === svgRoot) as Array<SVGGElement | SVGSVGElement>;
+  return roots;
 }
 
 function systemGroupCount(svgRoot: SVGSVGElement): number {
