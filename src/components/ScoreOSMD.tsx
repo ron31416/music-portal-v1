@@ -788,15 +788,27 @@ function scanSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[] {
                   );
                 }
               } else {
-                // Attach tiny glyph to the upper system (normal merge into last)
+                // Attach tiny glyph to the UPPER system, but cap how much it can extend the band
                 const last2 = bands[bands.length - 1]!;
-                last2.top = Math.min(last2.top, b.top);
-                last2.bottom = Math.max(last2.bottom, b.bottom);
-                last2.height = last2.bottom - last2.top;
+                const currentBottom = last2.bottom;
+                const desiredBottom = b.bottom;
+
+                // Allow expansion only up to the amount that still preserves a seam:
+                // (gap without the tiny glyph) - THRESH
+                const maxAllowedExpansion = Math.max(0, gapWithoutSmall - THRESH);
+                const proposedExpansion = desiredBottom - currentBottom;
+
+                const appliedExpansion = Math.max(0, Math.min(proposedExpansion, maxAllowedExpansion));
+                if (appliedExpansion > 0) {
+                  last2.bottom = currentBottom + appliedExpansion;
+                  last2.height = last2.bottom - last2.top;
+                }
+
                 handled = true;
                 if (DEBUG_PAGINATION_DIAG) {
                   void logStep(
-                    `microBridge: tiny→UPPER keep-merge gapSans=${gapWithoutSmall} thresh=${THRESH}`,
+                    `microBridge: tiny→UPPER capped-merge expand=${Math.round(appliedExpansion)} ` +
+                    `gapSans=${gapWithoutSmall} thresh=${THRESH}`,
                     { outer }
                   );
                 }
