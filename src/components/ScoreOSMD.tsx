@@ -703,6 +703,14 @@ function flattenEngravedSeams(
   preBands: Band[]
 ): void {
   const pages = getPageRoots(svgRoot);
+
+  if (DEBUG_PAGINATION_DIAG) {
+    void logStep(
+      `pageRoots: ${pages.length}${pages.length <= 1 ? " — skipping flattenEngravedSeams" : ""}`,
+      { outer }
+    );
+  }
+
   if (pages.length <= 1 || preBands.length === 0) { return; }
 
   const hostTop = outer.getBoundingClientRect().top;
@@ -750,6 +758,13 @@ function flattenEngravedSeams(
     const deltaY = desiredGap - originalGap; // negative moves up
     accDelta += deltaY;
     appendTranslateAttr(pages[i]!, accDelta);
+  }
+
+  if (DEBUG_PAGINATION_DIAG) {
+    void logStep(
+      `pages: ${pages.length} desiredGap: ${desiredGap} totalShift: ${Math.round(accDelta)}`,
+      { outer }
+    );
   }
 }
 
