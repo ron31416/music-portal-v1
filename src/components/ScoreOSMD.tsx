@@ -153,7 +153,7 @@ async function waitForPaint(timeoutMs = 450): Promise<void> {
 
 // Flip this to disable all on-page logging in one place.
 const DEBUG_LOG = true;
-const DEBUG_PAGINATION_DIAG = true;
+const DEBUG_PAGINATION_DIAG = false;
 
 export async function logStep(
   message: string,
@@ -765,17 +765,14 @@ function flattenEngravedSeams(
 
     if (pageRoots.length <= 1) {
       if (DEBUG_PAGINATION_DIAG) {
-        void logStep(
-          `flatten: skipped — pageRoots<=1 (${pageRoots.length}) preBands=${preBands.length}`,
-          { outer }
-        );
+        void logStep(`skipped — pageRoots<=1 (${pageRoots.length}) preBands: ${preBands.length}`, { outer });
       }
       return;
     }
 
     if (preBands.length === 0) {
       if (DEBUG_PAGINATION_DIAG) {
-        void logStep("flatten: skipped — preBands=0", { outer });
+        void logStep("skipped — preBands=0", { outer });
       }
       return;
     }
@@ -880,16 +877,14 @@ function flattenEngravedSeams(
 
     if (DEBUG_PAGINATION_DIAG) {
       void logStep(
-        `flatten summary: pageRoots=${pageRoots.length} desiredGap=${desiredGap} totalShift=${Math.round(accDelta)}`,
+        `pageRoots: ${pageRoots.length} desiredGap: ${desiredGap} totalShift: ${Math.round(accDelta)}`,
         { outer }
       );
     }
   } finally {
     try {
       outer.dataset.viewerFunc = prevFuncTag;
-    } catch {
-      /* no-op */
-    }
+    } catch { }
   }
 }
 
@@ -2406,6 +2401,7 @@ export default function ScoreViewer({
 
 
   /** Paging helpers */
+
   // --- Stuck-page guard: ensure forward/back actually lands on the next/prev start ---
   const tryAdvance = useCallback(
     (dir: 1 | -1) => {
@@ -2416,7 +2412,21 @@ export default function ScoreViewer({
       if (!pages) { return; }
 
       const beforePage = pageIdxRef.current;
-      const targetPage = Math.max(0, Math.min(beforePage + dir, pages - 1));
+
+      // Wrap-around paging:
+      // - last page + forward → page 1
+      // - first page + backward → last page
+      let targetPage: number;
+      if (dir === 1 && beforePage === pages - 1) {
+        targetPage = 0;
+        void logStep("wrap: last→first");
+      } else if (dir === -1 && beforePage === 0) {
+        targetPage = pages - 1;
+        void logStep("wrap: first→last");
+      } else {
+        targetPage = Math.max(0, Math.min(beforePage + dir, pages - 1));
+      }
+
       if (targetPage === beforePage) { return; }
 
       // The start index we want to land on after any recompute
