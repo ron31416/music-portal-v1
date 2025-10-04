@@ -675,30 +675,57 @@ function interSystemPackGapPx(outer: HTMLDivElement): number {
   return gap;
 }
 
+// Find per-page root elements produced by OSMD, across its different layouts.
+// May return <g> (pages inside one SVG), <svg> (one per page), or <div> wrappers.
+// Always returns at least one element.
+// Returns page roots as <g> or <svg> only.
+// Signature stays compatible with callers that expect (SVGGElement | SVGSVGElement)[]
 function getPageRoots(svgRoot: SVGSVGElement): Array<SVGGElement | SVGSVGElement> {
-  const selector = [
-    // Typical OSMD patterns (case-insensitive)
-    'g[id^="osmdSvgPage" i]',
-    'svg[id^="osmdSvgPage" i]',
-    'g[id^="osmdCanvasPage" i]',
-    'svg[id^="osmdCanvasPage" i]',
-    // Generic "page" fallbacks
-    'g[id^="page" i]',
-    'svg[id^="page" i]',
-    'g[class*="osmdSvgPage" i]',
-    'svg[class*="osmdSvgPage" i]',
-    'g[class*="osmdCanvasPage" i]',
-    'svg[class*="osmdCanvasPage" i]',
-    'g[class*="Page" i]',
-    'svg[class*="Page" i]',
-    'g[class*="page" i]',
-    'svg[class*="page" i]',
-  ].join(',');
+  // Case 1: single <svg> with per-page <g> wrappers
+  const gPages = Array.from(
+    svgRoot.querySelectorAll<SVGGElement>(
+      'g[id^="osmdPage"], g[class*="osmd-page" i], g[id*="svgpage" i], g[id*="page" i]'
+    )
+  );
+  if (gPages.length > 0) { return gPages; }
 
-  const all = Array.from(svgRoot.querySelectorAll<SVGGraphicsElement>(selector));
-  // Keep only elements that belong to the top-level svgRoot
-  const roots = all.filter(el => el.ownerSVGElement === svgRoot) as Array<SVGGElement | SVGSVGElement>;
-  return roots;
+  const parent = svgRoot.parentElement;
+  const grand = parent?.parentElement ?? null;
+
+  // Helper: collect <svg>/<g> inside div.osmd-page wrappers under a scope
+  const collectFromDivPages = (scope: Element | null): Array<SVGGElement | SVGSVGElement> => {
+    if (!scope) { return []; }
+    const divs = Array.from(
+      scope.querySelectorAll<HTMLDivElement>(
+        ':scope > div.osmd-page, :scope > div[class*="osmd-page" i], :scope > div[class*="page" i]'
+      )
+    );
+    const pages: Array<SVGGElement | SVGSVGElement> = [];
+    for (const d of divs) {
+      const svg = d.querySelector<SVGSVGElement>('svg');
+      if (svg) { pages.push(svg); continue; }
+      const g = d.querySelector<SVGGElement>('g');
+      if (g) { pages.push(g); }
+    }
+    return pages;
+  };
+
+  // Case 2: div.osmd-page wrappers near the svg
+  const divPagesParent = collectFromDivPages(parent);
+  if (divPagesParent.length > 0) { return divPagesParent; }
+
+  const divPagesGrand = collectFromDivPages(grand);
+  if (divPagesGrand.length > 0) { return divPagesGrand; }
+
+  // Case 3: multiple sibling <svg> elements (each is a page)
+  const svgSiblingsParent = parent ? Array.from(parent.querySelectorAll<SVGSVGElement>(':scope > svg')) : [];
+  if (svgSiblingsParent.length > 1) { return svgSiblingsParent; }
+
+  const svgSiblingsGrand = grand ? Array.from(grand.querySelectorAll<SVGSVGElement>(':scope > svg')) : [];
+  if (svgSiblingsGrand.length > 1) { return svgSiblingsGrand; }
+
+  // Fallback: treat the single SVG as one page
+  return [svgRoot];
 }
 
 function systemGroupCount(svgRoot: SVGSVGElement): number {
@@ -713,40 +740,67 @@ function flattenEngravedSeams(
   svgRoot: SVGSVGElement,
   preBands: Band[]
 ): void {
-
   const prevFuncTag = outer.dataset.viewerFunc ?? "";
   outer.dataset.viewerFunc = "flattenEngravedSeams";
 
   try {
     const pages = getPageRoots(svgRoot);
 
-    // Log how many page roots we found (so we know if flattening is possible)
+    // Diagnostics
     if (DEBUG_PAGINATION_DIAG) {
-      void logStep(
-        `pageRoots: ${pages.length}${pages.length <= 1 ? " — skipping flattenEngravedSeams" : ""}`,
-        { outer }
-      );
+      void logStep(`pages: ${pages.length}`, { outer });
+
+      if (pages.length === 0) {
+        const peekNodes = Array.from(
+          svgRoot.querySelectorAll<SVGGraphicsElement>('[id*="page" i], [class*="page" i]')
+        ).slice(0, 8);
+
+        const fmt = (n: SVGGraphicsElement) => {
+          const id = n.id || "(no-id)";
+          // For SVG, className is SVGAnimatedString
+          const cls = n.className && typeof n.className.baseVal === "string"
+            ? n.className.baseVal
+            : "";
+          return `${n.tagName.toLowerCase()}#${id}.${cls}`;
+        };
+
+        void logStep(`pages: 0 peek: ${peekNodes.map(fmt).join(" | ")}`, { outer });
+      }
     }
-    if (pages.length <= 1 || preBands.length === 0) { return; }
+
+    // Nothing to do if only one page or no bands
+    if (pages.length <= 1 || preBands.length === 0) {
+      return;
+    }
 
     const hostTop = outer.getBoundingClientRect().top;
 
-    // Clear any previous translates so we measure fresh
-    pages.forEach(p => p.removeAttribute("transform"));
+    // Clear previous shifts before measuring fresh
+    for (const el of pages) {
+      if (el instanceof SVGGElement) {
+        el.removeAttribute("transform");
+      } else {
+        (el as SVGSVGElement).style.transform = "";
+      }
+    }
 
-    const pageRects = pages.map(p => {
+    // Measure each page block relative to the viewer
+    const pageRects = pages.map((p) => {
       const r = p.getBoundingClientRect();
       return { top: r.top - hostTop, bottom: r.bottom - hostTop };
     });
 
+    // Assign each band to a page by midpoint
     const bandToPage: number[] = preBands.map((b) => {
       const mid = (b.top + b.bottom) / 2;
-      const idx = pageRects.findIndex(pr => mid >= pr.top && mid < pr.bottom);
+      const idx = pageRects.findIndex((pr) => mid >= pr.top && mid < pr.bottom);
       return idx >= 0 ? idx : (pageRects.length - 1);
     });
 
+    // Track the first/last band verticals per page
     type Ends = { firstTop: number; lastBottom: number };
     const ends: Array<Ends | null> = pages.map(() => null);
+
     preBands.forEach((b, i) => {
       const p = bandToPage[i]!;
       const e = ends[p];
@@ -761,20 +815,35 @@ function flattenEngravedSeams(
     const desiredGap = interSystemPackGapPx(outer);
     let accDelta = 0;
 
-    const appendTranslateAttr = (g: SVGGElement, dy: number) => {
-      const prevAttr = g.getAttribute("transform") || "";
-      g.setAttribute("transform", `${prevAttr} translate(0 ${Math.round(dy)})`);
+    // Apply vertical shift per page (SVG <g> via attribute; <svg> via CSS)
+    const shiftPage = (el: SVGGElement | SVGSVGElement, dy: number) => {
+      const rounded = Math.round(dy);
+      if (el instanceof SVGGElement) {
+        const prev = el.getAttribute("transform") || "";
+        el.setAttribute("transform", `${prev} translate(0 ${rounded})`);
+      } else {
+        const svg = el as SVGSVGElement;
+        const prev = svg.style.transform || "";
+        svg.style.transform = `${prev} translateY(${rounded}px)`;
+      }
     };
 
+    // Close excessive inter-page gaps by pulling later pages upward
     for (let i = 1; i < pages.length; i++) {
       const prev = ends[i - 1];
       const curr = ends[i];
-      if (!prev || !curr) { continue; }
+      if (!prev || !curr) {
+        continue;
+      }
+
       const originalGap = curr.firstTop - prev.lastBottom;
-      if (originalGap <= desiredGap + 1) { continue; }
-      const deltaY = desiredGap - originalGap; // negative moves up
+      if (originalGap <= desiredGap + 1) {
+        continue;
+      }
+
+      const deltaY = desiredGap - originalGap; // negative => move up
       accDelta += deltaY;
-      appendTranslateAttr(pages[i]!, accDelta);
+      shiftPage(pages[i]!, accDelta);
     }
 
     if (DEBUG_PAGINATION_DIAG) {
@@ -784,7 +853,11 @@ function flattenEngravedSeams(
       );
     }
   } finally {
-    try { outer.dataset.viewerFunc = prevFuncTag; } catch { /* no-op */ }
+    try {
+      outer.dataset.viewerFunc = prevFuncTag;
+    } catch {
+      /* no-op */
+    }
   }
 }
 
