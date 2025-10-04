@@ -1533,36 +1533,45 @@ export default function ScoreViewer({
       );
 
       try {
-
-        // Summarize the page map (page -> band range)
-        {
-          const lastBand = bands.length - 1;
-          const parts: string[] = [];
-          for (let p = 0; p < starts.length; p++) {
-            const s = starts[p]!;
-            const e = ((p + 1 < starts.length ? starts[p + 1]! : lastBand + 1) - 1);
-            parts.push(`[p${p + 1} ${s}–${e}]`);
-          }
-          await logStep(`pages: ${starts.length} map: ${parts.join(" ")}`, { outer });
-        }
-
         await logStep(
-          `bands: ${bands.length} starts: [${starts.join(",")}] ` +
-          `visibleH: ${visiblePageHeight(outer)} paginationH: ${paginationHeight(outer)}`,
+          `bands: ${bands.length} visibleH: ${visiblePageHeight(outer)} paginationH: ${paginationHeight(outer)}`,
           { outer }
         );
 
         if (DEBUG_PAGINATION_DIAG) {
-          const rows = bands.map((b, i) =>
-            `#${i} top=${Math.round(b.top)} bottom=${Math.round(b.bottom)} h=${Math.round(b.height)}`
-          );
-
-          for (let k = 0; k < rows.length; k += 10) {
-            await logStep(`bandRows ${k}-${Math.min(k + 9, rows.length - 1)}: ${rows.slice(k, k + 10).join(" | ")}`, { outer });
+          // Compact page map (page -> band range)
+          {
+            const lastBand = bands.length - 1;
+            const parts: string[] = [];
+            for (let p = 0; p < starts.length; p++) {
+              const s = starts[p]!;
+              const e = ((p + 1 < starts.length ? starts[p + 1]! : lastBand + 1) - 1);
+              parts.push(`[p${p + 1} ${s}–${e}]`);
+            }
+            await logStep(`pages: ${starts.length} map: ${parts.join(" ")}`, { outer });
           }
 
+          // Verbose per-band rows (kept under the same flag)
+          {
+            const rows = bands.map((b, i) =>
+              `#${i} top=${Math.round(b.top)} bottom=${Math.round(b.bottom)} h=${Math.round(b.height)}`
+            );
+            for (let k = 0; k < rows.length; k += 10) {
+              await logStep(
+                `bandRows ${k}-${Math.min(k + 9, rows.length - 1)}: ${rows.slice(k, k + 10).join(" | ")}`,
+                { outer }
+              );
+            }
+          }
+
+          // Elements-pane breadcrumbs (keep under the flag per your preference)
           outer.dataset.viewerBandsDump = JSON.stringify(
-            bands.map((b, i) => ({ i, top: Math.round(b.top), bottom: Math.round(b.bottom), height: Math.round(b.height) }))
+            bands.map((b, i) => ({
+              i,
+              top: Math.round(b.top),
+              bottom: Math.round(b.bottom),
+              height: Math.round(b.height),
+            }))
           );
           outer.dataset.viewerStartsDump = JSON.stringify(starts);
         }
@@ -1658,7 +1667,7 @@ export default function ScoreViewer({
 
       const bands = systemBandsRef.current;
       if (bands.length === 0) {
-        void logStep("bands: 0 - exit", { outer });
+        void logStep("repag: bands=0 — exit", { outer });
         return;
       }
 
@@ -1666,25 +1675,29 @@ export default function ScoreViewer({
       rebuildFlowMap(outer, bands);
 
       const visH = visiblePageHeight(outer);
+
+      // Always-on, high-signal line
+      void logStep(`repag: bands=${bands.length} visibleH=${visH}`, { outer });
+
       const starts = perfBlock(
         nextPerfUID(outer.dataset.viewerRun),
         () => computePageStarts(outer, bands, visH),
-        (ms) => { void logStep(`computePageStarts runtime: ${ms}ms visibleH: ${visH}`, { outer }); }
+        (ms) => { void logStep(`computePageStarts runtime: ${ms}ms visibleH=${visH}`, { outer }); }
       );
 
       pageStartIdxsRef.current = starts;
       outer.dataset.viewerPages = String(starts.length);
 
-      // Summarize the page map (page -> band range)
-      {
-        const lastBand = bands.length - 1; // bands is in scope here
+      // Optional diagnostics: compact page map
+      if (DEBUG_PAGINATION_DIAG) {
+        const lastBand = bands.length - 1;
         const parts: string[] = [];
         for (let p = 0; p < starts.length; p++) {
           const s = starts[p]!;
           const e = ((p + 1 < starts.length ? starts[p + 1]! : lastBand + 1) - 1);
           parts.push(`[p${p + 1} ${s}–${e}]`);
         }
-        void logStep(`pages: ${starts.length} map: ${parts.join(" ")}`, { outer });
+        void logStep(`repag map: pages=${starts.length} ${parts.join(" ")}`, { outer });
       }
 
       // Always reset to page 1 after repagination
@@ -1693,6 +1706,17 @@ export default function ScoreViewer({
         () => { applyPage(0); },
         (ms) => { void logStep(`applyPage runtime: ${ms}ms`, { outer }); }
       );
+
+    } catch (e) {
+      // Visible breadcrumb + best-effort fallback so the UI doesn't look stuck
+      const msg = (e as Error)?.message ?? String(e);
+      outer.dataset.viewerErr = msg.slice(0, 180);
+      void logStep(`repag:error ${msg}`, { outer });
+
+      if (!pageStartIdxsRef.current?.length) {
+        pageStartIdxsRef.current = [0];
+      }
+      try { applyPage(0); } catch { /* swallow */ }
 
     } finally {
       // Drain any queued work that accumulated while we were repaginating
@@ -1710,7 +1734,6 @@ export default function ScoreViewer({
       handledHRef.current = outer.clientHeight || handledHRef.current;
 
       repaginationRunningRef.current = false;
-
       outer.dataset.viewerFunc = prevFuncTag;
     }
   }, [applyPage, visiblePageHeight, nextPerfUID]);
