@@ -788,7 +788,13 @@ function scanSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[] {
                   );
                 }
               } else {
-                // Attach tiny glyph to the UPPER system, but cap how much it can extend the band
+                // Attach tiny glyph to the UPPER system, with a cap on extension.
+                // If the tiny glyph causes NO extension but the seam is clearly real (gapSans big),
+                // we FORCE a split to keep systems separate.
+
+                // Tunables
+                const SPLIT_GAP_MIN = 24; // require at least this much "real" gap (ignoring the tiny glyph)
+
                 const last2 = bands[bands.length - 1]!;
                 const currentBottom = last2.bottom;
                 const desiredBottom = b.bottom;
@@ -797,20 +803,53 @@ function scanSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[] {
                 // (gap without the tiny glyph) - THRESH
                 const maxAllowedExpansion = Math.max(0, gapWithoutSmall - THRESH);
                 const proposedExpansion = desiredBottom - currentBottom;
-
                 const appliedExpansion = Math.max(0, Math.min(proposedExpansion, maxAllowedExpansion));
-                if (appliedExpansion > 0) {
-                  last2.bottom = currentBottom + appliedExpansion;
-                  last2.height = last2.bottom - last2.top;
-                }
 
-                handled = true;
-                if (DEBUG_PAGINATION_DIAG) {
-                  void logStep(
-                    `microBridge: tiny→UPPER capped-merge expand=${Math.round(appliedExpansion)} ` +
-                    `gapSans=${gapWithoutSmall} thresh=${THRESH}`,
-                    { outer }
-                  );
+                // === Force-split condition ===
+                // If the tiny glyph provides no extension AND we still have a comfortable seam
+                // when ignoring it, we split here instead of sticking it to the upper band.
+                if (appliedExpansion === 0 && gapWithoutSmall >= SPLIT_GAP_MIN) {
+                  bands.push({
+                    top: b.top,
+                    bottom: b.bottom,
+                    height: b.bottom - b.top,
+                  });
+                  handled = true;
+
+                  if (DEBUG_PAGINATION_DIAG) {
+                    // Add some decision breadcrumbs
+                    const noteCount = noteCenters !== null ? noteCenters.length : 0;
+                    const candCenter = {
+                      x: b.left + b.width / 2,
+                      y: b.top + b.height / 2,
+                    };
+                    const sendToLower = assignToLowerByNearestNote(candCenter, last2.bottom, noteCenters);
+
+                    void logStep(
+                      `microBridge: FORCE-SPLIT (upper-capped, no expansion) ` +
+                      `gapSans=${gapWithoutSmall}>=${SPLIT_GAP_MIN} notes=${noteCount} ` +
+                      `sendToLower=${sendToLower} candY=${Math.round(candCenter.y)} lastBottom=${Math.round(last2.bottom)}`,
+                      { outer }
+                    );
+                  }
+
+                  // We’re done handling this tiny glyph as the start of the LOWER band.
+                  // Do NOT fall through to the capped-merge path.
+                } else {
+                  // Normal capped-merge to UPPER
+                  if (appliedExpansion > 0) {
+                    last2.bottom = currentBottom + appliedExpansion;
+                    last2.height = last2.bottom - last2.top;
+                  }
+
+                  handled = true;
+                  if (DEBUG_PAGINATION_DIAG) {
+                    void logStep(
+                      `microBridge: tiny→UPPER capped-merge expand=${Math.round(appliedExpansion)} ` +
+                      `gapSans=${gapWithoutSmall} thresh=${THRESH}`,
+                      { outer }
+                    );
+                  }
                 }
               }
             }
