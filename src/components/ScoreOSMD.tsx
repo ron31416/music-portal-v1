@@ -1089,7 +1089,7 @@ export default function ScoreViewer({
         // Let spinner/host paint before the heavy render
         await waitForPaint(300);
 
-        await logStep(`layoutW: ${layoutW} hostW: ${hostW} zf: ${zf.toFixed(3)}}`, { outer });
+        await logStep(`layoutW: ${layoutW} hostW: ${hostW} zf: ${zf.toFixed(3)}`, { outer });
 
         // Timed core render (isolates synchronous OSMD work)
         perfBlock(
@@ -1487,6 +1487,12 @@ export default function ScoreViewer({
         nextPerfUID(outer.dataset.viewerRun),
         () => withSvgAtUnitScale(outer, (svg) => scanSystemsPx(outer, svg)) ?? [],
         (ms) => { void logStep(`scanSystemsPx() runtime: ${ms}ms`, { outer }); }
+      );
+      const packGap = interSystemPackGapPx(outer);
+      const mergeThresh = dynamicBandGapPx(outer);
+      await logStep(
+        `scan summary: bands=${bands.length} packGap=${packGap} mergeThresh=${mergeThresh}`,
+        { outer }
       );
 
       rebuildFlowMap(outer, bands);
