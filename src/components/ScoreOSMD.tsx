@@ -1321,6 +1321,17 @@ export default function ScoreViewer({
 
         let bottomCutter = outer.querySelector<HTMLDivElement>("[data-viewer-bottomcutter='1']");
         const needsMask = maskTopWithinMusicPx < hVisible;
+
+        if (DEBUG_PAGINATION_DIAG) {
+          const lastForLog = nextStartIndex >= 0 ? (nextStartIndex - 1) : (bands.length - 1);
+          void logStep(
+            `pages: ${p + 1}/${pages} startIndex: ${startIndex} lastForLog: ${lastForLog} ` +
+            `nextStartIndex: ${nextStartIndex >= 0 ? `${nextStartIndex}` : "end"} ` +
+            `ySnap: ${ySnap} PAGE_H: ${PAGE_H} maskTopWithinMusicPx: ${maskTopWithinMusicPx} needsMask: ${needsMask}`,
+            { outer }
+          );
+        }
+
         if (!bottomCutter) {
           bottomCutter = document.createElement("div");
           bottomCutter.dataset.viewerBottomcutter = "1";
@@ -1460,9 +1471,15 @@ export default function ScoreViewer({
         throw new Error("No SVG produced by OSMD render");
       }
 
-      // NEW: soft-check — do NOT throw if system groups are missing
+      // soft-check — do NOT throw if system groups are missing
       const sysCount0 = systemGroupCount(svgForPack);
-      await logStep(`sysCount: ${sysCount0}`, { outer });
+      if (sysCount0 > 0) {
+        const gap = interSystemPackGapPx(outer);
+        await logStep(`sysCount: ${sysCount0} — repacking systems with GAP=${gap}`, { outer });
+        packSystemsWithinPages(outer, svgForPack);
+      } else {
+        await logStep(`sysCount: 0 — skipping packSystemsWithinPages`, { outer });
+      }
 
       // Only repack systems when groups actually exist
       if (sysCount0 > 0) {
@@ -1491,7 +1508,7 @@ export default function ScoreViewer({
       const packGap = interSystemPackGapPx(outer);
       const mergeThresh = dynamicBandGapPx(outer);
       await logStep(
-        `scan summary: bands=${bands.length} packGap=${packGap} mergeThresh=${mergeThresh}`,
+        `bands: ${bands.length} packGap: ${packGap} mergeThresh=${mergeThresh}`,
         { outer }
       );
 
@@ -1516,6 +1533,19 @@ export default function ScoreViewer({
       );
 
       try {
+
+        // Summarize the page map (page -> band range)
+        {
+          const lastBand = bands.length - 1;
+          const parts: string[] = [];
+          for (let p = 0; p < starts.length; p++) {
+            const s = starts[p]!;
+            const e = ((p + 1 < starts.length ? starts[p + 1]! : lastBand + 1) - 1);
+            parts.push(`[p${p + 1} ${s}–${e}]`);
+          }
+          await logStep(`pages: ${starts.length} map: ${parts.join(" ")}`, { outer });
+        }
+
         await logStep(
           `bands: ${bands.length} starts: [${starts.join(",")}] ` +
           `visibleH: ${visiblePageHeight(outer)} paginationH: ${paginationHeight(outer)}`,
@@ -1644,6 +1674,18 @@ export default function ScoreViewer({
 
       pageStartIdxsRef.current = starts;
       outer.dataset.viewerPages = String(starts.length);
+
+      // Summarize the page map (page -> band range)
+      {
+        const lastBand = bands.length - 1; // bands is in scope here
+        const parts: string[] = [];
+        for (let p = 0; p < starts.length; p++) {
+          const s = starts[p]!;
+          const e = ((p + 1 < starts.length ? starts[p + 1]! : lastBand + 1) - 1);
+          parts.push(`[p${p + 1} ${s}–${e}]`);
+        }
+        void logStep(`pages: ${starts.length} map: ${parts.join(" ")}`, { outer });
+      }
 
       // Always reset to page 1 after repagination
       perfBlock(
