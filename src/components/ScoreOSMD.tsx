@@ -961,6 +961,9 @@ function computePageStarts(
     const TOL = (window.devicePixelRatio || 1) >= 2 ? 2 : 1;
     const pageHeightPx = Math.max(1, Math.floor(viewportH) - TOL);
 
+    // Tiny DPR-aware tolerance so we don't lose a system to 1–4 px rounding jitter
+    const FIT_WIGGLE_PX = ((window.devicePixelRatio || 1) >= 2) ? 4 : 3;
+
     const starts: number[] = [];
     let i = 0;
 
@@ -975,14 +978,16 @@ function computePageStarts(
       let j = i;
       while (
         j + 1 < bands.length &&
-        (bands[j + 1]!.bottom - ySnap) <= pageHeightPx
+        (bands[j + 1]!.bottom - ySnap) <= (pageHeightPx + FIT_WIGGLE_PX)
       ) {
         j += 1;
       }
       i = j + 1;
     }
 
-    void logStep(`starts: ${starts.length} pageHeightPx: ${pageHeightPx}`, { outer });
+    void logStep(
+      `starts: ${starts.length} pageHeightPx: ${pageHeightPx} fitWiggle: ${FIT_WIGGLE_PX}`, { outer }
+    );
     return starts.length ? starts : [0];
   } finally {
     try { outer.dataset.viewerFunc = prevFuncTag; } catch { /* no-op */ }
