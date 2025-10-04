@@ -961,8 +961,8 @@ function computePageStarts(
     const TOL = (window.devicePixelRatio || 1) >= 2 ? 2 : 1;
     const pageHeightPx = Math.max(1, Math.floor(viewportH) - TOL);
 
-    // Tiny DPR-aware tolerance so we don't lose a system to 1–4 px rounding jitter
-    const FIT_WIGGLE_PX = ((window.devicePixelRatio || 1) >= 2) ? 4 : 3;
+    // Slightly larger tolerance for tablets where VV rounding + band padding can exceed 3–4 px
+    const FIT_WIGGLE_PX = ((window.devicePixelRatio || 1) >= 2) ? 6 : 5;
 
     const starts: number[] = [];
     let i = 0;
