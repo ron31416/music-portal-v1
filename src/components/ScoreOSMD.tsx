@@ -578,6 +578,9 @@ function scanSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[] {
 
     const hostTop = outer.getBoundingClientRect().top;
 
+    const svgViewportRect = svgRoot.getBoundingClientRect();
+    const svgViewportW = Math.max(1, Math.floor(svgViewportRect.width));
+
     interface Box { top: number; bottom: number; height: number; width: number }
     const boxes: Box[] = [];
 
@@ -586,8 +589,10 @@ function scanSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[] {
     const MIN_W = 2;  // was 6 — include skinny dots/accents so tops/bottoms are accurate
 
     for (const root of roots) {
-      // Groups + primitive graphics → dynamics/pedals/slurs count
-      const SELECTORS = "g,path,rect,line,polyline,polygon,text,use,circle,ellipse";
+      // IMPORTANT: do not include <g> here.
+      // Group <g> elements can span an entire OSMD page; their big bounding boxes
+      // inflate a band's height and cause false "doesn't fit" decisions.
+      const SELECTORS = "path,rect,line,polyline,polygon,text,use,circle,ellipse";
       const graphics = Array.from(root.querySelectorAll<SVGGraphicsElement>(SELECTORS));
 
       // Detect the top of the first real system on this page, if the DOM exposes system groups.
@@ -613,6 +618,13 @@ function scanSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[] {
           if (!Number.isFinite(r.top) || !Number.isFinite(r.height) || !Number.isFinite(r.width)) { continue; }
           if (r.height < MIN_H) { continue; }
           if (r.width < MIN_W) { continue; }
+
+          // Heuristic: ignore page-wide background rectangles (white canvases).
+          if (el.tagName.toLowerCase() === "rect") {
+            const looksLikePageBg =
+              r.width >= svgViewportW * 0.96 && r.height >= 160; // tall & almost full-width
+            if (looksLikePageBg) { continue; }
+          }
 
           const top = r.top - hostTop;
           const bottom = r.bottom - hostTop;
