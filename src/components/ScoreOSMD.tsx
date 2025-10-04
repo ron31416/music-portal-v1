@@ -153,7 +153,7 @@ async function waitForPaint(timeoutMs = 450): Promise<void> {
 
 // Flip this to disable all on-page logging in one place.
 const DEBUG_LOG = true;
-const DEBUG_PAGINATION_DIAG = false;
+const DEBUG_PAGINATION_DIAG = true;
 
 export async function logStep(
   message: string,
