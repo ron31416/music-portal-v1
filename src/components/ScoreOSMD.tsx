@@ -554,19 +554,10 @@ function useVisibleViewportHeight() {
 
   return vpRef; // latest visible height in px
 }
-/*
-function dprRoundingJitterPx(): number {
+
+function dynamicBandGapPx(): number {
   const dpr = (typeof window !== "undefined" ? window.devicePixelRatio : 1) || 1;
-  if (dpr >= 3) { return 3; }  // very high DPR: allow more wobble
-  if (dpr >= 2) { return 2; }  // common Hi-DPR screens
-  return 1;                    // low/normal DPR
-}
-*/
-function dynamicBandGapPx(outer: HTMLDivElement): number {
-  const packGap = interSystemPackGapPx(outer);
-  // Anything with a vertical gap strictly LESS than the actual inter-system gap
-  // is part of the same system. Keep 1px headroom for rounding.
-  return Math.max(8, packGap - 1);
+  return dpr >= 2 ? 4 : 3;
 }
 
 function scanSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[] {
@@ -629,7 +620,7 @@ function scanSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[] {
 
     // IMPORTANT: merge threshold is derived from the *packing* gap,
     // minus DPR jitter and a 1px strictness margin (done inside dynamicBandGapPx).
-    const THRESH = dynamicBandGapPx(outer);
+    const THRESH = dynamicBandGapPx();
 
     const bands: Band[] = [];
     for (const b of boxes) {
@@ -1636,7 +1627,7 @@ export default function ScoreViewer({
         (ms) => { void logStep(`scanSystemsPx() runtime: ${ms}ms`, { outer }); }
       );
       const packGap = interSystemPackGapPx(outer);
-      const mergeThresh = dynamicBandGapPx(outer);
+      const mergeThresh = dynamicBandGapPx();
       await logStep(
         `bands: ${bands.length} packGap: ${packGap} mergeThresh=${mergeThresh}`,
         { outer }
