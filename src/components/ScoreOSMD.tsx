@@ -19,14 +19,7 @@ interface Props {
   debugOverlays?: boolean;
 }
 
-interface Band {
-  top: number;
-  bottom: number;
-  height: number;
-  // optional seam locks (useful for diagnostics / future “don’t re-merge” logic)
-  lockedBefore?: boolean; // do not merge with the band above
-  lockedAfter?: boolean;  // do not merge with the band below
-}
+interface Band { top: number; bottom: number; height: number }
 
 // Type: function stored in a ref
 type ReflowCallback = () => Promise<void>;
@@ -160,7 +153,7 @@ async function waitForPaint(timeoutMs = 450): Promise<void> {
 
 // Flip this to disable all on-page logging in one place.
 const DEBUG_LOG = true;
-const DEBUG_PAGINATION_DIAG = true;
+const DEBUG_PAGINATION_DIAG = false;
 
 export async function logStep(
   message: string,
@@ -576,86 +569,6 @@ function dynamicBandGapPx(outer: HTMLDivElement): number {
   return Math.max(8, packGap - 1);
 }
 
-// --- Anti-micro-bridge guard (nearest-note ownership) ---
-const ENABLE_MICROBRIDGE_FIX = true as const;
-
-interface Pt { x: number; y: number }
-
-function isAmbiguousSmall(width: number, height: number): boolean {
-  // Small glyph heuristic: dots/accents/etc.
-  if (width <= 0 || height <= 0) { return false; }
-  const area = Math.floor(width * height);
-  if (width <= 10 && height <= 10 && area <= 120) { return true; }
-  return false;
-}
-
-function collectNoteCenters(
-  roots: Array<SVGGElement | SVGSVGElement>,
-  hostLeft: number,
-  hostTop: number
-): Pt[] {
-  const centers: Pt[] = [];
-
-  const PUSH = (el: SVGGraphicsElement) => {
-    try {
-      const r = el.getBoundingClientRect();
-      if (!Number.isFinite(r.left) || !Number.isFinite(r.top)) { return; }
-      centers.push({ x: r.left - hostLeft + r.width / 2, y: r.top - hostTop + r.height / 2 });
-    } catch { /* ignore */ }
-  };
-
-  const pushFromSelector = (sel: string) => {
-    for (const root of roots) {
-      const list = Array.from(root.querySelectorAll<SVGGraphicsElement>(sel));
-      for (const el of list) { PUSH(el); }
-    }
-  };
-
-  // Prefer explicit noteheads, fallback to stavenote groups
-  pushFromSelector('path[class*="notehead" i]');
-  if (centers.length === 0) {
-    pushFromSelector('g[class*="stavenote" i], g[id*="stavenote" i]');
-  }
-  return centers;
-}
-
-function assignToLowerByNearestNote(
-  candCenter: Pt,
-  lastBandBottom: number,
-  notes: Pt[]
-): boolean {
-  // Gate to avoid jumping across systems wildly
-  const DX_MAX = 60;
-  const DY_MAX = 30;
-
-  let bestIdx = -1;
-  let bestD2 = Number.POSITIVE_INFINITY;
-
-  for (let i = 0; i < notes.length; i++) {
-    const n = notes[i]!;
-    const dx = Math.abs(n.x - candCenter.x);
-    const dy = Math.abs(n.y - candCenter.y);
-    if (dx > DX_MAX || dy > DY_MAX) { continue; }
-    const d2 = dx * dx + dy * dy;
-    if (d2 < bestD2) {
-      bestD2 = d2;
-      bestIdx = i;
-    }
-  }
-
-  if (bestIdx < 0) {
-    // No usable nearby notehead — default to upper ownership
-    return false;
-  }
-
-  const nearest = notes[bestIdx]!;
-  // If the nearest note is *below* the current band's bottom, treat as lower-ownership.
-  // Ties: bias upward (false).
-  if (nearest.y > Math.ceil(lastBandBottom)) { return true; }
-  return false;
-}
-
-
 function scanSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[] {
   const prevFuncTag = outer.dataset.viewerFunc ?? "";
   outer.dataset.viewerFunc = "scanSystemsPx";
@@ -663,28 +576,14 @@ function scanSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[] {
     const pageRoots = getPageRoots(svgRoot);
     const roots: Array<SVGGElement | SVGSVGElement> = pageRoots.length ? pageRoots : [svgRoot];
 
-    const hostRect = outer.getBoundingClientRect();
-    const hostTop = hostRect.top;
-    const hostLeft = hostRect.left;
+    const hostTop = outer.getBoundingClientRect().top;
 
-    interface Box {
-      top: number;
-      bottom: number;
-      height: number;
-      width: number;
-      left: number;
-      right: number;
-    }
+    interface Box { top: number; bottom: number; height: number; width: number }
     const boxes: Box[] = [];
 
-    // Include very thin graphics so text/hairlines extend each band.
-    const MIN_H = 1;
-    const MIN_W = 2;
-
-    // Gather candidate note centers once (used by micro-bridge fix)
-    const noteCenters: Pt[] = ENABLE_MICROBRIDGE_FIX
-      ? collectNoteCenters(roots, hostLeft, hostTop)
-      : [];
+    // Exclude micro glyphs (e.g., staccato / fermata dots) from band building.
+    const MIN_H = 2;  // bump from 1 → 2 to drop 1px specks
+    const MIN_W = 6;  // bump from 2 → 6 so tiny dots can't bridge systems
 
     for (const root of roots) {
       // Groups + primitive graphics → dynamics/pedals/slurs count
@@ -692,6 +591,7 @@ function scanSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[] {
       const graphics = Array.from(root.querySelectorAll<SVGGraphicsElement>(SELECTORS));
 
       // Detect the top of the first real system on this page, if the DOM exposes system groups.
+      // We’ll drop any elements fully above that line (i.e., titles/credits).
       const SYS_SEL = "g[id*='system' i], g[class*='system' i]";
       let pageContentTop = Number.NEGATIVE_INFINITY;
       try {
@@ -700,12 +600,12 @@ function scanSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[] {
           .map(g => g.getBoundingClientRect())
           .filter(r => Number.isFinite(r.top) && Number.isFinite(r.height) && r.height > 0);
 
-        if (sysRects.length > 0) {
+        if (sysRects.length) {
           const minSysTop = Math.min(...sysRects.map(r => r.top));
-          const HEADER_GUARD_PX = 12;
+          const HEADER_GUARD_PX = 12; // allow hairpins/dynamics just above the staff
           pageContentTop = Math.floor(minSysTop - hostTop) - HEADER_GUARD_PX;
         }
-      } catch { /* no-op */ }
+      } catch { }
 
       for (const el of graphics) {
         try {
@@ -716,36 +616,24 @@ function scanSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[] {
 
           const top = r.top - hostTop;
           const bottom = r.bottom - hostTop;
-          const left = r.left - hostLeft;
-          const right = r.right - hostLeft;
 
-          // Ignore title/credit elements above detected content top if available
+          // If we detected a system top, ignore pure title/credit elements above it
           if (Number.isFinite(pageContentTop) && bottom < pageContentTop) { continue; }
 
-          boxes.push({
-            top,
-            bottom,
-            height: r.height,
-            width: r.width,
-            left,
-            right
-          });
-        } catch { /* ignore */ }
+          boxes.push({ top, bottom, height: r.height, width: r.width });
+        } catch { }
       }
     }
 
-    // Sort by top ascending for band construction
     boxes.sort((a, b) => a.top - b.top);
 
+    // IMPORTANT: merge threshold is derived from the *packing* gap,
+    // minus DPR jitter and a 1px strictness margin (done inside dynamicBandGapPx).
     const THRESH = dynamicBandGapPx(outer);
-    const GAP_WINDOW = 48; // only consider micro-bridges very near a seam
 
     const bands: Band[] = [];
-    // Index-based loop so we can peek ahead
-    for (let i = 0; i < boxes.length; i++) {
-      const b = boxes[i]!;
+    for (const b of boxes) {
       const last = bands.length ? bands[bands.length - 1] : undefined;
-
       if (!last) {
         bands.push({ top: b.top, bottom: b.bottom, height: b.height });
         continue;
@@ -753,139 +641,26 @@ function scanSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[] {
 
       // Integerize to kill sub-px wobbles, then make the test inclusive.
       const gapPx = Math.floor(b.top) - Math.ceil(last.bottom);
-
-      if (gapPx > THRESH) {
-        // Clean, obvious split → new band
+      if (gapPx > THRESH) {            // NOTE: strict ">" pairs with packGap-1 above
         bands.push({ top: b.top, bottom: b.bottom, height: b.height });
-        continue;
+      } else {
+        last.top = Math.min(last.top, b.top);
+        last.bottom = Math.max(last.bottom, b.bottom);
+        last.height = last.bottom - last.top;
       }
-
-      // Potentially bridging a seam?
-      let handled = false;
-      if (ENABLE_MICROBRIDGE_FIX) {
-        const looksSmall = isAmbiguousSmall(b.width, b.height);
-        const nearSeam = Math.abs(b.top - last.bottom) <= GAP_WINDOW;
-
-        if (looksSmall && nearSeam) {
-          // Peek the first *non-small* element ahead to estimate the gap without this glyph
-          let j = i + 1;
-          while (j < boxes.length && isAmbiguousSmall(boxes[j]!.width, boxes[j]!.height)) {
-            j += 1;
-          }
-
-          if (j < boxes.length) {
-            const nextSig = boxes[j]!;
-            const gapWithoutSmall = Math.floor(nextSig.top) - Math.ceil(last.bottom);
-
-            // Only treat as a micro-bridge if the seam would be real without the small glyph
-            if (gapWithoutSmall > THRESH) {
-              // Decide ownership by nearest notehead to the small glyph center
-              const candCenter: Pt = { x: b.left + b.width / 2, y: b.top + b.height / 2 };
-              const sendToLower = assignToLowerByNearestNote(candCenter, last.bottom, noteCenters);
-
-              if (sendToLower) {
-                // Start a new band with the tiny glyph as the first member of the lower system.
-                bands.push({ top: b.top, bottom: b.bottom, height: b.height });
-                handled = true;
-                if (DEBUG_PAGINATION_DIAG) {
-                  void logStep(
-                    `microBridge: tiny→LOWER split@${Math.round(last.bottom)} ` +
-                    `gapSans=${gapWithoutSmall} thresh=${THRESH}`,
-                    { outer }
-                  );
-                }
-              } else {
-                // Attach tiny glyph to the UPPER system, with a cap on extension.
-                // If the tiny glyph causes NO extension but the seam is clearly real (gapSans big),
-                // we FORCE a split to keep systems separate.
-
-                // Tunables
-                const SPLIT_GAP_MIN = 24; // require at least this much "real" gap (ignoring the tiny glyph)
-
-                // Treat sub-px / Hi-DPR wobble as “no expansion”
-                const EPS = (window.devicePixelRatio || 1) >= 2 ? 2 : 1;
-
-                const last2 = bands[bands.length - 1]!;
-                const currentBottom = last2.bottom;
-                const desiredBottom = b.bottom;
-
-                // Allow expansion only up to the amount that still preserves a seam:
-                const maxAllowedExpansion = Math.max(0, gapWithoutSmall - THRESH);
-                const proposedExpansion = desiredBottom - currentBottom;
-                const appliedExpansion = Math.max(0, Math.min(proposedExpansion, maxAllowedExpansion));
-
-                // === Force-split condition (tolerate tiny wobble) ===
-                if (appliedExpansion <= EPS && gapWithoutSmall >= SPLIT_GAP_MIN) {
-                  bands.push({
-                    top: b.top,
-                    bottom: b.bottom,
-                    height: b.bottom - b.top,
-                  });
-
-                  // Mark/remember the seam (optional, for future passes / debugging)
-                  last2.lockedAfter = true;
-                  (bands[bands.length - 1]!).lockedBefore = true;
-
-                  handled = true;
-
-                  if (DEBUG_PAGINATION_DIAG) {
-                    const noteCount = noteCenters !== null ? noteCenters.length : 0;
-                    const candCenter = { x: b.left + b.width / 2, y: b.top + b.height / 2 };
-                    const sendToLower2 = assignToLowerByNearestNote(candCenter, last2.bottom, noteCenters);
-
-                    void logStep(
-                      `microBridge: FORCE-SPLIT (upper-capped, <=${EPS}px) LOCK seam ` +
-                      `gapSans=${gapWithoutSmall}>=${SPLIT_GAP_MIN} notes=${noteCount} ` +
-                      `sendToLower=${sendToLower2} candY=${Math.round(candCenter.y)} lastBottom=${Math.round(last2.bottom)}`,
-                      { outer }
-                    );
-                  }
-
-                  // done handling tiny glyph as start of LOWER band
-                } else {
-                  // Normal capped-merge to UPPER
-                  if (appliedExpansion > 0) {
-                    last2.bottom = currentBottom + appliedExpansion;
-                    last2.height = last2.bottom - last2.top;
-                  }
-
-                  handled = true;
-                  if (DEBUG_PAGINATION_DIAG) {
-                    void logStep(
-                      `microBridge: tiny→UPPER capped-merge expand=${Math.round(appliedExpansion)} ` +
-                      `gapSans=${gapWithoutSmall} thresh=${THRESH}`,
-                      { outer }
-                    );
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-
-      if (handled) {
-        continue;
-      }
-
-      // Default behavior: merge into the current band
-      const lastM = bands[bands.length - 1]!;
-      lastM.top = Math.min(lastM.top, b.top);
-      lastM.bottom = Math.max(lastM.bottom, b.bottom);
-      lastM.height = lastM.bottom - lastM.top;
     }
 
-    // Slightly larger safety so we never shave ties/slurs at page edges
-    const HAIRLINE_PAD = (window.devicePixelRatio || 1) >= 2 ? 3 : 2;
+    // Don't inflate band bottoms; masking already protects page edges.
+    const HAIRLINE_PAD = 0;
     for (const band of bands) {
-      band.bottom += HAIRLINE_PAD;
+      band.bottom += HAIRLINE_PAD; // no-op by design
       band.height = band.bottom - band.top;
     }
 
     void logStep(`bands: ${bands.length}`, { outer });
     return bands;
   } finally {
-    try { outer.dataset.viewerFunc = prevFuncTag; } catch { /* no-op */ }
+    try { outer.dataset.viewerFunc = prevFuncTag; } catch { }
   }
 }
 
@@ -1186,9 +961,6 @@ function computePageStarts(
     const TOL = (window.devicePixelRatio || 1) >= 2 ? 2 : 1;
     const pageHeightPx = Math.max(1, Math.floor(viewportH) - TOL);
 
-    // Slightly larger tolerance for tablets where VV rounding + band padding can exceed 3–4 px
-    const FIT_WIGGLE_PX = ((window.devicePixelRatio || 1) >= 2) ? 6 : 5;
-
     const starts: number[] = [];
     let i = 0;
 
@@ -1203,16 +975,14 @@ function computePageStarts(
       let j = i;
       while (
         j + 1 < bands.length &&
-        (bands[j + 1]!.bottom - ySnap) <= (pageHeightPx + FIT_WIGGLE_PX)
+        (bands[j + 1]!.bottom - ySnap) <= pageHeightPx
       ) {
         j += 1;
       }
       i = j + 1;
     }
 
-    void logStep(
-      `starts: ${starts.length} pageHeightPx: ${pageHeightPx} fitWiggle: ${FIT_WIGGLE_PX}`, { outer }
-    );
+    void logStep(`starts: ${starts.length} pageHeightPx: ${pageHeightPx}`, { outer });
     return starts.length ? starts : [0];
   } finally {
     try { outer.dataset.viewerFunc = prevFuncTag; } catch { /* no-op */ }
