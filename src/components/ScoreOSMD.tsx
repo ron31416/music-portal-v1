@@ -2718,6 +2718,42 @@ export default function ScoreViewer({
     }
   }, [busy]);
 
+  // Restore spinner after tab re-activation; pause spinner fail-safe while hidden.
+  useEffect(() => {
+    const onVisibility = () => {
+      const outer = wrapRef.current;
+      if (!outer) { return; }
+
+      const phase = outer.dataset.viewerPhase || "";
+      const inHeavy =
+        phase === "render" || phase === "scan" || reflowRunningRef.current;
+
+      if (document.visibilityState === "hidden") {
+        // Pause the fail-safe so it can't hide the overlay while we're backgrounded.
+        if (spinnerFailSafeRef.current) {
+          window.clearTimeout(spinnerFailSafeRef.current);
+          spinnerFailSafeRef.current = null;
+        }
+        return;
+      }
+
+      // Back to visible: if we’re mid-run and the overlay is down, bring it back.
+      if (inHeavy && !busyRef.current) {
+        setBusyMsg(DEFAULT_BUSY_MSG);
+        setBusy(true);
+        // Re-arm a conservative fail-safe.
+        if (!spinnerFailSafeRef.current) {
+          spinnerFailSafeRef.current = window.setTimeout(() => {
+            spinnerOwnerRef.current = null;
+            hideBusy();
+          }, SPINNER_FAILSAFE_MS);
+        }
+      }
+    };
+
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, [hideBusy]);
 
   /* ---------- Styles ---------- */
 
