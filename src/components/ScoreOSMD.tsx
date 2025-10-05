@@ -19,7 +19,14 @@ interface Props {
   debugOverlays?: boolean;
 }
 
-interface Band { top: number; bottom: number; height: number }
+interface Band {
+  top: number;
+  bottom: number;
+  height: number;
+  // optional seam locks (useful for diagnostics / future “don’t re-merge” logic)
+  lockedBefore?: boolean; // do not merge with the band above
+  lockedAfter?: boolean;  // do not merge with the band below
+}
 
 // Type: function stored in a ref
 type ReflowCallback = () => Promise<void>;
@@ -795,46 +802,46 @@ function scanSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[] {
                 // Tunables
                 const SPLIT_GAP_MIN = 24; // require at least this much "real" gap (ignoring the tiny glyph)
 
+                // Treat sub-px / Hi-DPR wobble as “no expansion”
+                const EPS = (window.devicePixelRatio || 1) >= 2 ? 2 : 1;
+
                 const last2 = bands[bands.length - 1]!;
                 const currentBottom = last2.bottom;
                 const desiredBottom = b.bottom;
 
                 // Allow expansion only up to the amount that still preserves a seam:
-                // (gap without the tiny glyph) - THRESH
                 const maxAllowedExpansion = Math.max(0, gapWithoutSmall - THRESH);
                 const proposedExpansion = desiredBottom - currentBottom;
                 const appliedExpansion = Math.max(0, Math.min(proposedExpansion, maxAllowedExpansion));
 
-                // === Force-split condition ===
-                // If the tiny glyph provides no extension AND we still have a comfortable seam
-                // when ignoring it, we split here instead of sticking it to the upper band.
-                if (appliedExpansion === 0 && gapWithoutSmall >= SPLIT_GAP_MIN) {
+                // === Force-split condition (tolerate tiny wobble) ===
+                if (appliedExpansion <= EPS && gapWithoutSmall >= SPLIT_GAP_MIN) {
                   bands.push({
                     top: b.top,
                     bottom: b.bottom,
                     height: b.bottom - b.top,
                   });
+
+                  // Mark/remember the seam (optional, for future passes / debugging)
+                  last2.lockedAfter = true;
+                  (bands[bands.length - 1]!).lockedBefore = true;
+
                   handled = true;
 
                   if (DEBUG_PAGINATION_DIAG) {
-                    // Add some decision breadcrumbs
                     const noteCount = noteCenters !== null ? noteCenters.length : 0;
-                    const candCenter = {
-                      x: b.left + b.width / 2,
-                      y: b.top + b.height / 2,
-                    };
-                    const sendToLower = assignToLowerByNearestNote(candCenter, last2.bottom, noteCenters);
+                    const candCenter = { x: b.left + b.width / 2, y: b.top + b.height / 2 };
+                    const sendToLower2 = assignToLowerByNearestNote(candCenter, last2.bottom, noteCenters);
 
                     void logStep(
-                      `microBridge: FORCE-SPLIT (upper-capped, no expansion) ` +
+                      `microBridge: FORCE-SPLIT (upper-capped, <=${EPS}px) LOCK seam ` +
                       `gapSans=${gapWithoutSmall}>=${SPLIT_GAP_MIN} notes=${noteCount} ` +
-                      `sendToLower=${sendToLower} candY=${Math.round(candCenter.y)} lastBottom=${Math.round(last2.bottom)}`,
+                      `sendToLower=${sendToLower2} candY=${Math.round(candCenter.y)} lastBottom=${Math.round(last2.bottom)}`,
                       { outer }
                     );
                   }
 
-                  // We’re done handling this tiny glyph as the start of the LOWER band.
-                  // Do NOT fall through to the capped-merge path.
+                  // done handling tiny glyph as start of LOWER band
                 } else {
                   // Normal capped-merge to UPPER
                   if (appliedExpansion > 0) {
