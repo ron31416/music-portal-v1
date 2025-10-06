@@ -1,3 +1,4 @@
+/* eslint curly: ["error", "all"] */
 "use client";
 
 import React from "react";
@@ -39,7 +40,7 @@ export default function AdminPage() {
         setError("");
         // Also clear the hidden input's value so the same file can be re-picked
         const input = document.getElementById("song-file-input") as HTMLInputElement | null;
-        if (input) input.value = "";
+        if (input) { input.value = ""; }
     };
 
     return (
