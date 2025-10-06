@@ -1107,6 +1107,7 @@ export default function ScoreViewer({
   // Busy lock (blocks input while OSMD works)
   const [busy, setBusy] = useState<boolean>(false);
   const [busyMsg, setBusyMsg] = useState<string>(DEFAULT_BUSY_MSG);
+  const [fatalReason, setFatalReason] = useState<null | "no-visual-viewport">(null);
 
   // Spinner ownership + fail-safe timer (used by zoom reflow)
   const spinnerOwnerRef = useRef<symbol | null>(null);
@@ -2120,11 +2121,20 @@ export default function ScoreViewer({
           await logStep(`hasVV: ${hasVV ? "yes" : "no"} hasRO: ${hasRO ? "yes" : "no"}`, { outer });
 
           if (!hasVV) {
-            // Hard-fail policy
             outer.dataset.viewerPhase = "fatal:no-visual-viewport";
             outer.dataset.viewerFatal = "1";
-            setBusyMsg("This viewer requires the Visual Viewport API for correct zoom & pagination.\nTry a modern browser (Chrome, Edge, Safari 16+).");
-            setBusy(true); // show blocking overlay with the message
+
+            // Mark fatal in React state (drives overlay behavior & auto-clear guard)
+            setFatalReason("no-visual-viewport");
+
+            // Static, human-friendly message (no spinner)
+            setBusyMsg(
+              "Your browser doesn’t expose the Visual Viewport API, which we need for correct zoom & pagination.\nTry a current Chrome or Edge, or Safari 16+."
+            );
+
+            // Show blocking overlay; do NOT use startSpinner here
+            setBusy(true);
+
             await logStep("fatal: visualViewport unavailable — aborting init", { outer });
             return; // stop init right here
           }
@@ -2676,6 +2686,7 @@ export default function ScoreViewer({
     };
   }, []);
 
+
   // Auto-clear busy if we linger too long *outside* heavy phases.
   // Heavy phases are exactly: "render" and "scan".
   useEffect(() => {
@@ -2685,16 +2696,20 @@ export default function ScoreViewer({
       const phase = wrapRef.current?.dataset.viewerPhase ?? "";
       const inHeavy = phase === "render" || phase === "scan";
 
-      if (!inHeavy) {
+      const isFatal =
+        (wrapRef.current?.dataset.viewerFatal === "1") || Boolean(fatalReason);
+
+      if (!inHeavy && !isFatal) {
         hideBusy();
         void logStep("busy:auto-clear");
       } else {
-        void logStep(`busy:auto-clear:skipped phase=${phase}`);
+        void logStep(`busy:auto-clear:skipped phase=${phase} fatal=${String(isFatal)}`);
       }
     }, 20000);
 
     return () => window.clearTimeout(t);
-  }, [busy, hideBusy]);
+  }, [busy, hideBusy, fatalReason]);  // ← include fatalReason in deps
+
 
   // POST-BUSY QUEUE DRAIN: if width/height work was queued while busy, run it now.
   // These kick off heavy paths; add a tiny breadcrumb, but don't await paint here.
@@ -2817,13 +2832,14 @@ export default function ScoreViewer({
       {/* OSMD host (SVG goes here) */}
       <div ref={svgHostRef} style={hostStyle} />
 
-      {/* Input-blocking overlay while busy */}
+      {/* Input-blocking overlay while busy (spinner hidden for fatal states) */}
       <div
         aria-busy={busy}
-        role="status"
-        aria-live="polite"
+        role={fatalReason ? "alert" : "status"}
+        aria-live={fatalReason ? "assertive" : "polite"}
         aria-atomic="true"
         style={blockerStyle}
+        data-viewer-fatal={fatalReason ? "1" : "0"}
         onPointerDown={stopEvent}
         onPointerMove={stopEvent}
         onPointerUp={stopEvent}
@@ -2846,18 +2862,24 @@ export default function ScoreViewer({
             minWidth: 140,
           }}
         >
-          <div
-            style={{
-              width: 20,
-              height: 20,
-              borderRadius: "50%",
-              border: "2px solid rgba(0,0,0,0.4)",
-              borderTopColor: "transparent",
-              margin: "0 auto 8px",
-              animation: "viewer-spin 0.9s linear infinite",
-            }}
-          />
-          <div>{busyMsg || DEFAULT_BUSY_MSG}</div>
+          {/* Spinner only for non-fatal busy states */}
+          {!fatalReason && (
+            <div
+              style={{
+                width: 20,
+                height: 20,
+                borderRadius: "50%",
+                border: "2px solid rgba(0,0,0,0.4)",
+                borderTopColor: "transparent",
+                margin: "0 auto 8px",
+                animation: "viewer-spin 0.9s linear infinite",
+              }}
+            />
+          )}
+
+          <div style={{ whiteSpace: "pre-wrap" }}>
+            {busyMsg || DEFAULT_BUSY_MSG}
+          </div>
         </div>
       </div>
 
