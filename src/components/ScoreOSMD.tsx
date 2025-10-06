@@ -151,9 +151,41 @@ async function waitForPaint(timeoutMs = 450): Promise<void> {
   } catch { }
 }
 
-// Flip this to disable all on-page logging in one place.
-const DEBUG_LOG = true;
-const DEBUG_PAGINATION_DIAG = true;
+// URL-driven debug flags (hash or query). Examples:
+//   #viewer-log           → DEBUG_LOG = true
+//   #viewer-pag           → DEBUG_PAGINATION_DIAG = true
+//   #viewer-log=1&viewer-pag=0
+//   ?viewer-log=true&viewer-pag=false
+function readDebugFlag(name: string, fallback = false): boolean {
+  try {
+    const read = (s: string) => {
+      const params = new URLSearchParams(s);
+      const v = params.get(name);
+      if (v !== null) {
+        const t = v.toLowerCase();
+        return t === "" || t === "1" || t === "true" || t === "on" || t === "yes";
+      }
+      // also allow presence-only tokens in hash, e.g. "#viewer-log"
+      const tokens = s.toLowerCase().split(/[&;,]/).map(x => x.trim());
+      if (tokens.includes(name.toLowerCase())) { return true; }
+      return null;
+    };
+
+    // prefer hash (doesn't cause navigations), then querystring
+    const hash = typeof location !== "undefined" ? location.hash.replace(/^#/, "") : "";
+    const qs = typeof location !== "undefined" ? location.search.replace(/^\?/, "") : "";
+
+    const h = hash ? read(hash) : null;
+    if (h !== null) { return h; }
+
+    const q = qs ? read(qs) : null;
+    if (q !== null) { return q; }
+  } catch { /* ignore */ }
+  return fallback;
+}
+// Independent flags:
+const DEBUG_LOG = readDebugFlag("viewer-log", false);
+const DEBUG_PAGINATION_DIAG = readDebugFlag("viewer-pag", false);
 
 export async function logStep(
   message: string,
@@ -1074,7 +1106,6 @@ export default function ScoreViewer({
 
   // Busy lock (blocks input while OSMD works)
   const [busy, setBusy] = useState<boolean>(false);
-  const overlayRef = useRef<HTMLDivElement | null>(null);
   const [busyMsg, setBusyMsg] = useState<string>(DEFAULT_BUSY_MSG);
 
   // Spinner ownership + fail-safe timer (used by zoom reflow)
@@ -2788,7 +2819,6 @@ export default function ScoreViewer({
 
       {/* Input-blocking overlay while busy */}
       <div
-        ref={overlayRef}
         aria-busy={busy}
         role="status"
         aria-live="polite"
