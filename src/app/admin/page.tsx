@@ -2,19 +2,24 @@
 
 import React from "react";
 
-// /admin — pick one file, parse metadata, display Title/Composer + full XML (read-only)
+// --- Config: change if your API route differs ---
+const SAVE_ENDPOINT = "/api/songs"; // expects JSON payload below
+
 export default function AdminPage() {
     const [file, setFile] = React.useState<File | null>(null);
     const [parsing, setParsing] = React.useState(false);
     const [error, setError] = React.useState("");
+    const [saving, setSaving] = React.useState(false);
+    const [saveOk, setSaveOk] = React.useState("");
 
     // display-only fields for now
     const [title, setTitle] = React.useState("");
     const [composer, setComposer] = React.useState("");
-    const [xmlPreview, setXmlPreview] = React.useState(""); // full MusicXML (scrollable)
+    const [xmlPreview, setXmlPreview] = React.useState(""); // start→</defaults> (or first 25 lines)
 
     const onPick: React.ChangeEventHandler<HTMLInputElement> = async (e) => {
         setError("");
+        setSaveOk("");
         setParsing(false);
         setTitle("");
         setComposer("");
@@ -23,7 +28,6 @@ export default function AdminPage() {
         const f = e.target.files?.[0] ?? null;
         if (!f) { setFile(null); return; }
 
-        // Accept only .mxl or .musicxml by extension (MIME is unreliable)
         const lower = (f.name || "").toLowerCase();
         const isMxl = lower.endsWith(".mxl");
         const isXml = lower.endsWith(".musicxml");
@@ -36,12 +40,62 @@ export default function AdminPage() {
             const meta = await extractMetadataAndXml(f, { isMxl, isXml });
             setTitle(meta.title || "");
             setComposer(meta.composer || "");
-            setXmlPreview(meta.xmlText || "");
+
+            // Preview: up to and including </defaults>, else first 25 lines
+            const preview = xmlUpToDefaultsOrFirstLines(meta.xmlText || "", 25);
+            setXmlPreview(preview);
         } catch (err) {
             if (err instanceof Error) { setError(err.message); }
             else { setError(String(err)); }
         } finally {
             setParsing(false);
+        }
+    };
+
+    const onSave = async () => {
+        setError("");
+        setSaveOk("");
+
+        if (!file) { setError("No file selected."); return; }
+
+        try {
+            setSaving(true);
+
+            // Raw bytes of the originally selected file (no modifications)
+            const bytes = new Uint8Array(await file.arrayBuffer());
+            const base64 = bytesToBase64(bytes);
+
+            // Minimal payload — adjust field names to match your API if needed
+            const payload = {
+                ComposerName: composer || "(unknown)",
+                SongTitle: title || stripExt(file.name),
+                SongLevel: "Intermediate I", // one of: Beginner I/II, Intermediate I/II, Advanced
+                FileName: file.name,
+                Mime:
+                    file.type ||
+                    (file.name.toLowerCase().endsWith(".mxl")
+                        ? "application/vnd.recordare.musicxml"
+                        : "application/vnd.recordare.musicxml+xml"),
+                SongMxlBase64: base64,
+            };
+
+            const res = await fetch(SAVE_ENDPOINT, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload),
+            });
+
+            if (!res.ok) {
+                const text = await res.text();
+                throw new Error(text || `Save failed (HTTP ${res.status})`);
+            }
+
+            setSaveOk("Saved ✓");
+        } catch (err) {
+            if (err instanceof Error) { setError(err.message); }
+            else { setError(String(err)); }
+        } finally {
+            setSaving(false);
         }
     };
 
@@ -57,7 +111,7 @@ export default function AdminPage() {
 
                 {/* White card with dark text for readability on dark themes */}
                 <div style={{ padding: 16, border: "1px solid #ddd", borderRadius: 8, background: "#fff", color: "#000" }}>
-                    {/* File picker row */}
+                    {/* Picker + filename */}
                     <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
                         <label htmlFor="song-file-input" style={{ fontWeight: 600 }}>Select file:</label>
                         <input
@@ -69,8 +123,16 @@ export default function AdminPage() {
                         {parsing && (<span aria-live="polite">Parsing…</span>)}
                     </div>
 
-                    {error && (
-                        <p role="alert" style={{ color: "#b00020", marginTop: 12 }}>{error}</p>
+                    {file && (
+                        <div style={{ marginTop: 8, color: "#333" }}>
+                            <strong>File:</strong> <span>{file.name}</span>
+                        </div>
+                    )}
+
+                    {(error || saveOk) && (
+                        <p role={error ? "alert" : undefined} style={{ color: error ? "#b00020" : "#08660b", marginTop: 12 }}>
+                            {error || saveOk}
+                        </p>
                     )}
 
                     {/* Fields */}
@@ -90,7 +152,9 @@ export default function AdminPage() {
                             <label style={{ alignSelf: "center", fontWeight: 600 }}>Composer</label>
                             <input type="text" value={composer} readOnly style={roStyle} />
 
-                            <label style={{ alignSelf: "start", fontWeight: 600, paddingTop: 6 }}>XML (scroll to view all)</label>
+                            <label style={{ alignSelf: "start", fontWeight: 600, paddingTop: 6 }}>
+                                XML (to end of &lt;/defaults&gt; or first 25 lines)
+                            </label>
                             <pre
                                 aria-label="XML preview"
                                 style={{
@@ -100,7 +164,7 @@ export default function AdminPage() {
                                     border: "1px solid #ccc",
                                     borderRadius: 6,
                                     padding: "8px 10px",
-                                    maxHeight: "70vh",       // tall but contained; scrollable
+                                    maxHeight: "520px",   // ≈ 6–8 inches depending on DPI
                                     overflow: "auto",
                                     fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
                                     fontSize: 13,
@@ -109,6 +173,26 @@ export default function AdminPage() {
                             >
                                 {xmlPreview || "(no XML found)"}
                             </pre>
+                        </div>
+                    )}
+
+                    {/* Actions */}
+                    {file && (
+                        <div style={{ marginTop: 16, display: "flex", gap: 12 }}>
+                            <button
+                                type="button"
+                                onClick={onSave}
+                                disabled={saving}
+                                style={{
+                                    padding: "8px 12px",
+                                    border: "1px solid #aaa",
+                                    borderRadius: 6,
+                                    background: saving ? "#eee" : "#fafafa",
+                                    cursor: saving ? "default" : "pointer",
+                                }}
+                            >
+                                {saving ? "Saving…" : "Save"}
+                            </button>
                         </div>
                     )}
                 </div>
@@ -185,7 +269,7 @@ function extractFromMusicXml(xmlText: string, fallbackName: string): { title: st
 
 function firstText(doc: Document, selector: string): string {
     const el = doc.querySelector(selector);
-    const raw = el?.textContent ?? ""; // compact & safe; always yields a string
+    const raw = el?.textContent ?? "";
     return collapseWs(raw);
 }
 
@@ -202,18 +286,12 @@ function stripExt(name: string): string {
 }
 
 function collapseWs(s: string): string {
-    // Collapse any run of whitespace characters to a single space, then trim.
-    // Uses explicit escape sequences to avoid unterminated string/regex issues.
+    // Collapse runs of whitespace to a single space, then trim.
     let out = "";
     let inWs = false;
     for (let i = 0; i < s.length; i++) {
         const ch = s[i]!;
-        const ws =
-            ch === " " ||
-            ch === "\n" ||
-            ch === "\r" ||
-            ch === "\t" ||
-            ch === "\f";
+        const ws = ch === " " || ch === "\n" || ch === "\r" || ch === "\t" || ch === "\f";
         if (ws) {
             if (!inWs) { out += " "; inWs = true; }
         } else {
@@ -222,4 +300,26 @@ function collapseWs(s: string): string {
         }
     }
     return out.trim();
+}
+
+// Show from start of XML through closing </defaults>; if not present, first N lines
+function xmlUpToDefaultsOrFirstLines(xmlText: string, n: number): string {
+    const endTag = "</defaults>";
+    const idx = xmlText.indexOf(endTag);
+    if (idx >= 0) {
+        const cut = idx + endTag.length;
+        return xmlText.slice(0, cut);
+    }
+    const lines = xmlText.split(/\r?\n/);
+    const head = lines.slice(0, Math.max(0, n));
+    return head.join("\n") + (lines.length > head.length ? "\n…" : "");
+}
+
+// Utility: Uint8Array -> base64
+function bytesToBase64(bytes: Uint8Array): string {
+    let s = "";
+    for (let i = 0; i < bytes.length; i++) {
+        s += String.fromCharCode(bytes[i]!);
+    }
+    return btoa(s);
 }
