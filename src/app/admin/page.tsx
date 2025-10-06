@@ -16,6 +16,7 @@ export default function AdminPage() {
     const [title, setTitle] = React.useState("");
     const [composer, setComposer] = React.useState("");
     const [xmlPreview, setXmlPreview] = React.useState(""); // start→</defaults> (or first 25 lines)
+    const fileInputRef = React.useRef<HTMLInputElement>(null);
 
     const onPick: React.ChangeEventHandler<HTMLInputElement> = async (e) => {
         setError("");
@@ -111,15 +112,46 @@ export default function AdminPage() {
 
                 {/* White card with dark text for readability on dark themes */}
                 <div style={{ padding: 16, border: "1px solid #ddd", borderRadius: 8, background: "#fff", color: "#000" }}>
-                    {/* Picker + filename */}
-                    <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-                        <label htmlFor="song-file-input" style={{ fontWeight: 600 }}>Select file:</label>
+                    {/* File picker row */}
+                    <div
+                        style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 12,
+                            flexWrap: "wrap",
+                            justifyContent: "space-between",
+                        }}
+                    >
+                        {/* Left side: label only */}
+                        <label htmlFor="song-file-input" style={{ fontWeight: 600, marginRight: "auto" }}>
+                            Select file:
+                        </label>
+
+                        {/* Hidden real input (to avoid native truncated filename UI) */}
                         <input
+                            ref={fileInputRef}
                             id="song-file-input"
                             type="file"
                             accept=".mxl,.musicxml,application/vnd.recordare.musicxml,application/vnd.recordare.musicxml+xml,application/zip"
                             onChange={onPick}
+                            style={{ display: "none" }}
                         />
+
+                        {/* Right side: button that triggers hidden input */}
+                        <button
+                            type="button"
+                            onClick={() => { if (fileInputRef.current) { fileInputRef.current.click(); } }}
+                            style={{
+                                padding: "8px 12px",
+                                border: "1px solid #aaa",
+                                borderRadius: 6,
+                                background: "#fafafa",
+                                cursor: "pointer",
+                            }}
+                        >
+                            Choose File
+                        </button>
+
                         {parsing && (<span aria-live="polite">Parsing…</span>)}
                     </div>
 
@@ -152,9 +184,8 @@ export default function AdminPage() {
                             <label style={{ alignSelf: "center", fontWeight: 600 }}>Composer</label>
                             <input type="text" value={composer} readOnly style={roStyle} />
 
-                            <label style={{ alignSelf: "start", fontWeight: 600, paddingTop: 6 }}>
-                                XML (to end of &lt;/defaults&gt; or first 25 lines)
-                            </label>
+                            <label style={{ alignSelf: "start", fontWeight: 600, paddingTop: 6 }}>XML</label>
+
                             <pre
                                 aria-label="XML preview"
                                 style={{
@@ -164,7 +195,7 @@ export default function AdminPage() {
                                     border: "1px solid #ccc",
                                     borderRadius: 6,
                                     padding: "8px 10px",
-                                    maxHeight: "520px",   // ≈ 6–8 inches depending on DPI
+                                    maxHeight: "300px",
                                     overflow: "auto",
                                     fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
                                     fontSize: 13,
