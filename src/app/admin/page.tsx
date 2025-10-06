@@ -15,6 +15,8 @@ export default function AdminPage() {
     // display-only fields for now
     const [title, setTitle] = React.useState("");
     const [composer, setComposer] = React.useState("");
+    const [level, setLevel] = React.useState("");
+
     const [xmlPreview, setXmlPreview] = React.useState(""); // start→</defaults> (or first 25 lines)
     const fileInputRef = React.useRef<HTMLInputElement>(null);
 
@@ -24,6 +26,7 @@ export default function AdminPage() {
         setParsing(false);
         setTitle("");
         setComposer("");
+        setLevel("");
         setXmlPreview("");
 
         const f = e.target.files?.[0] ?? null;
@@ -122,11 +125,6 @@ export default function AdminPage() {
                             justifyContent: "space-between",
                         }}
                     >
-                        {/* Left side: label only */}
-                        <label htmlFor="song-file-input" style={{ fontWeight: 600, marginRight: "auto" }}>
-                            Select file:
-                        </label>
-
                         {/* Hidden real input (to avoid native truncated filename UI) */}
                         <input
                             ref={fileInputRef}
@@ -156,8 +154,7 @@ export default function AdminPage() {
                     </div>
 
                     {file && (
-                        <div style={{ marginTop: 8, color: "#333" }}>
-                            <strong>File:</strong> <span>{file.name}</span>
+                        <div style={{ marginTop: 16, display: "flex", gap: 12, justifyContent: "flex-end" }}>
                         </div>
                     )}
 
@@ -179,10 +176,26 @@ export default function AdminPage() {
                             }}
                         >
                             <label style={{ alignSelf: "center", fontWeight: 600 }}>Title</label>
-                            <input type="text" value={title} readOnly style={roStyle} />
-
+                            <input
+                                type="text"
+                                value={title}
+                                onChange={(e) => { setTitle(e.target.value); }}
+                                style={roStyle}
+                            />
                             <label style={{ alignSelf: "center", fontWeight: 600 }}>Composer</label>
-                            <input type="text" value={composer} readOnly style={roStyle} />
+                            <input
+                                type="text"
+                                value={composer}
+                                onChange={(e) => { setComposer(e.target.value); }}
+                                style={roStyle}
+                            />
+                            <label style={{ alignSelf: "center", fontWeight: 600 }}>Level</label>
+                            <input
+                                type="text"
+                                value={level}
+                                onChange={(e) => { setLevel(e.target.value); }}
+                                style={roStyle}
+                            />
 
                             <label style={{ alignSelf: "start", fontWeight: 600, paddingTop: 6 }}>XML</label>
 
