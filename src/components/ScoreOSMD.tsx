@@ -1070,32 +1070,6 @@ export default function ScoreViewer({
   const pageIdxRef = useRef<number>(0);
   const readyRef = useRef<boolean>(false);
 
-  // Packed/virtual Y positions for each band (what their Y would be if we stacked them)
-  const flowMapRef = useRef<{ top: number[]; bottom: number[] }>({ top: [], bottom: [] });
-
-  function rebuildFlowMap(outer: HTMLDivElement, bands: Band[]): void {
-    const gap = interSystemPackGapPx(outer); // you already call this in computePageStarts
-    const top: number[] = [];
-    const bottom: number[] = [];
-
-    // Anchor the virtual flow to the *physical* top of the first band,
-    // so translateY(-flowTop[i] + gutter) still pins the band correctly.
-    let y = bands[0]?.top ?? 0;
-
-    for (let i = 0; i < bands.length; i++) {
-      const b = bands[i]!;
-      top[i] = Math.round(y);
-      y += b.height;
-      bottom[i] = Math.round(y);
-      if (i < bands.length - 1) {
-        y += gap;
-      }
-    }
-
-    flowMapRef.current = { top, bottom };
-  }
-
-
   const DEFAULT_BUSY_MSG = "Please wait…";
 
   // Busy lock (blocks input while OSMD works)
@@ -1633,8 +1607,6 @@ export default function ScoreViewer({
         { outer }
       );
 
-      rebuildFlowMap(outer, bands);
-
       if (debugOverlays) {
         debugDrawBands(outer, bands, {
           tag: "scan",
@@ -1791,9 +1763,6 @@ export default function ScoreViewer({
         void logStep("repag: bands=0 — exit", { outer });
         return;
       }
-
-      // Recompute page starts using the SAME height that masking uses
-      rebuildFlowMap(outer, bands);
 
       const visH = visiblePageHeight(outer);
 
