@@ -2,7 +2,7 @@
 
 import React from "react";
 
-// /admin — pick one file, parse metadata, display Title/Composer + first 10 lines of MusicXML (read-only)
+// /admin — pick one file, parse metadata, display Title/Composer + full XML (read-only)
 export default function AdminPage() {
     const [file, setFile] = React.useState<File | null>(null);
     const [parsing, setParsing] = React.useState(false);
@@ -11,18 +11,7 @@ export default function AdminPage() {
     // display-only fields for now
     const [title, setTitle] = React.useState("");
     const [composer, setComposer] = React.useState("");
-    const [xmlPreview, setXmlPreview] = React.useState(""); // first 10 lines of MusicXML
-
-    const clear = () => {
-        setFile(null);
-        setParsing(false);
-        setError("");
-        setTitle("");
-        setComposer("");
-        setXmlPreview("");
-        const input = document.getElementById("song-file-input") as HTMLInputElement | null;
-        if (input) { input.value = ""; }
-    };
+    const [xmlPreview, setXmlPreview] = React.useState(""); // full MusicXML (scrollable)
 
     const onPick: React.ChangeEventHandler<HTMLInputElement> = async (e) => {
         setError("");
@@ -47,8 +36,7 @@ export default function AdminPage() {
             const meta = await extractMetadataAndXml(f, { isMxl, isXml });
             setTitle(meta.title || "");
             setComposer(meta.composer || "");
-            const preview = firstLines(meta.xmlText || "", 10);
-            setXmlPreview(preview);
+            setXmlPreview(meta.xmlText || "");
         } catch (err) {
             if (err instanceof Error) { setError(err.message); }
             else { setError(String(err)); }
@@ -67,7 +55,8 @@ export default function AdminPage() {
             <section aria-labelledby="add-song-h">
                 <h2 id="add-song-h" style={{ marginBottom: 12 }}>Add song</h2>
 
-                <div style={{ padding: 16, border: "1px solid #ddd", borderRadius: 8, background: "#fafafa" }}>
+                {/* White card with dark text for readability on dark themes */}
+                <div style={{ padding: 16, border: "1px solid #ddd", borderRadius: 8, background: "#fff", color: "#000" }}>
                     {/* File picker row */}
                     <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
                         <label htmlFor="song-file-input" style={{ fontWeight: 600 }}>Select file:</label>
@@ -77,15 +66,6 @@ export default function AdminPage() {
                             accept=".mxl,.musicxml,application/vnd.recordare.musicxml,application/vnd.recordare.musicxml+xml,application/zip"
                             onChange={onPick}
                         />
-                        {file && (
-                            <button
-                                type="button"
-                                onClick={clear}
-                                style={{ padding: "6px 10px", border: "1px solid #ccc", borderRadius: 6, background: "#fff", cursor: "pointer" }}
-                            >
-                                Clear
-                            </button>
-                        )}
                         {parsing && (<span aria-live="polite">Parsing…</span>)}
                     </div>
 
@@ -93,22 +73,24 @@ export default function AdminPage() {
                         <p role="alert" style={{ color: "#b00020", marginTop: 12 }}>{error}</p>
                     )}
 
-                    {/* Fields: moved up; no filename/type badges */}
+                    {/* Fields */}
                     {file && (
-                        <div style={{
-                            marginTop: 18,
-                            display: "grid",
-                            gridTemplateColumns: "120px 1fr",
-                            rowGap: 10,
-                            columnGap: 12,
-                        }}>
+                        <div
+                            style={{
+                                marginTop: 18,
+                                display: "grid",
+                                gridTemplateColumns: "120px 1fr",
+                                rowGap: 10,
+                                columnGap: 12,
+                            }}
+                        >
                             <label style={{ alignSelf: "center", fontWeight: 600 }}>Title</label>
                             <input type="text" value={title} readOnly style={roStyle} />
 
                             <label style={{ alignSelf: "center", fontWeight: 600 }}>Composer</label>
                             <input type="text" value={composer} readOnly style={roStyle} />
 
-                            <label style={{ alignSelf: "start", fontWeight: 600, paddingTop: 6 }}>XML (first 10 lines)</label>
+                            <label style={{ alignSelf: "start", fontWeight: 600, paddingTop: 6 }}>XML (scroll to view all)</label>
                             <pre
                                 aria-label="XML preview"
                                 style={{
@@ -118,13 +100,15 @@ export default function AdminPage() {
                                     border: "1px solid #ccc",
                                     borderRadius: 6,
                                     padding: "8px 10px",
-                                    maxHeight: 240,
+                                    maxHeight: "70vh",       // tall but contained; scrollable
                                     overflow: "auto",
                                     fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
                                     fontSize: 13,
-                                    color: "#111",
+                                    color: "#000",
                                 }}
-                            >{xmlPreview || "(no XML found)"}</pre>
+                            >
+                                {xmlPreview || "(no XML found)"}
+                            </pre>
                         </div>
                     )}
                 </div>
@@ -201,8 +185,7 @@ function extractFromMusicXml(xmlText: string, fallbackName: string): { title: st
 
 function firstText(doc: Document, selector: string): string {
     const el = doc.querySelector(selector);
-    let raw = "";
-    if (el !== null) { raw = el.textContent ?? ""; }
+    const raw = el?.textContent ?? ""; // compact & safe; always yields a string
     return collapseWs(raw);
 }
 
@@ -219,12 +202,18 @@ function stripExt(name: string): string {
 }
 
 function collapseWs(s: string): string {
-    // Replace any run of whitespace with a single space, then trim
+    // Collapse any run of whitespace characters to a single space, then trim.
+    // Uses explicit escape sequences to avoid unterminated string/regex issues.
     let out = "";
     let inWs = false;
     for (let i = 0; i < s.length; i++) {
         const ch = s[i]!;
-        const ws = ch === " " || ch === "\n" || ch === "\r" || ch === "\t" || ch === "\f";
+        const ws =
+            ch === " " ||
+            ch === "\n" ||
+            ch === "\r" ||
+            ch === "\t" ||
+            ch === "\f";
         if (ws) {
             if (!inWs) { out += " "; inWs = true; }
         } else {
@@ -233,12 +222,4 @@ function collapseWs(s: string): string {
         }
     }
     return out.trim();
-}
-
-function firstLines(s: string, n: number): string {
-    const lines = s.split(/\r?\n/);
-    const head = lines.slice(0, Math.max(0, n));
-    let txt = head.join("\n");
-    if (lines.length > head.length) { txt += "\n…"; }
-    return txt;
 }
