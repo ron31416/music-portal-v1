@@ -34,13 +34,8 @@ const REFLOW = {
   // Pagination height slop: lets us fill the page slightly past the visible height
   PAGE_FILL_SLOP_PX: 8,
 
-  // “Last page” spacing: if a system is too close to the bottom, push it to a new page
-  LAST_PAGE_BOTTOM_PAD_PX: 12,
-
   // Masking/peek guards between pages (don’t usually need to touch)
   MASK_BOTTOM_SAFETY_PX: 12,
-  PEEK_GUARD_LO_DPR: 5,
-  PEEK_GUARD_HI_DPR: 7,
 
   // Fixed bottom cutter padding
   BOTTOM_PEEK_PAD_LO_DPR: 5,
@@ -55,6 +50,7 @@ async function withTimeout<T>(p: Promise<T>, ms: number, tag: string): Promise<T
   });
 }
 
+
 // Await osmd.load(...) whether it returns void or a Promise.
 // (No "maybe" checks needed.)
 async function loadOSMD(
@@ -67,6 +63,7 @@ async function loadOSMD(
   const o = osmd as unknown as OSMDHasLoad;
   await Promise.resolve(o.load(input));
 }
+
 
 // --- Instance-scoped afterPaint factory (safe for multiple components) ---
 function makeAfterPaint(outer: HTMLDivElement) {
@@ -113,9 +110,11 @@ function makeAfterPaint(outer: HTMLDivElement) {
   };
 }
 
+
 function getSvg(outer: HTMLDivElement): SVGSVGElement | null {
   return outer.querySelector("svg");
 }
+
 
 function withSvgAtUnitScale<T>(outer: HTMLDivElement, fn: (svg: SVGSVGElement) => T): T | null {
   const svg = getSvg(outer);
@@ -134,6 +133,7 @@ function withSvgAtUnitScale<T>(outer: HTMLDivElement, fn: (svg: SVGSVGElement) =
   }
 }
 
+
 /** Best-effort "wait until the browser can paint" (bounded) */
 async function waitForPaint(timeoutMs = 450): Promise<void> {
   try {
@@ -150,6 +150,7 @@ async function waitForPaint(timeoutMs = 450): Promise<void> {
     }
   } catch { }
 }
+
 
 // URL-driven debug flags (hash or query). Examples:
 //   #viewer-log           → DEBUG_LOG = true
@@ -183,15 +184,20 @@ function readDebugFlag(name: string, fallback = false): boolean {
   } catch { /* ignore */ }
   return fallback;
 }
-// Independent flags:
-const DEBUG_LOG = readDebugFlag("viewer-log", false);
-const DEBUG_PAGINATION_DIAG = readDebugFlag("viewer-pag", false);
+// URL flags (read once at module import; change URL + Reload to apply)
+const URL_LOG = readDebugFlag("viewer-log", false);
+const URL_PAG = readDebugFlag("viewer-pag", false);
+
+// Effective switches: pagination diag implies logging
+const isLogOn = () => URL_LOG || URL_PAG;
+const isPagDiagOn = () => URL_PAG;
+
 
 export async function logStep(
   message: string,
   opts: { paint?: boolean; outer?: HTMLDivElement | null } = {}
 ): Promise<void> {
-  if (!DEBUG_LOG) { return; }
+  if (!isLogOn()) { return; }
 
   const { paint = false, outer = null } = opts;
 
@@ -239,6 +245,7 @@ export async function logStep(
   } catch { }
 }
 
+
 // ---------- DEBUG OVERLAY (visualize bands & starts) ----------
 let DEBUG_BANDS = false; // set true to show guides; false to hide
 
@@ -254,6 +261,7 @@ type DebugOpts = {
   topGutter?: number;
   drawPageLocal?: boolean;   // NEW: draw per-system top/bottom in page space
 };
+
 
 function debugDrawBands(
   outer: HTMLDivElement,
@@ -407,6 +415,7 @@ function debugDrawBands(
   if (Number.isFinite(opts.maskAbsY!)) { addHGuide(opts.maskAbsY!, "maskTop", "#e53935"); }
 }
 
+
 // === HUD & edge-lines (helpers)
 type HudSnapshot = {
   pageIdx: number;
@@ -423,6 +432,7 @@ type HudSnapshot = {
   nextTop?: number;
   nextBottom?: number;
 };
+
 
 function drawHud(outer: HTMLDivElement, snap: HudSnapshot): void {
   let hud = outer.querySelector<HTMLDivElement>("[data-viewer-hud='1']");
@@ -461,6 +471,7 @@ function drawHud(outer: HTMLDivElement, snap: HudSnapshot): void {
 
   hud.textContent = lines.join("\n");
 }
+
 
 type EdgeLineMode = "raw" | "applied";
 
@@ -519,6 +530,7 @@ function drawSystemEdgeLines(
   }
 }
 
+
 /** Remove any debug layers if they exist. */
 function clearDebugLayers(outer: HTMLDivElement): void {
   if (!outer) { return; }
@@ -547,6 +559,7 @@ async function waitForFonts(): Promise<void> {
     /* no-op */
   }
 }
+
 
 /** Track the *visible* viewport height (accounts for mobile URL/tool bars) */
 function useVisibleViewportHeight() {
@@ -587,10 +600,12 @@ function useVisibleViewportHeight() {
   return vpRef; // latest visible height in px
 }
 
+
 function dynamicBandGapPx(): number {
   const dpr = (typeof window !== "undefined" ? window.devicePixelRatio : 1) || 1;
   return dpr >= 2 ? 4 : 3;
 }
+
 
 function scanSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[] {
   const prevFuncTag = outer.dataset.viewerFunc ?? "";
@@ -687,6 +702,7 @@ function scanSystemsPx(outer: HTMLDivElement, svgRoot: SVGSVGElement): Band[] {
   }
 }
 
+
 // --- System packing helpers (insert after scanSystemsPx) ---
 
 function interSystemPackGapPx(outer: HTMLDivElement): number {
@@ -697,6 +713,7 @@ function interSystemPackGapPx(outer: HTMLDivElement): number {
   if (dpr >= 2) { gap += 1; }   // Hi-DPR safety
   return gap;
 }
+
 
 // Find per-page root elements produced by OSMD, across its different layouts.
 // May return <g> (pages inside one SVG), <svg> (one per page), or <div> wrappers.
@@ -751,11 +768,13 @@ function getPageRoots(svgRoot: SVGSVGElement): Array<SVGGElement | SVGSVGElement
   return [svgRoot];
 }
 
+
 function systemGroupCount(svgRoot: SVGSVGElement): number {
   return Array.from(
     svgRoot.querySelectorAll<SVGGElement>("g[id*='system' i], g[class*='system' i]")
   ).filter(g => g.ownerSVGElement === svgRoot).length;
 }
+
 
 /** Collapse big gaps *between* OSMD’s engraved pages to our nominal gap. */
 function flattenEngravedSeams(
@@ -769,7 +788,7 @@ function flattenEngravedSeams(
   try {
     const pageRoots: Array<SVGSVGElement | SVGGElement> = getPageRoots(svgRoot);
 
-    if (DEBUG_PAGINATION_DIAG) {
+    if (isPagDiagOn()) {
       void logStep(`pageRoots: ${pageRoots.length}`, { outer });
       if (pageRoots.length === 0) {
         const peekNodes = Array.from(
@@ -787,14 +806,14 @@ function flattenEngravedSeams(
     }
 
     if (pageRoots.length <= 1) {
-      if (DEBUG_PAGINATION_DIAG) {
+      if (isPagDiagOn()) {
         void logStep(`skipped — pageRoots<=1 (${pageRoots.length}) preBands: ${preBands.length}`, { outer });
       }
       return;
     }
 
     if (preBands.length === 0) {
-      if (DEBUG_PAGINATION_DIAG) {
+      if (isPagDiagOn()) {
         void logStep("skipped — preBands=0", { outer });
       }
       return;
@@ -898,7 +917,7 @@ function flattenEngravedSeams(
       }
     }
 
-    if (DEBUG_PAGINATION_DIAG) {
+    if (isPagDiagOn()) {
       void logStep(
         `pageRoots: ${pageRoots.length} desiredGap: ${desiredGap} totalShift: ${Math.round(accDelta)}`,
         { outer }
@@ -910,6 +929,7 @@ function flattenEngravedSeams(
     } catch { }
   }
 }
+
 
 /** Repack systems *inside* each engraved page to the nominal gap. */
 function packSystemsWithinPages(
@@ -966,6 +986,7 @@ function packSystemsWithinPages(
   }
 }
 
+
 /** Deterministic page starts from measured system rectangles (strict, bottom-based). */
 function computePageStarts(
   outer: HTMLDivElement,
@@ -1012,11 +1033,13 @@ function computePageStarts(
   }
 }
 
+
 function hasZoomProp(o: unknown): o is { Zoom: number } {
   if (typeof o !== "object" || o === null) { return false; }
   const maybe = o as { Zoom?: unknown };
   return typeof maybe.Zoom === "number";
 }
+
 
 function perfMark(n: string) { try { performance.mark(n); } catch { } }
 
@@ -1077,6 +1100,7 @@ async function perfBlockAsync<T>(
     } catch { }
   }
 }
+
 
 /* ---------- Component ---------- */
 
@@ -1454,7 +1478,7 @@ export default function ScoreViewer({
         let bottomCutter = outer.querySelector<HTMLDivElement>("[data-viewer-bottomcutter='1']");
         const needsMask = maskTopWithinMusicPx < hVisible;
 
-        if (DEBUG_PAGINATION_DIAG) {
+        if (isPagDiagOn()) {
           const lastForLog = nextStartIndex >= 0 ? (nextStartIndex - 1) : (bands.length - 1);
           void logStep(
             `pages: ${p + 1}/${pages} startIndex: ${startIndex} lastForLog: ${lastForLog} ` +
@@ -1663,7 +1687,7 @@ export default function ScoreViewer({
           { outer }
         );
 
-        if (DEBUG_PAGINATION_DIAG) {
+        if (isPagDiagOn()) {
           // Compact page map (page -> band range)
           {
             const lastBand = bands.length - 1;
@@ -1811,7 +1835,7 @@ export default function ScoreViewer({
       outer.dataset.viewerPages = String(starts.length);
 
       // Optional diagnostics: compact page map
-      if (DEBUG_PAGINATION_DIAG) {
+      if (isPagDiagOn()) {
         const lastBand = bands.length - 1;
         const parts: string[] = [];
         for (let p = 0; p < starts.length; p++) {
@@ -2813,7 +2837,7 @@ export default function ScoreViewer({
     placeItems: "center",
     background: "rgba(0,0,0,0.45)",
     backdropFilter: "blur(2px)",
-    cursor: "wait",
+    cursor: fatalReason ? "default" : "wait",
   };
 
   const stopEvent = (e: React.SyntheticEvent) => {
@@ -2834,7 +2858,7 @@ export default function ScoreViewer({
 
       {/* Input-blocking overlay while busy (spinner hidden for fatal states) */}
       <div
-        aria-busy={busy}
+        aria-busy={fatalReason ? false : busy}
         role={fatalReason ? "alert" : "status"}
         aria-live={fatalReason ? "assertive" : "polite"}
         aria-atomic="true"
