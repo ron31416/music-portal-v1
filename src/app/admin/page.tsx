@@ -1,4 +1,3 @@
-/* eslint curly: ["error", "all"] */
 "use client";
 
 import React from "react";
