@@ -152,11 +152,7 @@ async function waitForPaint(timeoutMs = 450): Promise<void> {
 }
 
 
-// URL-driven debug flags (hash or query). Examples:
-//   #viewer-log           → DEBUG_LOG = true
-//   #viewer-pag           → DEBUG_PAGINATION_DIAG = true
-//   #viewer-log=1&viewer-pag=0
-//   ?viewer-log=true&viewer-pag=false
+// URL-driven debug flags: #viewer-log or #viewer-pag 
 function readDebugFlag(name: string, fallback = false): boolean {
   try {
     const read = (s: string) => {
