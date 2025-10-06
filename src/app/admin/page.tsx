@@ -145,9 +145,10 @@ export default function AdminPage() {
                                 borderRadius: 6,
                                 background: "#fafafa",
                                 cursor: "pointer",
+                                marginLeft: "auto",
                             }}
                         >
-                            Choose File
+                            Load a file
                         </button>
 
                         {parsing && (<span aria-live="polite">Parsing…</span>)}
@@ -233,6 +234,7 @@ export default function AdminPage() {
                                     borderRadius: 6,
                                     background: saving ? "#eee" : "#fafafa",
                                     cursor: saving ? "default" : "pointer",
+                                    marginLeft: "auto",
                                 }}
                             >
                                 {saving ? "Saving…" : "Save"}
