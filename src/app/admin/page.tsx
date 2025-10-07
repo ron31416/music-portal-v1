@@ -105,71 +105,69 @@ export default function AdminPage() {
 
     return (
         <main style={{ maxWidth: 860, margin: "40px auto", padding: "0 16px" }}>
-            <h1 style={{ marginBottom: 8 }}>Admin</h1>
-            <p style={{ color: "#666", marginBottom: 24 }}>
-                Single-file song import — pick a file, then review parsed fields. Title/Composer are read-only for now.
-            </p>
+            {/* Top bar: Load button only (upper-right). No headings/rectangle on first load */}
+            <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
+                {/* Hidden real input */}
+                <input
+                    ref={fileInputRef}
+                    id="song-file-input"
+                    type="file"
+                    accept=".mxl,.musicxml,application/vnd.recordare.musicxml,application/vnd.recordare.musicxml+xml,application/zip"
+                    onChange={onPick}
+                    style={{ display: "none" }}
+                />
 
-            <section aria-labelledby="add-song-h">
-                <h2 id="add-song-h" style={{ marginBottom: 12 }}>Add song</h2>
+                <button
+                    type="button"
+                    onClick={() => { if (fileInputRef.current) { fileInputRef.current.click(); } }}
+                    style={{
+                        padding: "8px 12px",
+                        border: "1px solid #aaa",
+                        borderRadius: 6,
+                        background: "#fafafa",
+                        cursor: "pointer",
+                        marginLeft: "auto",
+                    }}
+                >
+                    Load a file
+                </button>
 
-                {/* White card with dark text for readability on dark themes */}
-                <div style={{ padding: 16, border: "1px solid #ddd", borderRadius: 8, background: "#fff", color: "#000" }}>
-                    {/* File picker row */}
-                    <div
+                {parsing && (<span aria-live="polite" style={{ alignSelf: "center", marginLeft: 10 }}>Parsing…</span>)}
+            </div>
+
+            {/* Status line (below the button) */}
+            {(error || saveOk) && (
+                <p role={error ? "alert" : undefined} style={{ color: error ? "#b00020" : "#08660b", marginBottom: 12 }}>
+                    {error || saveOk}
+                </p>
+            )}
+
+            {/* Data card: only after a file is selected */}
+            {file && (
+                <section aria-labelledby="add-song-h">
+                    {/* Keep the h2 for a11y but visually hide it */}
+                    <h2
+                        id="add-song-h"
                         style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 12,
-                            flexWrap: "wrap",
-                            justifyContent: "space-between",
+                            position: "absolute",
+                            width: 1,
+                            height: 1,
+                            padding: 0,
+                            margin: -1,
+                            overflow: "hidden",
+                            clip: "rect(0 0 0 0)",
+                            whiteSpace: "nowrap",
+                            border: 0,
                         }}
                     >
-                        {/* Hidden real input (to avoid native truncated filename UI) */}
-                        <input
-                            ref={fileInputRef}
-                            id="song-file-input"
-                            type="file"
-                            accept=".mxl,.musicxml,application/vnd.recordare.musicxml,application/vnd.recordare.musicxml+xml,application/zip"
-                            onChange={onPick}
-                            style={{ display: "none" }}
-                        />
+                        Add song
+                    </h2>
 
-                        {/* Right side: button that triggers hidden input */}
-                        <button
-                            type="button"
-                            onClick={() => { if (fileInputRef.current) { fileInputRef.current.click(); } }}
-                            style={{
-                                padding: "8px 12px",
-                                border: "1px solid #aaa",
-                                borderRadius: 6,
-                                background: "#fafafa",
-                                cursor: "pointer",
-                                marginLeft: "auto",
-                            }}
-                        >
-                            Load a file
-                        </button>
-
-                        {parsing && (<span aria-live="polite">Parsing…</span>)}
-                    </div>
-
-                    {file && (
-                        <div style={{ marginTop: 16, display: "flex", gap: 12, justifyContent: "flex-end" }}>
-                        </div>
-                    )}
-
-                    {(error || saveOk) && (
-                        <p role={error ? "alert" : undefined} style={{ color: error ? "#b00020" : "#08660b", marginTop: 12 }}>
-                            {error || saveOk}
-                        </p>
-                    )}
-
-                    {/* Fields */}
-                    {file && (
+                    {/* White card with the fields + Save button */}
+                    <div style={{ padding: 16, border: "1px solid #ddd", borderRadius: 8, background: "#fff", color: "#000" }}>
                         <div
                             style={{
-                                marginTop: 18,
+                                marginTop: 0,
                                 display: "grid",
                                 gridTemplateColumns: "120px 1fr",
                                 rowGap: 10,
@@ -183,6 +181,7 @@ export default function AdminPage() {
                                 onChange={(e) => { setTitle(e.target.value); }}
                                 style={roStyle}
                             />
+
                             <label style={{ alignSelf: "center", fontWeight: 600 }}>Composer</label>
                             <input
                                 type="text"
@@ -190,6 +189,7 @@ export default function AdminPage() {
                                 onChange={(e) => { setComposer(e.target.value); }}
                                 style={roStyle}
                             />
+
                             <label style={{ alignSelf: "center", fontWeight: 600 }}>Level</label>
                             <input
                                 type="text"
@@ -198,31 +198,32 @@ export default function AdminPage() {
                                 style={roStyle}
                             />
 
-                            <label style={{ alignSelf: "start", fontWeight: 600, paddingTop: 6 }}>XML</label>
-
-                            <pre
-                                aria-label="XML preview"
+                            <label style={{ alignSelf: "start", fontWeight: 600, paddingTop: 6 }}>XML (editable)</label>
+                            <textarea
+                                aria-label="XML"
+                                value={xmlPreview}
+                                onChange={(e) => { setXmlPreview(e.target.value); }}
+                                spellCheck={false}
                                 style={{
+                                    width: "100%",
                                     margin: 0,
-                                    whiteSpace: "pre-wrap",
                                     background: "#fff",
                                     border: "1px solid #ccc",
                                     borderRadius: 6,
                                     padding: "8px 10px",
-                                    maxHeight: "300px",
+                                    minHeight: 160,
+                                    maxHeight: 360,
                                     overflow: "auto",
+                                    resize: "vertical",
                                     fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
                                     fontSize: 13,
                                     color: "#000",
+                                    lineHeight: 1.4,
                                 }}
-                            >
-                                {xmlPreview || "(no XML found)"}
-                            </pre>
+                            />
                         </div>
-                    )}
 
-                    {/* Actions */}
-                    {file && (
+                        {/* Actions (Save stays inside the card, right-justified) */}
                         <div style={{ marginTop: 16, display: "flex", gap: 12 }}>
                             <button
                                 type="button"
@@ -240,9 +241,9 @@ export default function AdminPage() {
                                 {saving ? "Saving…" : "Save"}
                             </button>
                         </div>
-                    )}
-                </div>
-            </section>
+                    </div>
+                </section>
+            )}
         </main>
     );
 }
