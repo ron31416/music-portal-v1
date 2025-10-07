@@ -9,7 +9,7 @@ export async function GET() {
         const { data, error } = await supabaseAdmin
             .from('skill_level') // table name you created
             .select('skill_level_name')
-            .order('skill_level_name');
+            .order('skill_level_number');
 
         if (error) {
             return new Response(
