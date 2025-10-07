@@ -175,7 +175,7 @@ export default function AdminPage() {
                                 columnGap: 12,
                             }}
                         >
-                            <label style={{ alignSelf: "center", fontWeight: 600 }}>Title</label>
+                            <label style={{ alignSelf: "center", fontWeight: 600 }}>Song Title</label>
                             <input
                                 type="text"
                                 value={title}
