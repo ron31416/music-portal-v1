@@ -14,10 +14,12 @@ export default function AdminPage() {
 
     // display-only fields for now
     const [title, setTitle] = React.useState("");
-    const [composer, setComposer] = React.useState("");
+    const [composerFirst, setComposerFirst] = React.useState("");
+    const [composerLast, setComposerLast] = React.useState("");
     const [level, setLevel] = React.useState("");
-
+    const [fileName, setFileName] = React.useState("");
     const [xmlPreview, setXmlPreview] = React.useState(""); // start→</defaults> (or first 25 lines)
+
     const fileInputRef = React.useRef<HTMLInputElement>(null);
 
     const onPick: React.ChangeEventHandler<HTMLInputElement> = async (e) => {
@@ -25,8 +27,10 @@ export default function AdminPage() {
         setSaveOk("");
         setParsing(false);
         setTitle("");
-        setComposer("");
+        setComposerFirst("");
+        setComposerLast("");
         setLevel("");
+        setFileName("");
         setXmlPreview("");
 
         const f = e.target.files?.[0] ?? null;
@@ -38,12 +42,14 @@ export default function AdminPage() {
         if (!isMxl && !isXml) { setError("Please select a .mxl or .musicxml file."); setFile(null); return; }
 
         setFile(f);
+        setFileName(f.name);
         setParsing(true);
 
         try {
             const meta = await extractMetadataAndXml(f, { isMxl, isXml });
             setTitle(meta.title || "");
-            setComposer(meta.composer || "");
+            setComposerFirst(meta.composer || "");
+            setComposerLast("");
 
             // Preview: up to and including </defaults>, else first 25 lines
             const preview = xmlUpToDefaultsOrFirstLines(meta.xmlText || "", 25);
@@ -71,16 +77,12 @@ export default function AdminPage() {
 
             // Minimal payload — adjust field names to match your API if needed
             const payload = {
-                ComposerName: composer || "(unknown)",
-                SongTitle: title || stripExt(file.name),
-                SongLevel: "Intermediate I", // one of: Beginner I/II, Intermediate I/II, Advanced
-                FileName: file.name,
-                Mime:
-                    file.type ||
-                    (file.name.toLowerCase().endsWith(".mxl")
-                        ? "application/vnd.recordare.musicxml"
-                        : "application/vnd.recordare.musicxml+xml"),
-                SongMxlBase64: base64,
+                work_title: title || stripExt(file.name),
+                composer_first_name: composerFirst || "(unknown)",
+                composer_last_name: composerLast || "",
+                skill_level: level || "Intermediate",       // your new CHECK uses Beginner/Intermediate/Advanced
+                file_name: fileName || file.name,           // shown in read-only field
+                work_mxl_base64: base64,                    // bytes of the original file
             };
 
             const res = await fetch(SAVE_ENDPOINT, {
@@ -175,7 +177,7 @@ export default function AdminPage() {
                                 columnGap: 12,
                             }}
                         >
-                            <label style={{ alignSelf: "center", fontWeight: 600 }}>Song Title</label>
+                            <label style={{ alignSelf: "center", fontWeight: 600 }}>Work Title</label>
                             <input
                                 type="text"
                                 value={title}
@@ -184,12 +186,22 @@ export default function AdminPage() {
                             />
 
                             <label style={{ alignSelf: "center", fontWeight: 600 }}>Composer</label>
-                            <input
-                                type="text"
-                                value={composer}
-                                onChange={(e) => { setComposer(e.target.value); }}
-                                style={roStyle}
-                            />
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                                <input
+                                    type="text"
+                                    value={composerFirst}
+                                    onChange={(e) => { setComposerFirst(e.target.value); }}
+                                    placeholder="First"
+                                    style={roStyle}
+                                />
+                                <input
+                                    type="text"
+                                    value={composerLast}
+                                    onChange={(e) => { setComposerLast(e.target.value); }}
+                                    placeholder="Last"
+                                    style={roStyle}
+                                />
+                            </div>
 
                             <label style={{ alignSelf: "center", fontWeight: 600 }}>Skill Level</label>
                             <input
@@ -198,6 +210,9 @@ export default function AdminPage() {
                                 onChange={(e) => { setLevel(e.target.value); }}
                                 style={roStyle}
                             />
+
+                            <label style={{ alignSelf: "center", fontWeight: 600 }}>File Name</label>
+                            <input type="text" value={fileName} readOnly style={roStyle} />
 
                             <label style={{ alignSelf: "start", fontWeight: 600, paddingTop: 6 }}>MusicXML</label>
                             <textarea
