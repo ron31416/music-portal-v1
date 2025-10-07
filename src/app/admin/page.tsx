@@ -130,7 +130,7 @@ export default function AdminPage() {
                         color: "#111",
                     }}
                 >
-                    Load a file
+                    Load a File
                 </button>
 
                 {parsing && (<span aria-live="polite" style={{ alignSelf: "center", marginLeft: 10 }}>Parsing…</span>)}
@@ -191,7 +191,7 @@ export default function AdminPage() {
                                 style={roStyle}
                             />
 
-                            <label style={{ alignSelf: "center", fontWeight: 600 }}>Level</label>
+                            <label style={{ alignSelf: "center", fontWeight: 600 }}>Skill Level</label>
                             <input
                                 type="text"
                                 value={level}
@@ -199,7 +199,7 @@ export default function AdminPage() {
                                 style={roStyle}
                             />
 
-                            <label style={{ alignSelf: "start", fontWeight: 600, paddingTop: 6 }}>XML (editable)</label>
+                            <label style={{ alignSelf: "start", fontWeight: 600, paddingTop: 6 }}>MusicXML</label>
                             <textarea
                                 aria-label="XML"
                                 value={xmlPreview}
@@ -239,7 +239,7 @@ export default function AdminPage() {
                                     marginLeft: "auto",
                                 }}
                             >
-                                {saving ? "Saving…" : "Save"}
+                                {saving ? "Saving…" : "Save to Database"}
                             </button>
                         </div>
                     </div>
