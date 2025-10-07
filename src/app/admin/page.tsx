@@ -17,10 +17,44 @@ export default function AdminPage() {
     const [composerFirst, setComposerFirst] = React.useState("");
     const [composerLast, setComposerLast] = React.useState("");
     const [level, setLevel] = React.useState("");
+    const [levels, setLevels] = React.useState<string[]>([]);
+    const [levelsLoading, setLevelsLoading] = React.useState(false);
+    const [levelsError, setLevelsError] = React.useState("");
     const [fileName, setFileName] = React.useState("");
     const [xmlPreview, setXmlPreview] = React.useState(""); // start→</defaults> (or first 25 lines)
 
     const fileInputRef = React.useRef<HTMLInputElement>(null);
+    // fetch skill levels once on mount
+    React.useEffect(() => {
+        let cancelled = false;
+
+        async function loadLevels() {
+            try {
+                setLevelsLoading(true);
+                setLevelsError("");
+                const res = await fetch("/api/skill-levels", { cache: "no-store" });
+                if (!res.ok) { throw new Error(`HTTP ${res.status}`); }
+                const json: { levels?: string[] } = await res.json();
+                const arr = Array.isArray(json.levels) ? json.levels : [];
+                if (!cancelled) {
+                    setLevels(arr);
+                    // If no value chosen yet, default to the first level (or empty string)
+                    setLevel(prev => prev || (arr[0] ?? ""));
+                }
+            } catch (e) {
+                if (!cancelled) {
+                    const msg = e instanceof Error ? e.message : String(e);
+                    setLevelsError(msg);
+                }
+            } finally {
+                if (!cancelled) { setLevelsLoading(false); }
+            }
+        }
+
+        void loadLevels();
+        return () => { cancelled = true; };
+    }, []); // run once
+
 
     const onPick: React.ChangeEventHandler<HTMLInputElement> = async (e) => {
         setError("");
@@ -80,9 +114,9 @@ export default function AdminPage() {
                 work_title: title || stripExt(file.name),
                 composer_first_name: composerFirst || "(unknown)",
                 composer_last_name: composerLast || "",
-                skill_level: level || "Intermediate",       // your new CHECK uses Beginner/Intermediate/Advanced
-                file_name: fileName || file.name,           // shown in read-only field
-                work_mxl_base64: base64,                    // bytes of the original file
+                skill_level_name: level || "Intermediate",
+                file_name: fileName || file.name,
+                work_mxl_base64: base64,
             };
 
             const res = await fetch(SAVE_ENDPOINT, {
@@ -189,27 +223,38 @@ export default function AdminPage() {
                             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
                                 <input
                                     type="text"
-                                    value={composerFirst}
-                                    onChange={(e) => { setComposerFirst(e.target.value); }}
-                                    placeholder="First"
-                                    style={roStyle}
-                                />
-                                <input
-                                    type="text"
                                     value={composerLast}
                                     onChange={(e) => { setComposerLast(e.target.value); }}
                                     placeholder="Last"
                                     style={roStyle}
                                 />
+                                <input
+                                    type="text"
+                                    value={composerFirst}
+                                    onChange={(e) => { setComposerFirst(e.target.value); }}
+                                    placeholder="First"
+                                    style={roStyle}
+                                />
                             </div>
 
                             <label style={{ alignSelf: "center", fontWeight: 600 }}>Skill Level</label>
-                            <input
-                                type="text"
+                            <select
                                 value={level}
                                 onChange={(e) => { setLevel(e.target.value); }}
-                                style={roStyle}
-                            />
+                                disabled={levelsLoading || !!levelsError || levels.length === 0}
+                                style={{ ...roStyle, appearance: "auto" }}
+                            >
+                                {levels.map((l) => (
+                                    <option key={l} value={l}>{l}</option>
+                                ))}
+                            </select>
+
+                            {/* optional: show a small warning row if the fetch failed */}
+                            {levelsError && (
+                                <div style={{ gridColumn: "1 / span 2", color: "#b00020" }}>
+                                    Failed to load skill levels: {levelsError}
+                                </div>
+                            )}
 
                             <label style={{ alignSelf: "center", fontWeight: 600 }}>File Name</label>
                             <input type="text" value={fileName} readOnly style={roStyle} />
