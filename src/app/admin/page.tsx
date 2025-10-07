@@ -127,6 +127,7 @@ export default function AdminPage() {
                         background: "#fafafa",
                         cursor: "pointer",
                         marginLeft: "auto",
+                        color: "#111",
                     }}
                 >
                     Load a file
@@ -211,8 +212,8 @@ export default function AdminPage() {
                                     border: "1px solid #ccc",
                                     borderRadius: 6,
                                     padding: "8px 10px",
-                                    minHeight: 160,
-                                    maxHeight: 360,
+                                    minHeight: 620,
+                                    maxHeight: 620,
                                     overflow: "auto",
                                     resize: "vertical",
                                     fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
