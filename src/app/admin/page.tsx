@@ -32,7 +32,7 @@ export default function AdminPage() {
             try {
                 setLevelsLoading(true);
                 setLevelsError("");
-                const res = await fetch("/api/skill-levels", { cache: "no-store" });
+                const res = await fetch("/api/skill-level", { cache: "no-store" });
                 if (!res.ok) { throw new Error(`HTTP ${res.status}`); }
                 const json: { levels?: string[] } = await res.json();
                 const arr = Array.isArray(json.levels) ? json.levels : [];
