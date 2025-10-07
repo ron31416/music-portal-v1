@@ -1,22 +1,36 @@
-// app/api/skill-levels/route.ts
-import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+// app/api/skill-level/route.ts
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+
+import { supabaseAdmin } from '@/lib/supabaseAdmin';
 
 export async function GET() {
-    const supabase = createClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.SUPABASE_SERVICE_ROLE_KEY! // or anon key if your RLS allows read
-    );
+    try {
+        const { data, error } = await supabaseAdmin
+            .from('skill_level') // table name you created
+            .select('skill_level_name')
+            .order('skill_level_name');
 
-    const { data, error } = await supabase
-        .from("skill_level")
-        .select("skill_level_name")
-        .order("skill_level_name");
+        if (error) {
+            return new Response(
+                JSON.stringify({ error: error.message, code: error.code, hint: error.hint }),
+                { status: 500, headers: { 'Content-Type': 'application/json' } }
+            );
+        }
 
-    if (error) {
-        return NextResponse.json({ error: error.message }, { status: 500 });
+        const levels = (data ?? []).map(r => r.skill_level_name);
+        return new Response(JSON.stringify({ levels }), {
+            status: 200,
+            headers: {
+                'Content-Type': 'application/json',
+                'Cache-Control': 'no-store',
+            },
+        });
+    } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e);
+        return new Response(JSON.stringify({ error: msg }), {
+            status: 500,
+            headers: { 'Content-Type': 'application/json' },
+        });
     }
-
-    const levels = (data ?? []).map(r => r.skill_level_name);
-    return NextResponse.json({ levels }, { status: 200 });
 }
