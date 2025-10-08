@@ -321,12 +321,13 @@ export default function AdminPage() {
                                 role={error ? "alert" : saveOk ? "status" : undefined}
                                 title={error || saveOk || ""}
                                 style={{
-                                    // left-aligned plain text; always present so layout doesn't jump
+                                    // fills the left side; button stays pinned right
                                     flex: 1,
                                     minWidth: 0,
                                     whiteSpace: "nowrap",
                                     overflow: "hidden",
                                     textOverflow: "ellipsis",
+                                    textAlign: "right",      // ← right-justify message text
                                     color: error ? "#b00020" : "#111",
                                     fontWeight: 500,
                                     margin: 0,
@@ -346,10 +347,10 @@ export default function AdminPage() {
                                     borderRadius: 6,
                                     background: saving ? "#eee" : "#fafafa",
                                     cursor: saving ? "default" : "pointer",
-                                    marginLeft: "auto", // ← keeps the button pinned right
+                                    marginLeft: "auto", // keeps the button pinned right
                                 }}
                             >
-                                {saving ? "Saving…" : "Save Row"}
+                                {saving ? "Saving…" : "Save to Database"}
                             </button>
                         </div>
                     </div>
