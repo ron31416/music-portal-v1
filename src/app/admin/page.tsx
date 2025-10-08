@@ -243,16 +243,16 @@ export default function AdminPage() {
                             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
                                 <input
                                     type="text"
-                                    value={composerLast}
-                                    onChange={(e) => { setComposerLast(e.target.value); }}
-                                    placeholder="Last"
+                                    value={composerFirst}
+                                    onChange={(e) => { setComposerFirst(e.target.value); }}
+                                    placeholder="First"
                                     style={roStyle}
                                 />
                                 <input
                                     type="text"
-                                    value={composerFirst}
-                                    onChange={(e) => { setComposerFirst(e.target.value); }}
-                                    placeholder="First"
+                                    value={composerLast}
+                                    onChange={(e) => { setComposerLast(e.target.value); }}
+                                    placeholder="Last"
                                     style={roStyle}
                                 />
                             </div>
