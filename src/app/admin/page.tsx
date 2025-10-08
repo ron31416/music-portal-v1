@@ -32,7 +32,6 @@ export default function AdminPage() {
     const [xmlPreview, setXmlPreview] = React.useState("");
 
     const fileInputRef = React.useRef<HTMLInputElement>(null);
-    const isDark = useIsDarkMode();
 
     // fetch skill levels once (do NOT default-select)
     React.useEffect(() => {
@@ -315,18 +314,27 @@ export default function AdminPage() {
                                 display: "flex",
                                 alignItems: "center",
                                 gap: 12,
-                                justifyContent: "flex-end",
-                                flexWrap: "nowrap",
                             }}
                         >
                             {(error || saveOk) && (
-                                <p
+                                <span
+                                    // announce updates politely for a11y
+                                    aria-live="polite"
                                     role={error ? "alert" : "status"}
-                                    title={error || saveOk} // hover to see full text if truncated
-                                    style={statusPillCompactStyle(Boolean(error), isDark)}
+                                    style={{
+                                        flex: 1,            // take all space to the left of the button
+                                        minWidth: 0,        // allow shrinking so ellipsis works in flex
+                                        whiteSpace: "nowrap",
+                                        overflow: "hidden",
+                                        textOverflow: "ellipsis",
+                                        // plain text on the white card; error in red, success in default text color
+                                        color: error ? "#b00020" : "#111",
+                                        fontWeight: 500,
+                                        margin: 0,
+                                    }}
                                 >
                                     {error || saveOk}
-                                </p>
+                                </span>
                             )}
 
                             <button
@@ -360,58 +368,6 @@ const roStyle: React.CSSProperties = {
     color: "#111",
 };
 
-// --- theme helpers ---
-
-function useIsDarkMode(): boolean {
-    const [isDark, setIsDark] = React.useState(false);
-    React.useEffect(() => {
-        const mq = window.matchMedia("(prefers-color-scheme: dark)");
-        const update = (): void => { setIsDark(mq.matches); };
-        update();
-        mq.addEventListener("change", update);
-        return () => { mq.removeEventListener("change", update); };
-    }, []);
-    return isDark;
-}
-
-function statusPillStyle(isError: boolean, isDark: boolean): React.CSSProperties {
-    const base: React.CSSProperties = {
-        margin: "10px 0 0 0",
-        padding: "8px 10px",
-        borderRadius: 6,
-        fontWeight: 500,
-        borderWidth: 1,
-        borderStyle: "solid",
-    };
-    if (isError) {
-        return {
-            ...base,
-            color: isDark ? "#ffb4ab" : "#8b0007",
-            background: isDark ? "#3b0005" : "#fde7e9",
-            borderColor: isDark ? "#7f1d1d" : "#f5c2c7",
-        };
-    }
-    return {
-        ...base,
-        color: isDark ? "#c6f6d5" : "#0a6b2c",
-        background: isDark ? "#052914" : "#e7f6ea",
-        borderColor: isDark ? "#0f5132" : "#b6e2c1",
-    };
-}
-
-function statusPillCompactStyle(isError: boolean, isDark: boolean): React.CSSProperties {
-    const base = statusPillStyle(isError, isDark);
-    return {
-        ...base,
-        margin: 0,               // inline with the Save button
-        padding: "6px 8px",      // a bit tighter than the full pill
-        whiteSpace: "nowrap",    // keep to one line
-        overflow: "hidden",
-        textOverflow: "ellipsis",
-        maxWidth: 320,           // tweak to taste (px or "%")
-        alignSelf: "center",
-    };
-}
 
 // --- helpers (unchanged) ---
 
