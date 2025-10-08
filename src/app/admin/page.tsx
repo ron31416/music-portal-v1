@@ -316,26 +316,25 @@ export default function AdminPage() {
                                 gap: 12,
                             }}
                         >
-                            {(error || saveOk) && (
-                                <span
-                                    // announce updates politely for a11y
-                                    aria-live="polite"
-                                    role={error ? "alert" : "status"}
-                                    style={{
-                                        flex: 1,            // take all space to the left of the button
-                                        minWidth: 0,        // allow shrinking so ellipsis works in flex
-                                        whiteSpace: "nowrap",
-                                        overflow: "hidden",
-                                        textOverflow: "ellipsis",
-                                        // plain text on the white card; error in red, success in default text color
-                                        color: error ? "#b00020" : "#111",
-                                        fontWeight: 500,
-                                        margin: 0,
-                                    }}
-                                >
-                                    {error || saveOk}
-                                </span>
-                            )}
+                            <span
+                                aria-live="polite"
+                                role={error ? "alert" : saveOk ? "status" : undefined}
+                                title={error || saveOk || ""}
+                                style={{
+                                    // left-aligned plain text; always present so layout doesn't jump
+                                    flex: 1,
+                                    minWidth: 0,
+                                    whiteSpace: "nowrap",
+                                    overflow: "hidden",
+                                    textOverflow: "ellipsis",
+                                    color: error ? "#b00020" : "#111",
+                                    fontWeight: 500,
+                                    margin: 0,
+                                    visibility: (error || saveOk) ? "visible" : "hidden",
+                                }}
+                            >
+                                {error || saveOk || ""}
+                            </span>
 
                             <button
                                 type="button"
@@ -347,6 +346,7 @@ export default function AdminPage() {
                                     borderRadius: 6,
                                     background: saving ? "#eee" : "#fafafa",
                                     cursor: saving ? "default" : "pointer",
+                                    marginLeft: "auto", // ← keeps the button pinned right
                                 }}
                             >
                                 {saving ? "Saving…" : "Save to Database"}
