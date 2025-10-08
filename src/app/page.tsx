@@ -1,6 +1,6 @@
 // src/app/page.tsx
 import Link from "next/link";
-import { SONGS, type Song } from "@/lib/songs"; // use alias if configured
+import { SONG, type Song } from "@/lib/song"; // use alias if configured
 
 export default function HomePage() {
   return (
@@ -11,7 +11,7 @@ export default function HomePage() {
       </p>
 
       <ul className="space-y-2">
-        {SONGS.map((s: Song) => (
+        {SONG.map((s: Song) => (
           <li key={s.src}>
             <Link
               href={{ pathname: "/viewer", query: { src: s.src } }}

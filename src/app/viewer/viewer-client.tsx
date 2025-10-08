@@ -2,7 +2,7 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { SONGS } from "@/lib/songs";
+import { SONG } from "@/lib/song";
 import ScoreOSMD from "@/components/ScoreOSMD";
 
 export default function ViewerClient() {
@@ -10,13 +10,13 @@ export default function ViewerClient() {
   const paramSrc = params.get("src") ?? undefined;
 
   // Fallback to the first song if no ?src= was given
-  const effectiveSrc = paramSrc ?? SONGS[0]?.src;
+  const effectiveSrc = paramSrc ?? SONG[0]?.src;
 
   if (!effectiveSrc) {
     return (
       <p style={{ color: "crimson" }}>
         No score source provided. Try opening with{" "}
-        <code>?src=/api/songs/2/mxl</code>.
+        <code>?src=/api/song/2/mxl</code>.
       </p>
     );
   }

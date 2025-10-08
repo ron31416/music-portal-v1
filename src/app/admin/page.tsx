@@ -350,7 +350,7 @@ export default function AdminPage() {
                                     marginLeft: "auto", // keeps the button pinned right
                                 }}
                             >
-                                {saving ? "Saving…" : "Save to Database"}
+                                {saving ? "Saving…" : "Save Song"}
                             </button>
                         </div>
                     </div>
