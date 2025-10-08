@@ -2,8 +2,9 @@
 
 import React from "react";
 
-// --- Config: change if your API route differs ---
+// --- Config ---
 const SAVE_ENDPOINT = "/api/work"; // posts to app/api/work/route.ts
+const XML_PREVIEW_HEIGHT = 420;    // ← change this to adjust the MusicXML textarea height
 
 type SaveResponse = {
     ok?: boolean;
@@ -31,6 +32,7 @@ export default function AdminPage() {
     const [xmlPreview, setXmlPreview] = React.useState(""); // start→</defaults> (or first 25 lines)
 
     const fileInputRef = React.useRef<HTMLInputElement>(null);
+    const isDark = useIsDarkMode();
 
     // fetch skill levels once on mount
     React.useEffect(() => {
@@ -121,6 +123,20 @@ export default function AdminPage() {
         }
     };
 
+    // ---- client-side string checks (no normalization except trimming the END) ----
+    function hasLeadingSpace(s: string): boolean {
+        return s.length > 0 && s[0] === " ";
+    }
+    function hasDoubleSpace(s: string): boolean {
+        return s.includes("  ");
+    }
+    function rtrimSpaces(s: string): string {
+        return s.replace(/[ \t]+$/u, "");
+    }
+    function isInLevels(val: string): boolean {
+        return levels.includes(val);
+    }
+
     const onSave = async (): Promise<void> => {
         setError("");
         setSaveOk("");
@@ -130,6 +146,58 @@ export default function AdminPage() {
             return;
         }
 
+        // Prepare trimmed (end) versions for the fields we send
+        const titleTrimmed = rtrimSpaces(title);
+        const firstTrimmed = rtrimSpaces(composerFirst);
+        const lastTrimmed = rtrimSpaces(composerLast);
+
+        // Required: title, level
+        if (titleTrimmed.length === 0) {
+            setError("Title is required.");
+            return;
+        }
+        if (level.length === 0) {
+            setError("Skill level is required.");
+            return;
+        }
+        if (!isInLevels(level)) {
+            setError("Skill level value is not in the list.");
+            return;
+        }
+
+        // Leading space & double space rules:
+        // Title (must be present)
+        if (hasLeadingSpace(titleTrimmed)) {
+            setError("Title must not start with a space.");
+            return;
+        }
+        if (hasDoubleSpace(titleTrimmed)) {
+            setError("Title must not contain double spaces.");
+            return;
+        }
+
+        // Composer names (optional): only validate if non-empty
+        if (firstTrimmed.length > 0) {
+            if (hasLeadingSpace(firstTrimmed)) {
+                setError("Composer first name must not start with a space.");
+                return;
+            }
+            if (hasDoubleSpace(firstTrimmed)) {
+                setError("Composer first name must not contain double spaces.");
+                return;
+            }
+        }
+        if (lastTrimmed.length > 0) {
+            if (hasLeadingSpace(lastTrimmed)) {
+                setError("Composer last name must not start with a space.");
+                return;
+            }
+            if (hasDoubleSpace(lastTrimmed)) {
+                setError("Composer last name must not contain double spaces.");
+                return;
+            }
+        }
+
         try {
             setSaving(true);
 
@@ -137,12 +205,12 @@ export default function AdminPage() {
             const bytes = new Uint8Array(await file.arrayBuffer());
             const base64 = bytesToBase64(bytes);
 
-            // Minimal payload expected by /api/work
+            // Minimal payload expected by /api/work (composer names may be empty)
             const payload = {
-                work_title: title || stripExt(file.name),
-                composer_first_name: composerFirst || "(unknown)",
-                composer_last_name: composerLast || "",
-                skill_level_name: level || "Intermediate",
+                work_title: titleTrimmed,
+                composer_first_name: firstTrimmed,
+                composer_last_name: lastTrimmed,
+                skill_level_name: level,
                 file_name: fileName || file.name,
                 work_mxl_base64: base64,
             };
@@ -160,7 +228,6 @@ export default function AdminPage() {
             }
 
             if (!res.ok) {
-                // Surface precise messages from the route if present
                 const message =
                     (json && (json.message || json.error)) ||
                     (await res.text()) ||
@@ -185,7 +252,7 @@ export default function AdminPage() {
     return (
         <main style={{ maxWidth: 860, margin: "40px auto", padding: "0 16px" }}>
             {/* Top bar: Load button only (upper-right). No headings/rectangle on first load */}
-            <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
+            <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 12, marginBottom: 12 }}>
                 {/* Hidden real input */}
                 <input
                     ref={fileInputRef}
@@ -217,18 +284,11 @@ export default function AdminPage() {
                 </button>
 
                 {parsing && (
-                    <span aria-live="polite" style={{ alignSelf: "center", marginLeft: 10 }}>
+                    <span aria-live="polite" style={{ alignSelf: "center" }}>
                         Parsing…
                     </span>
                 )}
             </div>
-
-            {/* Status line (below the button) */}
-            {(error || saveOk) && (
-                <p role={error ? "alert" : undefined} style={{ color: error ? "#b00020" : "#08660b", marginBottom: 12 }}>
-                    {error || saveOk}
-                </p>
-            )}
 
             {/* Data card: only after a file is selected */}
             {file && (
@@ -337,8 +397,8 @@ export default function AdminPage() {
                                     border: "1px solid #ccc",
                                     borderRadius: 6,
                                     padding: "8px 10px",
-                                    minHeight: 500,
-                                    maxHeight: 500,
+                                    minHeight: XML_PREVIEW_HEIGHT,
+                                    maxHeight: XML_PREVIEW_HEIGHT,
                                     overflow: "auto",
                                     resize: "vertical",
                                     fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
@@ -347,6 +407,18 @@ export default function AdminPage() {
                                     lineHeight: 1.4,
                                 }}
                             />
+
+                            {/* Status (inside card, bottom row, spans full width) */}
+                            {(error || saveOk) && (
+                                <div style={{ gridColumn: "1 / span 2" }}>
+                                    <p
+                                        role={error ? "alert" : "status"}
+                                        style={statusPillStyle(Boolean(error), isDark)}
+                                    >
+                                        {error || saveOk}
+                                    </p>
+                                </div>
+                            )}
                         </div>
 
                         {/* Actions (Save stays inside the card, right-justified) */}
@@ -383,7 +455,50 @@ const roStyle: React.CSSProperties = {
     color: "#111",
 };
 
-// --- helpers ---
+// --- theme helpers ---
+
+function useIsDarkMode(): boolean {
+    const [isDark, setIsDark] = React.useState(false);
+    React.useEffect(() => {
+        const mq = window.matchMedia("(prefers-color-scheme: dark)");
+        const update = (): void => {
+            setIsDark(mq.matches);
+        };
+        update();
+        mq.addEventListener("change", update);
+        return () => {
+            mq.removeEventListener("change", update);
+        };
+    }, []);
+    return isDark;
+}
+
+function statusPillStyle(isError: boolean, isDark: boolean): React.CSSProperties {
+    const base: React.CSSProperties = {
+        margin: "10px 0 0 0",
+        padding: "8px 10px",
+        borderRadius: 6,
+        fontWeight: 500,
+        borderWidth: 1,
+        borderStyle: "solid",
+    };
+    if (isError) {
+        return {
+            ...base,
+            color: isDark ? "#ffb4ab" : "#8b0007",
+            background: isDark ? "#3b0005" : "#fde7e9",
+            borderColor: isDark ? "#7f1d1d" : "#f5c2c7",
+        };
+    }
+    return {
+        ...base,
+        color: isDark ? "#c6f6d5" : "#0a6b2c",
+        background: isDark ? "#052914" : "#e7f6ea",
+        borderColor: isDark ? "#0f5132" : "#b6e2c1",
+    };
+}
+
+// --- helpers (unchanged) ---
 
 async function extractMetadataAndXml(
     file: File,
