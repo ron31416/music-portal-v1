@@ -3,6 +3,7 @@
 import React from "react";
 
 // --- Config ---
+
 const SAVE_ENDPOINT = "/api/song"; // posts to app/api/song/route.ts
 const XML_PREVIEW_HEIGHT = 420;    // adjust MusicXML textarea height
 
@@ -12,6 +13,7 @@ type SaveResponse = {
     error?: string;
     message?: string;
 };
+// --- Types ---
 
 type SongListItem = {
     song_id: number;
@@ -31,6 +33,151 @@ type SortKey =
     | "file_name"
     | "updated_datetime";
 type SortDir = "asc" | "desc";
+
+// --- Helpers ---
+
+function firstText(doc: Document, selector: string): string {
+    const el = doc.querySelector(selector);
+    const raw = el?.textContent ?? "";
+    return collapseWs(raw);
+}
+
+function firstNonEmpty(...vals: (string | undefined)[]): string {
+    for (const v of vals) { if (v && v.trim()) { return v.trim(); } }
+    return "";
+}
+
+function stripExt(name: string): string {
+    const lower = (name || "").toLowerCase();
+    if (lower.endsWith(".musicxml")) { return name.slice(0, -10); }
+    if (lower.endsWith(".mxl")) { return name.slice(0, -4); }
+    return name;
+}
+
+function collapseWs(s: string): string {
+    let out = ""; let inWs = false;
+    for (let i = 0; i < s.length; i++) {
+        const ch = s[i]!;
+        const ws = ch === " " || ch === "\n" || ch === "\r" || ch === "\t" || ch === "\f";
+        if (ws) { if (!inWs) { out += " "; inWs = true; } }
+        else { out += ch; inWs = false; }
+    }
+    return out.trim();
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+    let s = "";
+    for (let i = 0; i < bytes.length; i++) { s += String.fromCharCode(bytes[i]!); }
+    return btoa(s);
+}
+
+function findRootfilePath(containerXml: string): string {
+    const doc = new DOMParser().parseFromString(containerXml, "application/xml");
+    const el = doc.querySelector("rootfile[full-path], rootfile[path], rootfile[href]");
+    const p = el?.getAttribute("full-path") || el?.getAttribute("path") || el?.getAttribute("href") || "";
+    if (!p) { throw new Error("MXL: container rootfile path missing"); }
+    return p;
+}
+
+function extractFromMusicXml(xmlText: string, fallbackName: string): { title: string; composer: string } {
+    const doc = new DOMParser().parseFromString(xmlText, "application/xml");
+    if (doc.getElementsByTagName("parsererror").length) { throw new Error("Invalid MusicXML (parsererror)"); }
+
+    const songTitle = firstText(doc, "song > song-title");
+    const movementTitle = firstText(doc, "movement-title");
+    const creditWords = firstText(doc, "credit > credit-words");
+    const title = firstNonEmpty(songTitle, movementTitle, creditWords, stripExt(fallbackName));
+
+    const composerTyped = firstText(doc, 'identification > creator[type="composer"]');
+    const anyCreator = firstText(doc, "identification > creator");
+    const composer = firstNonEmpty(composerTyped, anyCreator, "");
+
+    return { title, composer };
+}
+
+async function extractMetadataAndXml(
+    file: File,
+    kind: { isMxl: boolean; isXml: boolean }
+): Promise<{ title: string; composer: string; xmlText: string }> {
+    if (kind.isXml) {
+        const xmlText = await file.text();
+        const meta = extractFromMusicXml(xmlText, file.name);
+        return { ...meta, xmlText };
+    }
+    if (kind.isMxl) {
+        const { unzip } = await import("unzipit");
+        const { entries } = await unzip(await file.arrayBuffer());
+        const container = entries["META-INF/container.xml"];
+        if (!container) { throw new Error("MXL: META-INF/container.xml missing"); }
+        const containerXml = await container.text();
+        const rootPath = findRootfilePath(containerXml);
+        const root = entries[rootPath];
+        if (!root) { throw new Error(`MXL: rootfile missing in archive: ${rootPath}`); }
+        const xmlText = await root.text();
+        const meta = extractFromMusicXml(xmlText, file.name);
+        return { ...meta, xmlText };
+    }
+    throw new Error("Unsupported file type");
+}
+
+// Build a proper .mxl (ZIP) from full XML text for saving
+async function xmlToMxl(xmlText: string, innerNameHint: string): Promise<Uint8Array> {
+    const { default: JSZip } = await import("jszip");
+    const zip = new JSZip();
+
+    const base = stripExt(innerNameHint || "score");
+    const innerName = `${base}.musicxml`;
+
+    zip.file(
+        "META-INF/container.xml",
+        `<?xml version="1.0" encoding="UTF-8"?>
+<container xmlns="urn:oasis:names:tc:opendocument:xmlns:container" version="1.0">
+  <rootfiles>
+    <rootfile full-path="${innerName}" media-type="application/vnd.recordare.musicxml+xml"/>
+  </rootfiles>
+</container>`
+    );
+
+    zip.file(innerName, xmlText);
+
+    return zip.generateAsync({ type: "uint8array", compression: "DEFLATE" });
+}
+
+// --- UI Helpers ---
+
+function HeaderButton(props: {
+    label: string;
+    sortKey: SortKey;
+    curKey: SortKey;
+    dir: SortDir;
+    onClick: (k: SortKey) => void;
+}) {
+    const active = props.curKey === props.sortKey;
+    const caret = active ? (props.dir === "asc" ? "▲" : "▼") : "";
+    return (
+        <button
+            type="button"
+            onClick={() => props.onClick(props.sortKey)}
+            title={`Sort by ${props.label}`}
+            style={{ textAlign: "left", fontWeight: 600, fontSize: 13, background: "transparent", border: "none", padding: 0, cursor: "pointer" }}
+        >
+            {props.label} {caret}
+        </button>
+    );
+}
+
+// --- Styles ---
+
+const roStyle: React.CSSProperties = {
+    width: "100%",
+    padding: "8px 10px",
+    border: "1px solid #ccc",
+    borderRadius: 6,
+    background: "#fdfdfd",
+    color: "#111",
+};
+
+// --- Component ---
 
 export default function AdminPage() {
     const [file, setFile] = React.useState<File | null>(null);
@@ -117,8 +264,7 @@ export default function AdminPage() {
             setComposerFirst(meta.composer || "");
             setComposerLast("");
 
-            const preview = xmlUpToDefaultsOrFirstLines(meta.xmlText || "", 25);
-            setXmlPreview(preview);
+            setXmlPreview(meta.xmlText || "");
         } catch (err) {
             setError(err instanceof Error ? err.message : String(err));
         } finally {
@@ -163,15 +309,29 @@ export default function AdminPage() {
         try {
             setSaving(true);
 
-            const bytes = new Uint8Array(await file.arrayBuffer());
-            const base64 = bytesToBase64(bytes);
+            // Source of truth = the full XML currently in the textarea
+            const xmlText = xmlPreview;
+            if (!xmlText || !xmlText.trim()) {
+                setError("Empty XML — nothing to save.");
+                return;
+            }
+
+            // Re-pack XML → .mxl (ZIP)
+            const mxlBytes = await xmlToMxl(xmlText, fileName || file?.name || titleTrimmed || "score");
+            const base64 = bytesToBase64(mxlBytes);
+
+            // Ensure .mxl filename on save
+            const outFileName = (() => {
+                const name = fileName || file?.name || `${titleTrimmed || "score"}.mxl`;
+                return name.toLowerCase().endsWith(".mxl") ? name : `${stripExt(name)}.mxl`;
+            })();
 
             const payload = {
                 song_title: titleTrimmed,
                 composer_first_name: firstTrimmed,
                 composer_last_name: lastTrimmed,
                 skill_level_name: level,
-                file_name: fileName || file.name,
+                file_name: outFileName,
                 song_mxl_base64: base64,
             };
 
@@ -253,8 +413,7 @@ export default function AdminPage() {
 
             setFile(f);
             const meta = await extractMetadataAndXml(f, { isMxl, isXml });
-            const preview = xmlUpToDefaultsOrFirstLines(meta.xmlText || "", 25);
-            setXmlPreview(preview);
+            setXmlPreview(meta.xmlText || "");
             setShowList(false);
         } catch (e) {
             setError(e instanceof Error ? e.message : String(e));
@@ -579,143 +738,4 @@ export default function AdminPage() {
             )}
         </main>
     );
-}
-
-const roStyle: React.CSSProperties = {
-    width: "100%",
-    padding: "8px 10px",
-    border: "1px solid #ccc",
-    borderRadius: 6,
-    background: "#fdfdfd",
-    color: "#111",
-};
-
-
-// --- helpers (unchanged) ---
-
-function HeaderButton(props: {
-    label: string;
-    sortKey: SortKey;
-    curKey: SortKey;
-    dir: SortDir;
-    onClick: (k: SortKey) => void;
-}) {
-    const active = props.curKey === props.sortKey;
-    const caret = active ? (props.dir === "asc" ? "▲" : "▼") : "";
-    return (
-        <button
-            type="button"
-            onClick={() => props.onClick(props.sortKey)}
-            title={`Sort by ${props.label}`}
-            style={{ textAlign: "left", fontWeight: 600, fontSize: 13, background: "transparent", border: "none", padding: 0, cursor: "pointer" }}
-        >
-            {props.label} {caret}
-        </button>
-    );
-}
-
-async function extractMetadataAndXml(
-    file: File,
-    kind: { isMxl: boolean; isXml: boolean }
-): Promise<{ title: string; composer: string; xmlText: string }> {
-    if (kind.isXml) {
-        const xmlText = await file.text();
-        const meta = extractFromMusicXml(xmlText, file.name);
-        return { ...meta, xmlText };
-    }
-    if (kind.isMxl) {
-        const { unzip } = await import("unzipit");
-        const { entries } = await unzip(await file.arrayBuffer());
-        const container = entries["META-INF/container.xml"];
-        if (!container) { throw new Error("MXL: META-INF/container.xml missing"); }
-        const containerXml = await container.text();
-        const rootPath = findRootfilePath(containerXml);
-        const root = entries[rootPath];
-        if (!root) { throw new Error(`MXL: rootfile missing in archive: ${rootPath}`); }
-        const xmlText = await root.text();
-        const meta = extractFromMusicXml(xmlText, file.name);
-        return { ...meta, xmlText };
-    }
-    throw new Error("Unsupported file type");
-}
-
-function findRootfilePath(containerXml: string): string {
-    const doc = new DOMParser().parseFromString(containerXml, "application/xml");
-    const el = doc.querySelector("rootfile[full-path], rootfile[path], rootfile[href]");
-    const p =
-        el?.getAttribute("full-path") ||
-        el?.getAttribute("path") ||
-        el?.getAttribute("href") ||
-        "";
-    if (!p) { throw new Error("MXL: container rootfile path missing"); }
-    return p;
-}
-
-function extractFromMusicXml(xmlText: string, fallbackName: string): { title: string; composer: string } {
-    const doc = new DOMParser().parseFromString(xmlText, "application/xml");
-    if (doc.getElementsByTagName("parsererror").length) { throw new Error("Invalid MusicXML (parsererror)"); }
-
-    const songTitle = firstText(doc, "song > song-title");
-    const movementTitle = firstText(doc, "movement-title");
-    const creditWords = firstText(doc, "credit > credit-words");
-    const title = firstNonEmpty(songTitle, movementTitle, creditWords, stripExt(fallbackName));
-
-    const composerTyped = firstText(doc, 'identification > creator[type="composer"]');
-    const anyCreator = firstText(doc, "identification > creator");
-    const composer = firstNonEmpty(composerTyped, anyCreator, "");
-
-    return { title, composer };
-}
-
-function firstText(doc: Document, selector: string): string {
-    const el = doc.querySelector(selector);
-    const raw = el?.textContent ?? "";
-    return collapseWs(raw);
-}
-
-function firstNonEmpty(...vals: (string | undefined)[]): string {
-    for (const v of vals) { if (v && v.trim()) { return v.trim(); } }
-    return "";
-}
-
-function stripExt(name: string): string {
-    const lower = (name || "").toLowerCase();
-    if (lower.endsWith(".musicxml")) { return name.slice(0, -10); }
-    if (lower.endsWith(".mxl")) { return name.slice(0, -4); }
-    return name;
-}
-
-function collapseWs(s: string): string {
-    let out = "";
-    let inWs = false;
-    for (let i = 0; i < s.length; i++) {
-        const ch = s[i]!;
-        const ws = ch === " " || ch === "\n" || ch === "\r" || ch === "\t" || ch === "\f";
-        if (ws) {
-            if (!inWs) { out += " "; inWs = true; }
-        } else {
-            out += ch; inWs = false;
-        }
-    }
-    return out.trim();
-}
-
-function xmlUpToDefaultsOrFirstLines(xmlText: string, n: number): string {
-    const endTag = "</defaults>";
-    const idx = xmlText.indexOf(endTag);
-    if (idx >= 0) {
-        const cut = idx + endTag.length;
-        return xmlText.slice(0, cut);
-    }
-    const lines = xmlText.split(/\r?\n/);
-    const head = lines.slice(0, Math.max(0, n));
-    return head.join("\n") + (lines.length > head.length ? "\n…" : "");
-}
-
-function bytesToBase64(bytes: Uint8Array): string {
-    let s = "";
-    for (let i = 0; i < bytes.length; i++) {
-        s += String.fromCharCode(bytes[i]!);
-    }
-    return btoa(s);
 }

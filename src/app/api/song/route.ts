@@ -61,6 +61,16 @@ function uniqueViolationFor(
     return err.message.includes(constraintFragment);
 }
 
+function isZipMagic(u8: Uint8Array): boolean {
+    return (
+        u8.length >= 4 &&
+        u8[0] === 0x50 && // 'P'
+        u8[1] === 0x4b && // 'K'
+        (u8[2] === 0x03 || u8[2] === 0x05 || u8[2] === 0x07) &&
+        (u8[3] === 0x04 || u8[3] === 0x06 || u8[3] === 0x08)
+    );
+}
+
 export async function POST(req: Request) {
     try {
         const raw = (await req.json()) as unknown;
@@ -79,6 +89,25 @@ export async function POST(req: Request) {
 
         // At this point types are safe to narrow
         const body = raw as SongPayload;
+
+        // Validate that the uploaded bytes are a ZIP (.mxl)
+        try {
+            const buf = Buffer.from(body.song_mxl_base64, "base64");
+            if (!isZipMagic(new Uint8Array(buf))) {
+                return NextResponse.json(
+                    {
+                        error: "payload_not_mxl_zip",
+                        message: "Song bytes must be compressed .mxl (ZIP) format.",
+                    },
+                    { status: 400 }
+                );
+            }
+        } catch {
+            return NextResponse.json(
+                { error: "invalid_base64", message: "song_mxl_base64 is not valid base64." },
+                { status: 400 }
+            );
+        }
 
         // Pass base64 directly into the bytea column; PostgREST will decode.
         const { data, error } = await supabaseAdmin
