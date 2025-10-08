@@ -5,8 +5,9 @@ export const runtime = "nodejs";
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import type { PostgrestError } from "@supabase/supabase-js";
+import type { NextRequest } from "next/server";
 
-type WorkPayload = {
+type SongPayload = {
     song_title: string;
     composer_first_name: string;
     composer_last_name: string;
@@ -15,7 +16,7 @@ type WorkPayload = {
     song_mxl_base64: string;  // base64-encoded MusicXML/MXL bytes
 };
 
-const REQUIRED_KEYS: (keyof WorkPayload)[] = [
+const REQUIRED_KEYS: (keyof SongPayload)[] = [
     "song_title",
     "composer_first_name",
     "composer_last_name",
@@ -77,7 +78,7 @@ export async function POST(req: Request) {
         }
 
         // At this point types are safe to narrow
-        const body = raw as WorkPayload;
+        const body = raw as SongPayload;
 
         // Pass base64 directly into the bytea column; PostgREST will decode.
         const { data, error } = await supabaseAdmin
@@ -131,5 +132,67 @@ export async function POST(req: Request) {
     } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         return NextResponse.json({ error: msg }, { status: 500 });
+    }
+}
+
+// ---- GET /api/song  (list songs; sortable) ----
+type SongListItem = {
+    song_id: number;
+    song_title: string;
+    composer_first_name: string;
+    composer_last_name: string;
+    skill_level_name: string;
+    file_name: string;
+    inserted_datetime: string;
+    updated_datetime: string;
+};
+
+const ALLOWED_SORT: ReadonlyArray<keyof SongListItem> = [
+    "song_title",
+    "composer_last_name",
+    "composer_first_name",
+    "skill_level_name",
+    "file_name",
+    "updated_datetime",
+    "inserted_datetime",
+] as const;
+
+export async function GET(req: NextRequest): Promise<Response> {
+    try {
+        const url = new URL(req.url);
+        const sortParam = (url.searchParams.get("sort") ?? "song_title") as keyof SongListItem;
+        const dirParam = (url.searchParams.get("dir") ?? "asc").toLowerCase();
+        const limitParam = url.searchParams.get("limit");
+
+        const sort = ALLOWED_SORT.includes(sortParam) ? sortParam : "song_title";
+        const ascending = dirParam !== "desc";
+        const limit = Math.min(Math.max(Number(limitParam ?? 1000), 1), 2000);
+        const rangeEnd = limit - 1;
+
+        const { data, error } = await supabaseAdmin
+            .from("song")
+            .select(
+                "song_id, song_title, composer_first_name, composer_last_name, skill_level_name, file_name, inserted_datetime, updated_datetime"
+            )
+            .order(sort as string, { ascending })
+            .range(0, rangeEnd);
+
+        if (error) {
+            return new Response(JSON.stringify({ error: error.message }), {
+                status: 500,
+                headers: { "Content-Type": "application/json" },
+            });
+        }
+
+        return new Response(JSON.stringify({ items: (data ?? []) as SongListItem[] }), {
+            status: 200,
+            headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+        });
+    } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        return new Response(JSON.stringify({ error: msg }), {
+            status: 500,
+            headers: { "Content-Type": "application/json" },
+        });
     }
 }
