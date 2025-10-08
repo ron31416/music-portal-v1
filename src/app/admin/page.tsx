@@ -166,8 +166,7 @@ export default function AdminPage() {
                 return;
             }
 
-            const workId = json?.work_id ?? null;
-            setSaveOk(workId !== null ? `Saved ✓ (work_id=${workId})` : "Saved ✓");
+            setSaveOk("Saved");
         } catch (err) {
             setError(err instanceof Error ? err.message : String(err));
         } finally {
@@ -307,6 +306,13 @@ export default function AdminPage() {
                                     lineHeight: 1.4,
                                 }}
                             />
+                            {(error || saveOk) && (
+                                <div style={{ gridColumn: "2 / 3" }}>
+                                    <p role={error ? "alert" : "status"} style={statusPillStyle(Boolean(error), isDark)}>
+                                        {error || saveOk}
+                                    </p>
+                                </div>
+                            )}
 
                         </div>
 
@@ -320,15 +326,6 @@ export default function AdminPage() {
                                 flexWrap: "nowrap",
                             }}
                         >
-                            {(error || saveOk) && (
-                                <p
-                                    role={error ? "alert" : "status"}
-                                    title={error || saveOk} // hover to see full text
-                                    style={statusPillCompactStyle(Boolean(error), isDark)}
-                                >
-                                    {error || saveOk}
-                                </p>
-                            )}
 
                             <button
                                 type="button"
@@ -397,18 +394,6 @@ function statusPillStyle(isError: boolean, isDark: boolean): React.CSSProperties
         color: isDark ? "#c6f6d5" : "#0a6b2c",
         background: isDark ? "#052914" : "#e7f6ea",
         borderColor: isDark ? "#0f5132" : "#b6e2c1",
-    };
-}
-
-function statusPillCompactStyle(isError: boolean, isDark: boolean): React.CSSProperties {
-    const base = statusPillStyle(isError, isDark);
-    return {
-        ...base,
-        margin: 0,                 // inline with button
-        maxWidth: "60%",           // tweak as needed (e.g., "420px")
-        whiteSpace: "nowrap",      // keep to one line
-        overflow: "hidden",
-        textOverflow: "ellipsis",  // truncate with …
     };
 }
 
