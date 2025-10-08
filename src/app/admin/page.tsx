@@ -3,12 +3,12 @@
 import React from "react";
 
 // --- Config ---
-const SAVE_ENDPOINT = "/api/work"; // posts to app/api/work/route.ts
+const SAVE_ENDPOINT = "/api/song"; // posts to app/api/song/route.ts
 const XML_PREVIEW_HEIGHT = 420;    // adjust MusicXML textarea height
 
 type SaveResponse = {
     ok?: boolean;
-    work_id?: number;
+    song_id?: number;
     error?: string;
     message?: string;
 };
@@ -141,12 +141,12 @@ export default function AdminPage() {
             const base64 = bytesToBase64(bytes);
 
             const payload = {
-                work_title: titleTrimmed,
+                song_title: titleTrimmed,
                 composer_first_name: firstTrimmed,
                 composer_last_name: lastTrimmed,
                 skill_level_name: level,
                 file_name: fileName || file.name,
-                work_mxl_base64: base64,
+                song_mxl_base64: base64,
             };
 
             const res = await fetch(SAVE_ENDPOINT, {
@@ -229,7 +229,7 @@ export default function AdminPage() {
                                 columnGap: 12,
                             }}
                         >
-                            <label style={{ alignSelf: "center", fontWeight: 600 }}>Work Title</label>
+                            <label style={{ alignSelf: "center", fontWeight: 600 }}>Song Title</label>
                             <input
                                 type="text"
                                 value={title}
@@ -349,7 +349,7 @@ export default function AdminPage() {
                                     marginLeft: "auto", // ← keeps the button pinned right
                                 }}
                             >
-                                {saving ? "Saving…" : "Save to Database"}
+                                {saving ? "Saving…" : "Save Row"}
                             </button>
                         </div>
                     </div>
@@ -412,10 +412,10 @@ function extractFromMusicXml(xmlText: string, fallbackName: string): { title: st
     const doc = new DOMParser().parseFromString(xmlText, "application/xml");
     if (doc.getElementsByTagName("parsererror").length) { throw new Error("Invalid MusicXML (parsererror)"); }
 
-    const workTitle = firstText(doc, "work > work-title");
+    const songTitle = firstText(doc, "song > song-title");
     const movementTitle = firstText(doc, "movement-title");
     const creditWords = firstText(doc, "credit > credit-words");
-    const title = firstNonEmpty(workTitle, movementTitle, creditWords, stripExt(fallbackName));
+    const title = firstNonEmpty(songTitle, movementTitle, creditWords, stripExt(fallbackName));
 
     const composerTyped = firstText(doc, 'identification > creator[type="composer"]');
     const anyCreator = firstText(doc, "identification > creator");

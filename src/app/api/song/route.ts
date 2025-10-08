@@ -1,4 +1,4 @@
-// app/api/work/route.ts
+// app/api/song/route.ts
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
@@ -7,21 +7,21 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import type { PostgrestError } from "@supabase/supabase-js";
 
 type WorkPayload = {
-    work_title: string;
+    song_title: string;
     composer_first_name: string;
     composer_last_name: string;
     skill_level_name: string; // FK → skill_level.skill_level_name
     file_name: string;        // UNIQUE guardrail against double-upload
-    work_mxl_base64: string;  // base64-encoded MusicXML/MXL bytes
+    song_mxl_base64: string;  // base64-encoded MusicXML/MXL bytes
 };
 
 const REQUIRED_KEYS: (keyof WorkPayload)[] = [
-    "work_title",
+    "song_title",
     "composer_first_name",
     "composer_last_name",
     "skill_level_name",
     "file_name",
-    "work_mxl_base64",
+    "song_mxl_base64",
 ];
 
 const COMPOSITE_UNIQUE_CONSTRAINT = "ui_title_composer_level"; // matches DB name
@@ -81,38 +81,38 @@ export async function POST(req: Request) {
 
         // Pass base64 directly into the bytea column; PostgREST will decode.
         const { data, error } = await supabaseAdmin
-            .from("work")
+            .from("song")
             .upsert(
                 {
-                    work_title: body.work_title,
+                    song_title: body.song_title,
                     composer_first_name: body.composer_first_name,
                     composer_last_name: body.composer_last_name,
                     skill_level_name: body.skill_level_name,
                     file_name: body.file_name,
-                    work_mxl: body.work_mxl_base64,
+                    song_mxl: body.song_mxl_base64,
                     updated_datetime: new Date().toISOString(),
                 },
                 { onConflict: "file_name", ignoreDuplicates: false }
             )
-            .select("work_id")
+            .select("song_id")
             .single();
 
         if (error) {
             if (uniqueViolationFor(error, COMPOSITE_UNIQUE_CONSTRAINT)) {
                 return NextResponse.json(
                     {
-                        error: "duplicate_work_metadata",
+                        error: "duplicate_song_metadata",
                         message:
-                            "A work with the same Title/Composer/Level already exists.",
+                            "A song with the same Title/Composer/Level already exists.",
                     },
                     { status: 409 }
                 );
             }
 
             // Typical name for the single-column unique on file_name:
-            // 'work_file_name_key' (or the message includes 'file_name')
+            // 'song_file_name_key' (or the message includes 'file_name')
             if (
-                uniqueViolationFor(error, "work_file_name_key") ||
+                uniqueViolationFor(error, "song_file_name_key") ||
                 uniqueViolationFor(error, "file_name")
             ) {
                 return NextResponse.json(
@@ -127,7 +127,7 @@ export async function POST(req: Request) {
             );
         }
 
-        return NextResponse.json({ ok: true, work_id: data?.work_id }, { status: 200 });
+        return NextResponse.json({ ok: true, song_id: data?.song_id }, { status: 200 });
     } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         return NextResponse.json({ error: msg }, { status: 500 });
