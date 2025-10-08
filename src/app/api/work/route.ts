@@ -87,7 +87,7 @@ export async function POST(req: Request) {
                     work_title: body.work_title,
                     composer_first_name: body.composer_first_name,
                     composer_last_name: body.composer_last_name,
-                    skill_level: body.skill_level_name,
+                    skill_level_name: body.skill_level_name,
                     file_name: body.file_name,
                     work_mxl: body.work_mxl_base64,
                     updated_datetime: new Date().toISOString(),
