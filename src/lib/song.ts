@@ -12,8 +12,8 @@ export type Song = {
  * This guarantees at least one element, so SONG[0] is always defined.
  */
 export const SONG = [
-  { title: "Gymnopédie No. 1 from Trois Gymnopédies", src: "/api/song/1/mxl" },
-  { title: "Symphony No. 5 in C Minor - First Movement", src: "/api/song/2/mxl" },
+  { title: "Gymnopédie No. 1 from Trois Gymnopédies", src: "/api/song/2/mxl" },
+  { title: "Symphony No. 5 in C Minor - First Movement", src: "/api/song/1/mxl" },
 ] as const satisfies readonly [Song, ...Song[]];
 
 export type SongItem = (typeof SONG)[number];
