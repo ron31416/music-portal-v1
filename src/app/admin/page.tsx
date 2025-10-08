@@ -4,7 +4,7 @@ import React from "react";
 
 // --- Config ---
 const SAVE_ENDPOINT = "/api/work"; // posts to app/api/work/route.ts
-const XML_PREVIEW_HEIGHT = 420;    // ← change this to adjust the MusicXML textarea height
+const XML_PREVIEW_HEIGHT = 420;    // adjust MusicXML textarea height
 
 type SaveResponse = {
     ok?: boolean;
@@ -20,21 +20,21 @@ export default function AdminPage() {
     const [saving, setSaving] = React.useState(false);
     const [saveOk, setSaveOk] = React.useState("");
 
-    // display-only fields for now
+    // fields
     const [title, setTitle] = React.useState("");
     const [composerFirst, setComposerFirst] = React.useState("");
     const [composerLast, setComposerLast] = React.useState("");
-    const [level, setLevel] = React.useState("");
+    const [level, setLevel] = React.useState(""); // ← starts blank, must be chosen
     const [levels, setLevels] = React.useState<string[]>([]);
     const [levelsLoading, setLevelsLoading] = React.useState(false);
     const [levelsError, setLevelsError] = React.useState("");
     const [fileName, setFileName] = React.useState("");
-    const [xmlPreview, setXmlPreview] = React.useState(""); // start→</defaults> (or first 25 lines)
+    const [xmlPreview, setXmlPreview] = React.useState("");
 
     const fileInputRef = React.useRef<HTMLInputElement>(null);
     const isDark = useIsDarkMode();
 
-    // fetch skill levels once on mount
+    // fetch skill levels once (do NOT default-select)
     React.useEffect(() => {
         let cancelled = false;
 
@@ -43,17 +43,11 @@ export default function AdminPage() {
                 setLevelsLoading(true);
                 setLevelsError("");
                 const res = await fetch("/api/skill-level", { cache: "no-store" });
-                if (!res.ok) {
-                    throw new Error(`HTTP ${res.status}`);
-                }
+                if (!res.ok) { throw new Error(`HTTP ${res.status}`); }
                 const json: { levels?: string[] } = await res.json();
-                const arr = Array.isArray(json.levels) ? json.levels : [];
                 if (!cancelled) {
-                    setLevels(arr);
-                    // If no value chosen yet, default to the first level (or empty string)
-                    setLevel((prev) => {
-                        return prev || (arr[0] ?? "");
-                    });
+                    setLevels(Array.isArray(json.levels) ? json.levels : []);
+                    // intentionally do NOT call setLevel(...) here — leave it blank
                 }
             } catch (e) {
                 if (!cancelled) {
@@ -61,17 +55,13 @@ export default function AdminPage() {
                     setLevelsError(msg);
                 }
             } finally {
-                if (!cancelled) {
-                    setLevelsLoading(false);
-                }
+                if (!cancelled) { setLevelsLoading(false); }
             }
         }
 
         void loadLevels();
-        return () => {
-            cancelled = true;
-        };
-    }, []); // run once
+        return () => { cancelled = true; };
+    }, []);
 
     const onPick: React.ChangeEventHandler<HTMLInputElement> = async (e) => {
         setError("");
@@ -80,24 +70,17 @@ export default function AdminPage() {
         setTitle("");
         setComposerFirst("");
         setComposerLast("");
-        setLevel("");
+        setLevel("");              // ← force a fresh selection for each file
         setFileName("");
         setXmlPreview("");
 
         const f = e.target.files?.[0] ?? null;
-        if (!f) {
-            setFile(null);
-            return;
-        }
+        if (!f) { setFile(null); return; }
 
         const lower = (f.name || "").toLowerCase();
         const isMxl = lower.endsWith(".mxl");
         const isXml = lower.endsWith(".musicxml");
-        if (!isMxl && !isXml) {
-            setError("Please select a .mxl or .musicxml file.");
-            setFile(null);
-            return;
-        }
+        if (!isMxl && !isXml) { setError("Please select a .mxl or .musicxml file."); setFile(null); return; }
 
         setFile(f);
         setFileName(f.name);
@@ -109,103 +92,55 @@ export default function AdminPage() {
             setComposerFirst(meta.composer || "");
             setComposerLast("");
 
-            // Preview: up to and including </defaults>, else first 25 lines
             const preview = xmlUpToDefaultsOrFirstLines(meta.xmlText || "", 25);
             setXmlPreview(preview);
         } catch (err) {
-            if (err instanceof Error) {
-                setError(err.message);
-            } else {
-                setError(String(err));
-            }
+            setError(err instanceof Error ? err.message : String(err));
         } finally {
             setParsing(false);
         }
     };
 
-    // ---- client-side string checks (no normalization except trimming the END) ----
-    function hasLeadingSpace(s: string): boolean {
-        return s.length > 0 && s[0] === " ";
-    }
-    function hasDoubleSpace(s: string): boolean {
-        return s.includes("  ");
-    }
-    function rtrimSpaces(s: string): string {
-        return s.replace(/[ \t]+$/u, "");
-    }
-    function isInLevels(val: string): boolean {
-        return levels.includes(val);
-    }
+    // ---- client-side string checks ----
+    function hasLeadingSpace(s: string): boolean { return s.length > 0 && s[0] === " "; }
+    function hasDoubleSpace(s: string): boolean { return s.includes("  "); }
+    function rtrimSpaces(s: string): string { return s.replace(/[ \t]+$/u, ""); }
+    function isInLevels(val: string): boolean { return levels.includes(val); }
 
     const onSave = async (): Promise<void> => {
         setError("");
         setSaveOk("");
 
-        if (!file) {
-            setError("No file selected.");
-            return;
-        }
+        if (!file) { setError("No file selected."); return; }
 
-        // Prepare trimmed (end) versions for the fields we send
         const titleTrimmed = rtrimSpaces(title);
         const firstTrimmed = rtrimSpaces(composerFirst);
         const lastTrimmed = rtrimSpaces(composerLast);
 
-        // Required: title, level
-        if (titleTrimmed.length === 0) {
-            setError("Title is required.");
-            return;
-        }
-        if (level.length === 0) {
-            setError("Skill level is required.");
-            return;
-        }
-        if (!isInLevels(level)) {
-            setError("Skill level value is not in the list.");
-            return;
-        }
+        // Required: title and explicit level selection (no default)
+        if (titleTrimmed.length === 0) { setError("Title is required."); return; }
+        if (level.length === 0) { setError("Skill level is required."); return; }
+        if (!isInLevels(level)) { setError("Skill level value is not in the list."); return; }
 
-        // Leading space & double space rules:
-        // Title (must be present)
-        if (hasLeadingSpace(titleTrimmed)) {
-            setError("Title must not start with a space.");
-            return;
-        }
-        if (hasDoubleSpace(titleTrimmed)) {
-            setError("Title must not contain double spaces.");
-            return;
-        }
+        // Leading / double-space rules
+        if (hasLeadingSpace(titleTrimmed)) { setError("Title must not start with a space."); return; }
+        if (hasDoubleSpace(titleTrimmed)) { setError("Title must not contain double spaces."); return; }
 
-        // Composer names (optional): only validate if non-empty
         if (firstTrimmed.length > 0) {
-            if (hasLeadingSpace(firstTrimmed)) {
-                setError("Composer first name must not start with a space.");
-                return;
-            }
-            if (hasDoubleSpace(firstTrimmed)) {
-                setError("Composer first name must not contain double spaces.");
-                return;
-            }
+            if (hasLeadingSpace(firstTrimmed)) { setError("Composer first name must not start with a space."); return; }
+            if (hasDoubleSpace(firstTrimmed)) { setError("Composer first name must not contain double spaces."); return; }
         }
         if (lastTrimmed.length > 0) {
-            if (hasLeadingSpace(lastTrimmed)) {
-                setError("Composer last name must not start with a space.");
-                return;
-            }
-            if (hasDoubleSpace(lastTrimmed)) {
-                setError("Composer last name must not contain double spaces.");
-                return;
-            }
+            if (hasLeadingSpace(lastTrimmed)) { setError("Composer last name must not start with a space."); return; }
+            if (hasDoubleSpace(lastTrimmed)) { setError("Composer last name must not contain double spaces."); return; }
         }
 
         try {
             setSaving(true);
 
-            // Raw bytes of the originally selected file (no modifications)
             const bytes = new Uint8Array(await file.arrayBuffer());
             const base64 = bytesToBase64(bytes);
 
-            // Minimal payload expected by /api/work (composer names may be empty)
             const payload = {
                 work_title: titleTrimmed,
                 composer_first_name: firstTrimmed,
@@ -223,15 +158,10 @@ export default function AdminPage() {
 
             let json: SaveResponse | null = null;
             const ct = res.headers.get("content-type") ?? "";
-            if (ct.includes("application/json")) {
-                json = (await res.json()) as SaveResponse;
-            }
+            if (ct.includes("application/json")) { json = (await res.json()) as SaveResponse; }
 
             if (!res.ok) {
-                const message =
-                    (json && (json.message || json.error)) ||
-                    (await res.text()) ||
-                    `Save failed (HTTP ${res.status})`;
+                const message = (json && (json.message || json.error)) || (await res.text()) || `Save failed (HTTP ${res.status})`;
                 setError(message);
                 return;
             }
@@ -239,11 +169,7 @@ export default function AdminPage() {
             const workId = json?.work_id ?? null;
             setSaveOk(workId !== null ? `Saved ✓ (work_id=${workId})` : "Saved ✓");
         } catch (err) {
-            if (err instanceof Error) {
-                setError(err.message);
-            } else {
-                setError(String(err));
-            }
+            setError(err instanceof Error ? err.message : String(err));
         } finally {
             setSaving(false);
         }
@@ -251,9 +177,8 @@ export default function AdminPage() {
 
     return (
         <main style={{ maxWidth: 860, margin: "40px auto", padding: "0 16px" }}>
-            {/* Top bar: Load button only (upper-right). No headings/rectangle on first load */}
+            {/* Top bar: Load button */}
             <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 12, marginBottom: 12 }}>
-                {/* Hidden real input */}
                 <input
                     ref={fileInputRef}
                     id="song-file-input"
@@ -265,11 +190,7 @@ export default function AdminPage() {
 
                 <button
                     type="button"
-                    onClick={() => {
-                        if (fileInputRef.current) {
-                            fileInputRef.current.click();
-                        }
-                    }}
+                    onClick={() => { if (fileInputRef.current) { fileInputRef.current.click(); } }}
                     style={{
                         padding: "8px 12px",
                         border: "1px solid #aaa",
@@ -283,35 +204,23 @@ export default function AdminPage() {
                     Load a File
                 </button>
 
-                {parsing && (
-                    <span aria-live="polite" style={{ alignSelf: "center" }}>
-                        Parsing…
-                    </span>
-                )}
+                {parsing && (<span aria-live="polite" style={{ alignSelf: "center" }}>Parsing…</span>)}
             </div>
 
-            {/* Data card: only after a file is selected */}
+            {/* Card only after a file is selected */}
             {file && (
                 <section aria-labelledby="add-song-h">
-                    {/* Keep the h2 for a11y but visually hide it */}
                     <h2
                         id="add-song-h"
                         style={{
                             position: "absolute",
-                            width: 1,
-                            height: 1,
-                            padding: 0,
-                            margin: -1,
-                            overflow: "hidden",
-                            clip: "rect(0 0 0 0)",
-                            whiteSpace: "nowrap",
-                            border: 0,
+                            width: 1, height: 1, padding: 0, margin: -1, overflow: "hidden",
+                            clip: "rect(0 0 0 0)", whiteSpace: "nowrap", border: 0,
                         }}
                     >
                         Add song
                     </h2>
 
-                    {/* White card with the fields + Save button */}
                     <div style={{ padding: 16, border: "1px solid #ddd", borderRadius: 8, background: "#fff", color: "#000" }}>
                         <div
                             style={{
@@ -326,9 +235,7 @@ export default function AdminPage() {
                             <input
                                 type="text"
                                 value={title}
-                                onChange={(e) => {
-                                    setTitle(e.target.value);
-                                }}
+                                onChange={(e) => { setTitle(e.target.value); }}
                                 style={roStyle}
                             />
 
@@ -337,18 +244,14 @@ export default function AdminPage() {
                                 <input
                                     type="text"
                                     value={composerLast}
-                                    onChange={(e) => {
-                                        setComposerLast(e.target.value);
-                                    }}
+                                    onChange={(e) => { setComposerLast(e.target.value); }}
                                     placeholder="Last"
                                     style={roStyle}
                                 />
                                 <input
                                     type="text"
                                     value={composerFirst}
-                                    onChange={(e) => {
-                                        setComposerFirst(e.target.value);
-                                    }}
+                                    onChange={(e) => { setComposerFirst(e.target.value); }}
                                     placeholder="First"
                                     style={roStyle}
                                 />
@@ -357,22 +260,21 @@ export default function AdminPage() {
                             <label style={{ alignSelf: "center", fontWeight: 600 }}>Skill Level</label>
                             <select
                                 value={level}
-                                onChange={(e) => {
-                                    setLevel(e.target.value);
-                                }}
+                                onChange={(e) => { setLevel(e.target.value); }}
                                 disabled={levelsLoading || !!levelsError || levels.length === 0}
                                 style={{ ...roStyle, appearance: "auto" as const }}
                             >
+                                {/* disabled placeholder so the field starts blank */}
+                                <option value="" disabled>
+                                    — Select a level —
+                                </option>
                                 {levels.map((l) => {
                                     return (
-                                        <option key={l} value={l}>
-                                            {l}
-                                        </option>
+                                        <option key={l} value={l}>{l}</option>
                                     );
                                 })}
                             </select>
 
-                            {/* optional: show a small warning row if the fetch failed */}
                             {levelsError && (
                                 <div style={{ gridColumn: "1 / span 2", color: "#b00020" }}>
                                     Failed to load skill levels: {levelsError}
@@ -386,9 +288,7 @@ export default function AdminPage() {
                             <textarea
                                 aria-label="XML"
                                 value={xmlPreview}
-                                onChange={(e) => {
-                                    setXmlPreview(e.target.value);
-                                }}
+                                onChange={(e) => { setXmlPreview(e.target.value); }}
                                 spellCheck={false}
                                 style={{
                                     width: "100%",
@@ -408,21 +308,28 @@ export default function AdminPage() {
                                 }}
                             />
 
-                            {/* Status (inside card, bottom row, spans full width) */}
-                            {(error || saveOk) && (
-                                <div style={{ gridColumn: "1 / span 2" }}>
-                                    <p
-                                        role={error ? "alert" : "status"}
-                                        style={statusPillStyle(Boolean(error), isDark)}
-                                    >
-                                        {error || saveOk}
-                                    </p>
-                                </div>
-                            )}
                         </div>
 
-                        {/* Actions (Save stays inside the card, right-justified) */}
-                        <div style={{ marginTop: 16, display: "flex", gap: 12 }}>
+                        <div
+                            style={{
+                                marginTop: 16,
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 12,
+                                justifyContent: "flex-end",
+                                flexWrap: "nowrap",
+                            }}
+                        >
+                            {(error || saveOk) && (
+                                <p
+                                    role={error ? "alert" : "status"}
+                                    title={error || saveOk} // hover to see full text
+                                    style={statusPillCompactStyle(Boolean(error), isDark)}
+                                >
+                                    {error || saveOk}
+                                </p>
+                            )}
+
                             <button
                                 type="button"
                                 onClick={onSave}
@@ -433,7 +340,6 @@ export default function AdminPage() {
                                     borderRadius: 6,
                                     background: saving ? "#eee" : "#fafafa",
                                     cursor: saving ? "default" : "pointer",
-                                    marginLeft: "auto",
                                 }}
                             >
                                 {saving ? "Saving…" : "Save to Database"}
@@ -461,14 +367,10 @@ function useIsDarkMode(): boolean {
     const [isDark, setIsDark] = React.useState(false);
     React.useEffect(() => {
         const mq = window.matchMedia("(prefers-color-scheme: dark)");
-        const update = (): void => {
-            setIsDark(mq.matches);
-        };
+        const update = (): void => { setIsDark(mq.matches); };
         update();
         mq.addEventListener("change", update);
-        return () => {
-            mq.removeEventListener("change", update);
-        };
+        return () => { mq.removeEventListener("change", update); };
     }, []);
     return isDark;
 }
@@ -498,6 +400,18 @@ function statusPillStyle(isError: boolean, isDark: boolean): React.CSSProperties
     };
 }
 
+function statusPillCompactStyle(isError: boolean, isDark: boolean): React.CSSProperties {
+    const base = statusPillStyle(isError, isDark);
+    return {
+        ...base,
+        margin: 0,                 // inline with button
+        maxWidth: "60%",           // tweak as needed (e.g., "420px")
+        whiteSpace: "nowrap",      // keep to one line
+        overflow: "hidden",
+        textOverflow: "ellipsis",  // truncate with …
+    };
+}
+
 // --- helpers (unchanged) ---
 
 async function extractMetadataAndXml(
@@ -513,15 +427,11 @@ async function extractMetadataAndXml(
         const { unzip } = await import("unzipit");
         const { entries } = await unzip(await file.arrayBuffer());
         const container = entries["META-INF/container.xml"];
-        if (!container) {
-            throw new Error("MXL: META-INF/container.xml missing");
-        }
+        if (!container) { throw new Error("MXL: META-INF/container.xml missing"); }
         const containerXml = await container.text();
         const rootPath = findRootfilePath(containerXml);
         const root = entries[rootPath];
-        if (!root) {
-            throw new Error(`MXL: rootfile missing in archive: ${rootPath}`);
-        }
+        if (!root) { throw new Error(`MXL: rootfile missing in archive: ${rootPath}`); }
         const xmlText = await root.text();
         const meta = extractFromMusicXml(xmlText, file.name);
         return { ...meta, xmlText };
@@ -537,25 +447,19 @@ function findRootfilePath(containerXml: string): string {
         el?.getAttribute("path") ||
         el?.getAttribute("href") ||
         "";
-    if (!p) {
-        throw new Error("MXL: container rootfile path missing");
-    }
+    if (!p) { throw new Error("MXL: container rootfile path missing"); }
     return p;
 }
 
 function extractFromMusicXml(xmlText: string, fallbackName: string): { title: string; composer: string } {
     const doc = new DOMParser().parseFromString(xmlText, "application/xml");
-    if (doc.getElementsByTagName("parsererror").length) {
-        throw new Error("Invalid MusicXML (parsererror)");
-    }
+    if (doc.getElementsByTagName("parsererror").length) { throw new Error("Invalid MusicXML (parsererror)"); }
 
-    // Title preference: work-title > movement-title > credit-words > filename(no ext)
     const workTitle = firstText(doc, "work > work-title");
     const movementTitle = firstText(doc, "movement-title");
     const creditWords = firstText(doc, "credit > credit-words");
     const title = firstNonEmpty(workTitle, movementTitle, creditWords, stripExt(fallbackName));
 
-    // Composer: identification/creator[type="composer"] > creator > credit-words fallback
     const composerTyped = firstText(doc, 'identification > creator[type="composer"]');
     const anyCreator = firstText(doc, "identification > creator");
     const composer = firstNonEmpty(composerTyped, anyCreator, "");
@@ -570,46 +474,32 @@ function firstText(doc: Document, selector: string): string {
 }
 
 function firstNonEmpty(...vals: (string | undefined)[]): string {
-    for (const v of vals) {
-        if (v && v.trim()) {
-            return v.trim();
-        }
-    }
+    for (const v of vals) { if (v && v.trim()) { return v.trim(); } }
     return "";
 }
 
 function stripExt(name: string): string {
     const lower = (name || "").toLowerCase();
-    if (lower.endsWith(".musicxml")) {
-        return name.slice(0, -10);
-    }
-    if (lower.endsWith(".mxl")) {
-        return name.slice(0, -4);
-    }
+    if (lower.endsWith(".musicxml")) { return name.slice(0, -10); }
+    if (lower.endsWith(".mxl")) { return name.slice(0, -4); }
     return name;
 }
 
 function collapseWs(s: string): string {
-    // Collapse runs of whitespace to a single space, then trim.
     let out = "";
     let inWs = false;
     for (let i = 0; i < s.length; i++) {
         const ch = s[i]!;
         const ws = ch === " " || ch === "\n" || ch === "\r" || ch === "\t" || ch === "\f";
         if (ws) {
-            if (!inWs) {
-                out += " ";
-                inWs = true;
-            }
+            if (!inWs) { out += " "; inWs = true; }
         } else {
-            out += ch;
-            inWs = false;
+            out += ch; inWs = false;
         }
     }
     return out.trim();
 }
 
-// Show from start of XML through closing </defaults>; if not present, first N lines
 function xmlUpToDefaultsOrFirstLines(xmlText: string, n: number): string {
     const endTag = "</defaults>";
     const idx = xmlText.indexOf(endTag);
@@ -622,7 +512,6 @@ function xmlUpToDefaultsOrFirstLines(xmlText: string, n: number): string {
     return head.join("\n") + (lines.length > head.length ? "\n…" : "");
 }
 
-// Utility: Uint8Array -> base64
 function bytesToBase64(bytes: Uint8Array): string {
     let s = "";
     for (let i = 0; i < bytes.length; i++) {
