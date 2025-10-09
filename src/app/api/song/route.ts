@@ -123,7 +123,7 @@ export async function POST(req: Request) {
                     composer_last_name: body.composer_last_name,
                     skill_level_name: body.skill_level_name,
                     file_name: body.file_name,
-                    song_mxl: mxlBytes,
+                    song_mxl: body.song_mxl_base64,
                     updated_datetime: new Date().toISOString(),
                 },
                 { onConflict: "file_name", ignoreDuplicates: false }
