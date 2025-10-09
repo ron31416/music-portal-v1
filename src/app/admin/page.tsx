@@ -860,7 +860,7 @@ export default function AdminPage(): React.ReactElement {
                                 <div
                                     style={{
                                         display: "grid",
-                                        gridTemplateColumns: "1.3fr 1.3fr 2fr 1fr 1.3fr", // Last | First | Title | Level | Updated
+                                        gridTemplateColumns: "1.3fr 1.3fr 2fr 1fr 1.3fr", // Last | First | Title | Level | File
                                         padding: "8px 10px",
                                         background: "#fafafa",
                                         borderBottom: "1px solid #e5e5e5",
@@ -872,7 +872,7 @@ export default function AdminPage(): React.ReactElement {
                                     <HeaderButton label="First" sortToken="composer_first_name" curSort={sort} dir={sortDir} onClick={toggleSort} />
                                     <HeaderButton label="Title" sortToken="song_title" curSort={sort} dir={sortDir} onClick={toggleSort} />
                                     <HeaderButton label="Level" sortToken="skill_level_number" curSort={sort} dir={sortDir} onClick={toggleSort} />
-                                    <HeaderButton label="Updated" sortToken="updated_datetime" curSort={sort} dir={sortDir} onClick={toggleSort} />
+                                    <HeaderButton label="File" sortToken="file_name" curSort={sort} dir={sortDir} onClick={toggleSort} />
                                 </div>
 
                                 {/* Table rows */}
@@ -890,7 +890,7 @@ export default function AdminPage(): React.ReactElement {
                                                 tabIndex={0}
                                                 style={{
                                                     display: "grid",
-                                                    gridTemplateColumns: "1.3fr 1.3fr 2fr 1fr 1.3fr", // Last | First | Title | Level | Updated
+                                                    gridTemplateColumns: "1.3fr 1.3fr 2fr 1fr 1.3fr", // Last | First | Title | Level | File
                                                     padding: "8px 10px",
                                                     borderBottom: "1px solid #f0f0f0",
                                                     fontSize: 13,
@@ -902,7 +902,7 @@ export default function AdminPage(): React.ReactElement {
                                                 <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.composer_first_name || "\u2014"}</div>
                                                 <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.song_title}</div>
                                                 <div>{r.skill_level_name}</div>
-                                                <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{updated}</div>
+                                                <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.file_name || "\u2014"}</div>
                                             </div>
                                         );
                                     })}
