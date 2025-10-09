@@ -696,7 +696,7 @@ export default function AdminPage() {
                                 {/* Table rows */}
                                 <div style={{ maxHeight: 420, overflow: "auto" }}>
                                     {sortedSongs.map((r) => {
-                                        const composer = `${r.composer_last_name}${r.composer_last_name && r.composer_first_name ? ", " : ""}${r.composer_first_name}`;
+                                        const composer = `${r.composer_first_name} ${r.composer_last_name}`;
                                         const updated = new Date(r.updated_datetime).toLocaleString();
                                         return (
                                             <div
