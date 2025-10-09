@@ -1,3 +1,4 @@
+// src/components/SongListPanel.tsx
 "use client";
 
 import React from "react";
