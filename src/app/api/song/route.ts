@@ -91,16 +91,21 @@ export async function POST(req: Request) {
         // At this point types are safe to narrow
         const body = raw as SongPayload;
 
-        // Decode base64 → bytes and validate .mxl (ZIP)
+        // Decode base64 → bytes, validate ZIP, then convert to Postgres hex bytea literal (\x...)
+        let mxlHex: string;
         try {
             const buf = Buffer.from(body.song_mxl_base64, "base64");
             const u8 = new Uint8Array(buf);
+
             if (!isZipMagic(u8)) {
                 return NextResponse.json(
                     { error: "payload_not_mxl_zip", message: "Song bytes must be compressed .mxl (ZIP) format." },
                     { status: 400 }
                 );
             }
+
+            // Build hex form that PostgREST/PG will parse as bytea
+            mxlHex = "\\x" + Buffer.from(u8).toString("hex");
         } catch {
             return NextResponse.json(
                 { error: "invalid_base64", message: "song_mxl_base64 is not valid base64." },
@@ -118,7 +123,7 @@ export async function POST(req: Request) {
                     composer_last_name: body.composer_last_name,
                     skill_level_name: body.skill_level_name,
                     file_name: body.file_name,
-                    song_mxl: body.song_mxl_base64,
+                    song_mxl: mxlHex,
                     updated_datetime: new Date().toISOString(),
                 },
                 { onConflict: "file_name", ignoreDuplicates: false }
