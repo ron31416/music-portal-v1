@@ -1,65 +1,22 @@
-// app/api/song/route.ts
+// src/app/api/song/route.ts
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { Buffer } from "node:buffer";
-import type { PostgrestError } from "@supabase/supabase-js";
 import type { NextRequest } from "next/server";
-
-type SongPayload = {
-    song_title: string;
-    composer_first_name: string;
-    composer_last_name: string;
-    skill_level_name: string; // FK → skill_level.skill_level_name
-    file_name: string;        // UNIQUE guardrail against double-upload
-    song_mxl_base64: string;  // base64-encoded MusicXML/MXL bytes
-};
-
-const REQUIRED_KEYS: (keyof SongPayload)[] = [
-    "song_title",
-    "composer_first_name",
-    "composer_last_name",
-    "skill_level_name",
-    "file_name",
-    "song_mxl_base64",
-];
-
-const COMPOSITE_UNIQUE_CONSTRAINT = "ui_title_composer_level"; // matches DB name
 
 function isObjectRecord(x: unknown): x is Record<string, unknown> {
     return typeof x === "object" && x !== null;
 }
 
 function isNonEmptyString(v: unknown): v is string {
-    return typeof v === "string" && v.length > 0;
+    return typeof v === "string" && v.trim().length > 0;
 }
 
-function missingFields(body: Record<string, unknown>): string[] {
-    const missing: string[] = [];
-    for (const k of REQUIRED_KEYS) {
-        if (!isNonEmptyString(body[k])) {
-            missing.push(k);
-        }
-    }
-    return missing;
-}
-
-function uniqueViolationFor(
-    err: PostgrestError | null,
-    constraintFragment: string
-): boolean {
-    if (!err) {
-        return false;
-    }
-    if (err.code !== "23505") {
-        return false;
-    }
-    if (typeof err.message !== "string") {
-        return false;
-    }
-    return err.message.includes(constraintFragment);
+function isPositiveInt(v: unknown): v is number {
+    return typeof v === "number" && Number.isInteger(v) && v > 0;
 }
 
 function isZipMagic(u8: Uint8Array): boolean {
@@ -72,6 +29,7 @@ function isZipMagic(u8: Uint8Array): boolean {
     );
 }
 
+// ---- POST /api/song  (create/update a song) ----
 export async function POST(req: Request) {
     try {
         const raw = (await req.json()) as unknown;
@@ -80,21 +38,37 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
         }
 
-        const missing = missingFields(raw);
-        if (missing.length > 0) {
-            return NextResponse.json(
-                { error: `Missing or invalid: ${missing.join(", ")}` },
-                { status: 400 }
-            );
+        // Minimal shape checks without hard-coding a big REQUIRED_KEYS array
+        const title = raw["song_title"];
+        const compFirst = raw["composer_first_name"];
+        const compLast = raw["composer_last_name"];
+        const levelNum = raw["skill_level_number"];
+        const fileName = raw["file_name"];
+        const mxlB64 = raw["song_mxl_base64"];
+
+        if (!isNonEmptyString(title)) {
+            return NextResponse.json({ error: "song_title is required" }, { status: 400 });
+        }
+        if (!isNonEmptyString(compFirst)) {
+            return NextResponse.json({ error: "composer_first_name is required" }, { status: 400 });
+        }
+        if (!isNonEmptyString(compLast)) {
+            return NextResponse.json({ error: "composer_last_name is required" }, { status: 400 });
+        }
+        if (!isPositiveInt(levelNum)) {
+            return NextResponse.json({ error: "skill_level_number must be a positive integer" }, { status: 400 });
+        }
+        if (!isNonEmptyString(fileName)) {
+            return NextResponse.json({ error: "file_name is required" }, { status: 400 });
+        }
+        if (!isNonEmptyString(mxlB64)) {
+            return NextResponse.json({ error: "song_mxl_base64 is required" }, { status: 400 });
         }
 
-        // At this point types are safe to narrow
-        const body = raw as SongPayload;
-
-        // Decode base64 → bytes, validate ZIP, then convert to Postgres hex bytea literal (\x...)
+        // Decode base64 → bytes, validate ZIP, then convert to Postgres bytea hex literal (\x...)
         let mxlHex: string;
         try {
-            const buf = Buffer.from(body.song_mxl_base64, "base64");
+            const buf = Buffer.from(mxlB64, "base64");
             const u8 = new Uint8Array(buf);
 
             if (!isZipMagic(u8)) {
@@ -104,7 +78,6 @@ export async function POST(req: Request) {
                 );
             }
 
-            // Build hex form that PostgREST/PG will parse as bytea
             mxlHex = "\\x" + Buffer.from(u8).toString("hex");
         } catch {
             return NextResponse.json(
@@ -113,16 +86,16 @@ export async function POST(req: Request) {
             );
         }
 
-        // Pass base64 directly into the bytea column; PostgREST will decode.
+        // Upsert with only unavoidable column names; uniqueness is handled by DB
         const { data, error } = await supabaseAdmin
             .from("song")
             .upsert(
                 {
-                    song_title: body.song_title,
-                    composer_first_name: body.composer_first_name,
-                    composer_last_name: body.composer_last_name,
-                    skill_level_name: body.skill_level_name,
-                    file_name: body.file_name,
+                    song_title: String(title),
+                    composer_first_name: String(compFirst),
+                    composer_last_name: String(compLast),
+                    skill_level_number: Number(levelNum),
+                    file_name: String(fileName),
                     song_mxl: mxlHex,
                     updated_datetime: new Date().toISOString(),
                 },
@@ -132,29 +105,13 @@ export async function POST(req: Request) {
             .single();
 
         if (error) {
-            if (uniqueViolationFor(error, COMPOSITE_UNIQUE_CONSTRAINT)) {
+            // Generic unique violation response without hard-coding constraint names
+            if (error.code === "23505") {
                 return NextResponse.json(
-                    {
-                        error: "duplicate_song_metadata",
-                        message:
-                            "A song with the same Title/Composer/Level already exists.",
-                    },
+                    { error: "conflict", message: "A song with these identifiers already exists." },
                     { status: 409 }
                 );
             }
-
-            // Typical name for the single-column unique on file_name:
-            // 'song_file_name_key' (or the message includes 'file_name')
-            if (
-                uniqueViolationFor(error, "song_file_name_key") ||
-                uniqueViolationFor(error, "file_name")
-            ) {
-                return NextResponse.json(
-                    { error: "duplicate_file_name", message: "File name already used." },
-                    { status: 409 }
-                );
-            }
-
             return NextResponse.json(
                 { error: error.message ?? "Insert/Update failed" },
                 { status: 500 }
@@ -168,47 +125,31 @@ export async function POST(req: Request) {
     }
 }
 
-// ---- GET /api/song  (list songs; sortable) ----
-type SongListItem = {
-    song_id: number;
-    song_title: string;
-    composer_first_name: string;
-    composer_last_name: string;
-    skill_level_name: string;
-    file_name: string;
-    inserted_datetime: string;
-    updated_datetime: string;
-};
-
-const ALLOWED_SORT: ReadonlyArray<keyof SongListItem> = [
-    "song_title",
-    "composer_last_name",
-    "composer_first_name",
-    "skill_level_name",
-    "file_name",
-    "updated_datetime",
-    "inserted_datetime",
-] as const;
-
+// ---- GET /api/song  (list songs; server-owned ordering via DB function) ----
 export async function GET(req: NextRequest): Promise<Response> {
     try {
         const url = new URL(req.url);
-        const sortParam = (url.searchParams.get("sort") ?? "song_title") as keyof SongListItem;
-        const dirParam = (url.searchParams.get("dir") ?? "asc").toLowerCase();
+
+        // Pass-through of tokens only; no hard-coded column lists here
+        const sort = url.searchParams.get("sort") ?? null; // e.g. "composer_last_name"
+        const dirRaw = (url.searchParams.get("dir") ?? "").toLowerCase();
+        const dir = dirRaw === "desc" ? "desc" : "asc";
+
         const limitParam = url.searchParams.get("limit");
+        const limitNum = Number(limitParam);
+        const limit = Number.isFinite(limitNum) ? Math.min(Math.max(limitNum, 1), 2000) : 1000;
 
-        const sort = ALLOWED_SORT.includes(sortParam) ? sortParam : "song_title";
-        const ascending = dirParam !== "desc";
-        const limit = Math.min(Math.max(Number(limitParam ?? 1000), 1), 2000);
-        const rangeEnd = limit - 1;
+        const offsetParam = url.searchParams.get("offset");
+        const offsetNum = Number(offsetParam);
+        const offset = Number.isFinite(offsetNum) ? Math.max(offsetNum, 0) : 0;
 
-        const { data, error } = await supabaseAdmin
-            .from("song")
-            .select(
-                "song_id, song_title, composer_first_name, composer_last_name, skill_level_name, file_name, inserted_datetime, updated_datetime"
-            )
-            .order(sort as string, { ascending })
-            .range(0, rangeEnd);
+        // Delegate ordering & column choice to the DB function
+        const { data, error } = await supabaseAdmin.rpc("song_list", {
+            p_sort_column: sort ?? undefined,
+            p_sort_direction: dir,
+            p_limit: limit,
+            p_offset: offset,
+        });
 
         if (error) {
             return new Response(JSON.stringify({ error: error.message }), {
@@ -217,7 +158,7 @@ export async function GET(req: NextRequest): Promise<Response> {
             });
         }
 
-        return new Response(JSON.stringify({ items: (data ?? []) as SongListItem[] }), {
+        return new Response(JSON.stringify({ items: data ?? [] }), {
             status: 200,
             headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
         });
