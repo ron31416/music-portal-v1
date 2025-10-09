@@ -1,7 +1,6 @@
 "use client";
 
 import React from "react";
-import { useRouter } from "next/navigation";
 
 type SongListItem = {
     song_id: number;
@@ -45,7 +44,6 @@ function HeaderButton(props: {
 }
 
 export default function SongListPanel(): React.ReactElement {
-    const router = useRouter();
 
     const [loading, setLoading] = React.useState(false);
     const [error, setError] = React.useState("");
@@ -107,7 +105,8 @@ export default function SongListPanel(): React.ReactElement {
     };
 
     const openViewer = (item: SongListItem): void => {
-        router.push(`/viewer?src=${encodeURIComponent(`/api/song/${item.song_id}/mxl`)}`);
+        const url = `/viewer?src=${encodeURIComponent(`/api/song/${item.song_id}/mxl`)}`;
+        window.open(url, "_blank", "noopener,noreferrer");
     };
 
     return (
