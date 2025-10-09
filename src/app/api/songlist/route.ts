@@ -11,7 +11,6 @@ type SongListItem = {
     composer_first_name: string;
     composer_last_name: string;
     skill_level_name: string;
-    updated_datetime: string;
 };
 
 const ALLOWED_SORT: ReadonlyArray<keyof SongListItem> = [
@@ -19,7 +18,6 @@ const ALLOWED_SORT: ReadonlyArray<keyof SongListItem> = [
     "composer_last_name",
     "composer_first_name",
     "skill_level_name",
-    "updated_datetime",
 ] as const;
 
 export async function GET(req: NextRequest): Promise<Response> {
@@ -41,7 +39,7 @@ export async function GET(req: NextRequest): Promise<Response> {
         const query = supabaseAdmin
             .from("song")
             .select(
-                "song_id, song_title, composer_first_name, composer_last_name, skill_level_name, updated_datetime"
+                "song_id, song_title, composer_first_name, composer_last_name, skill_level_name"
             )
             .order(sort as string, { ascending })
             // stable tie-breaker
