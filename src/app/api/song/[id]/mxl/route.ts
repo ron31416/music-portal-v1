@@ -90,7 +90,7 @@ export async function GET(
             status: 200,
             headers: {
                 // .mxl (compressed MusicXML)
-                "Content-Type": "application/vnd.recordare.musicxml",
+                "Content-Type": "application/vnd.recordare.musicxml+zip",
                 "Content-Disposition": `inline; filename="${encodeURIComponent(title + ".mxl")}"`,
                 "Cache-Control": "no-store",
             },

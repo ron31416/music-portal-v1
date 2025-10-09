@@ -408,7 +408,7 @@ export default function AdminPage() {
             const lower = (item.file_name || "").toLowerCase();
             const isMxl = lower.endsWith(".mxl") || lower.endsWith(".zip");
             const isXml = lower.endsWith(".musicxml") || lower.endsWith(".xml");
-            const type = res.headers.get("content-type") || (isMxl ? "application/zip" : "application/vnd.recordare.musicxml+xml");
+            const type = res.headers.get("content-type") || (isMxl ? "application/vnd.recordare.musicxml+zip" : "application/vnd.recordare.musicxml+xml");
             const f = new File([blob], item.file_name || "song.mxl", { type });
 
             setFile(f);
@@ -445,7 +445,7 @@ export default function AdminPage() {
                         ref={fileInputRef}
                         id="song-file-input"
                         type="file"
-                        accept=".mxl,.musicxml,application/vnd.recordare.musicxml,application/vnd.recordare.musicxml+xml,application/zip"
+                        accept=".mxl,.musicxml,application/vnd.recordare.musicxml+xml,application/vnd.recordare.musicxml+zip,application/zip"
                         onChange={onPick}
                         style={{ display: "none" }}
                     />
