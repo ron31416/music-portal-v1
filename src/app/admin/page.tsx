@@ -860,7 +860,7 @@ export default function AdminPage(): React.ReactElement {
                                 <div
                                     style={{
                                         display: "grid",
-                                        gridTemplateColumns: "2fr 1.3fr 1fr 1.3fr",
+                                        gridTemplateColumns: "1.3fr 1.3fr 2fr 1fr 1.3fr", // Last | First | Title | Level | Updated
                                         padding: "8px 10px",
                                         background: "#fafafa",
                                         borderBottom: "1px solid #e5e5e5",
@@ -868,8 +868,9 @@ export default function AdminPage(): React.ReactElement {
                                         fontSize: 13,
                                     }}
                                 >
+                                    <HeaderButton label="Last" sortToken="composer_last_name" curSort={sort} dir={sortDir} onClick={toggleSort} />
+                                    <HeaderButton label="First" sortToken="composer_first_name" curSort={sort} dir={sortDir} onClick={toggleSort} />
                                     <HeaderButton label="Title" sortToken="song_title" curSort={sort} dir={sortDir} onClick={toggleSort} />
-                                    <HeaderButton label="Composer" sortToken="composer_last_name" curSort={sort} dir={sortDir} onClick={toggleSort} />
                                     <HeaderButton label="Level" sortToken="skill_level_number" curSort={sort} dir={sortDir} onClick={toggleSort} />
                                     <HeaderButton label="Updated" sortToken="updated_datetime" curSort={sort} dir={sortDir} onClick={toggleSort} />
                                 </div>
@@ -877,25 +878,19 @@ export default function AdminPage(): React.ReactElement {
                                 {/* Table rows */}
                                 <div style={{ maxHeight: 420, overflow: "auto" }}>
                                     {songs.map((r) => {
-                                        const composer = `${r.composer_first_name} ${r.composer_last_name}`;
                                         const updated = new Date(r.updated_datetime).toLocaleString();
                                         return (
                                             <div
                                                 key={r.song_id}
-                                                onClick={() => {
-                                                    void loadSongRow(r);
-                                                }}
+                                                onClick={() => { void loadSongRow(r); }}
                                                 onKeyDown={(e: React.KeyboardEvent<HTMLDivElement>) => {
-                                                    if (e.key === "Enter" || e.key === " ") {
-                                                        e.preventDefault();
-                                                        void loadSongRow(r);
-                                                    }
+                                                    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); void loadSongRow(r); }
                                                 }}
                                                 role="button"
                                                 tabIndex={0}
                                                 style={{
                                                     display: "grid",
-                                                    gridTemplateColumns: "2fr 1.3fr 1fr 1.3fr",
+                                                    gridTemplateColumns: "1.3fr 1.3fr 2fr 1fr 1.3fr", // Last | First | Title | Level | Updated
                                                     padding: "8px 10px",
                                                     borderBottom: "1px solid #f0f0f0",
                                                     fontSize: 13,
@@ -903,8 +898,9 @@ export default function AdminPage(): React.ReactElement {
                                                     cursor: "pointer",
                                                 }}
                                             >
+                                                <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.composer_last_name || "\u2014"}</div>
+                                                <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.composer_first_name || "\u2014"}</div>
                                                 <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.song_title}</div>
-                                                <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{composer || "\u2014"}</div>
                                                 <div>{r.skill_level_name}</div>
                                                 <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{updated}</div>
                                             </div>
