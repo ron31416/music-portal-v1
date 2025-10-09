@@ -11,7 +11,24 @@ export default function HomePage() {
         href="/admin"
         aria-label="Go to Admin"
         prefetch={false}
-        className="fixed top-3 right-3 z-50 px-3 py-1.5 border border-gray-400 rounded-md bg-gray-50 text-gray-900 no-underline text-sm font-semibold shadow-sm"
+        target="_blank"
+        rel="noopener noreferrer"
+        style={{
+          position: "fixed",
+          top: 12,
+          right: 12,
+          zIndex: 1000,
+          padding: "8px 12px",
+          border: "1px solid #aaa",
+          borderRadius: 6,
+          background: "#fff",
+          color: "#111",
+          textDecoration: "none",
+          fontSize: 13,
+          fontWeight: 600,
+          boxShadow: "0 1px 2px rgba(0,0,0,0.08)",
+          cursor: "pointer",
+        }}
       >
         Admin
       </Link>
