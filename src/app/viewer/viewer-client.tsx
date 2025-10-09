@@ -4,6 +4,7 @@
 import { useSearchParams } from "next/navigation";
 import { SONG } from "@/lib/song";
 import ScoreOSMD from "@/components/ScoreOSMD";
+import SongListPanel from "@/components/SongListPanel";
 
 export default function ViewerClient() {
   const params = useSearchParams();
@@ -22,15 +23,21 @@ export default function ViewerClient() {
   }
 
   return (
-    <div
-      style={{
-        position: "relative",
-        background: "#fff",
-        width: "100%",
-        minHeight: 0,
-      }}
-    >
-      <ScoreOSMD src={effectiveSrc} />
-    </div>
+    <>
+      <div
+        style={{
+          position: "relative",
+          background: "#fff",
+          width: "100%",
+          minHeight: 0,
+        }}
+      >
+        <ScoreOSMD src={effectiveSrc} />
+      </div>
+
+      <div style={{ marginTop: 24 }}>
+        <SongListPanel />
+      </div>
+    </>
   );
 }
