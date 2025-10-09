@@ -1,3 +1,4 @@
+// src/app/admin/page.tsx
 "use client";
 
 import React from "react";
@@ -13,6 +14,7 @@ type SaveResponse = {
     error?: string;
     message?: string;
 };
+
 // --- Types ---
 
 type SongListItem = {
@@ -21,17 +23,12 @@ type SongListItem = {
     composer_first_name: string;
     composer_last_name: string;
     skill_level_name: string;
+    skill_level_number: number;
     file_name: string;
+    inserted_datetime: string;
     updated_datetime: string;
 };
 
-type SortKey =
-    | "song_title"
-    | "composer_last_name"
-    | "composer_first_name"
-    | "skill_level_name"
-    | "file_name"
-    | "updated_datetime";
 type SortDir = "asc" | "desc";
 
 // --- Helpers ---
@@ -75,7 +72,7 @@ function findRootfilePath(containerXml: string): string {
     const doc = new DOMParser().parseFromString(containerXml, "application/xml");
     const el = doc.querySelector("rootfile[full-path], rootfile[path], rootfile[href]");
     const p = el?.getAttribute("full-path") || el?.getAttribute("path") || el?.getAttribute("href") || "";
-    if (!p) { throw new Error("MXL: container rootfile path missing"); }
+    if (!p) { throw new Error("MXL: META-INF/container.xml rootfile path missing"); }
     return p;
 }
 
@@ -147,17 +144,17 @@ async function xmlToMxl(xmlText: string, innerNameHint: string): Promise<Uint8Ar
 
 function HeaderButton(props: {
     label: string;
-    sortKey: SortKey;
-    curKey: SortKey;
+    sortToken: string;      // single token sent to server (primary column)
+    curSort: string | null; // null => let DB default
     dir: SortDir;
-    onClick: (k: SortKey) => void;
+    onClick: (k: string) => void;
 }) {
-    const active = props.curKey === props.sortKey;
+    const active = props.curSort === props.sortToken;
     const caret = active ? (props.dir === "asc" ? "▲" : "▼") : "";
     return (
         <button
             type="button"
-            onClick={() => props.onClick(props.sortKey)}
+            onClick={() => { props.onClick(props.sortToken); }}
             title={`Sort by ${props.label}`}
             style={{ textAlign: "left", fontWeight: 600, fontSize: 13, background: "transparent", border: "none", padding: 0, cursor: "pointer" }}
         >
@@ -185,12 +182,14 @@ export default function AdminPage() {
     const [error, setError] = React.useState("");
     const [saving, setSaving] = React.useState(false);
     const [saveOk, setSaveOk] = React.useState("");
+
     // Load Song list state
     const [showList, setShowList] = React.useState(false);
     const [listLoading, setListLoading] = React.useState(false);
     const [listError, setListError] = React.useState("");
     const [songs, setSongs] = React.useState<SongListItem[]>([]);
-    const [sortKey, setSortKey] = React.useState<SortKey>("song_title");
+    // Server sorting only: no default token (DB will default to composer)
+    const [sort, setSort] = React.useState<string | null>(null);
     const [sortDir, setSortDir] = React.useState<SortDir>("asc");
 
     // fields
@@ -219,7 +218,6 @@ export default function AdminPage() {
                 const json: { levels?: string[] } = await res.json();
                 if (!cancelled) {
                     setLevels(Array.isArray(json.levels) ? json.levels : []);
-                    // intentionally do NOT call setLevel(...) here — leave it blank
                 }
             } catch (e) {
                 if (!cancelled) {
@@ -359,12 +357,25 @@ export default function AdminPage() {
         }
     };
 
-    const openList = async (): Promise<void> => {
+    // ---- Admin Modal List (server-sorted) ----
+    const openList = async (overrideSort?: string, overrideDir?: SortDir): Promise<void> => {
         setShowList(true);
         setListError("");
         setListLoading(true);
         try {
-            const res = await fetch(`/api/song?sort=song_title&dir=asc&limit=1000`, { cache: "no-store" });
+            const params = new URLSearchParams();
+            params.set("limit", "1000");
+
+            const effSort = overrideSort ?? sort;
+            const effDir: SortDir = overrideDir ?? sortDir;
+
+            // Only send sort params if explicitly set; DB defaults otherwise
+            if (effSort !== null) {
+                params.set("sort", effSort);
+                params.set("dir", effDir);
+            }
+
+            const res = await fetch(`/api/songlist?${params.toString()}`, { cache: "no-store" });
             if (!res.ok) { throw new Error(`HTTP ${res.status}`); }
             const json: { items?: SongListItem[] } = await res.json();
             setSongs(Array.isArray(json.items) ? json.items : []);
@@ -376,20 +387,11 @@ export default function AdminPage() {
         }
     };
 
-    const sortedSongs = React.useMemo(() => {
-        const copy = songs.slice();
-        const dir = sortDir === "asc" ? 1 : -1;
-        return copy.sort((a, b) => {
-            if (sortKey === "updated_datetime") {
-                return (new Date(a.updated_datetime).getTime() - new Date(b.updated_datetime).getTime()) * dir;
-            }
-            return String(a[sortKey]).localeCompare(String(b[sortKey])) * dir;
-        });
-    }, [songs, sortKey, sortDir]);
-
-    const toggleSort = (key: SortKey) => {
-        setSortKey(prev => (prev === key ? prev : key));
-        setSortDir(prev => (sortKey === key ? (prev === "asc" ? "desc" : "asc") : "asc"));
+    const toggleSort = (key: string): void => {
+        const newDir: SortDir = (sort === key) ? (sortDir === "asc" ? "desc" : "asc") : "asc";
+        setSort(key);
+        setSortDir(newDir);
+        void openList(key, newDir); // refetch immediately with explicit token
     };
 
     const loadSongRow = async (item: SongListItem): Promise<void> => {
@@ -408,7 +410,7 @@ export default function AdminPage() {
             const lower = (item.file_name || "").toLowerCase();
             const isMxl = lower.endsWith(".mxl") || lower.endsWith(".zip");
             const isXml = lower.endsWith(".musicxml") || lower.endsWith(".xml");
-            const type = res.headers.get("content-type") || (isMxl ? "application/vnd.recordare.musicxml+zip" : "application/vnd.recordare.musicxml+xml");
+            const type = res.headers.get("content-type") || (isMxl ? "application/vnd.recordare.musicxml" : "application/vnd.recordare.musicxml+xml");
             const f = new File([blob], item.file_name || "song.mxl", { type });
 
             setFile(f);
@@ -419,7 +421,6 @@ export default function AdminPage() {
             setError(e instanceof Error ? e.message : String(e));
         }
     };
-
 
     return (
         <main style={{ maxWidth: 860, margin: "40px auto", padding: "0 16px" }}>
@@ -445,7 +446,7 @@ export default function AdminPage() {
                         ref={fileInputRef}
                         id="song-file-input"
                         type="file"
-                        accept=".mxl,.musicxml,application/vnd.recordare.musicxml+xml,application/vnd.recordare.musicxml+zip,application/zip"
+                        accept=".mxl,.musicxml,application/vnd.recordare.musicxml+xml,application/vnd.recordare.musicxml,application/zip"
                         onChange={onPick}
                         style={{ display: "none" }}
                     />
@@ -654,7 +655,7 @@ export default function AdminPage() {
                             <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
                                 <button
                                     type="button"
-                                    onClick={() => { void openList(); }}
+                                    onClick={() => { void openList(sort ?? undefined, sortDir); }}
                                     style={{ padding: "6px 10px", border: "1px solid #aaa", borderRadius: 6, background: "#fafafa", cursor: "pointer" }}
                                 >
                                     Refresh
@@ -679,7 +680,7 @@ export default function AdminPage() {
                                 <div
                                     style={{
                                         display: "grid",
-                                        gridTemplateColumns: "2fr 1.3fr 1fr 1.3fr 0.8fr",
+                                        gridTemplateColumns: "2fr 1.3fr 1fr 1.3fr",
                                         padding: "8px 10px",
                                         background: "#fafafa",
                                         borderBottom: "1px solid #e5e5e5",
@@ -687,15 +688,15 @@ export default function AdminPage() {
                                         fontSize: 13,
                                     }}
                                 >
-                                    <HeaderButton label="Title" sortKey="song_title" curKey={sortKey} dir={sortDir} onClick={toggleSort} />
-                                    <HeaderButton label="Composer" sortKey="composer_last_name" curKey={sortKey} dir={sortDir} onClick={toggleSort} />
-                                    <HeaderButton label="Level" sortKey="skill_level_name" curKey={sortKey} dir={sortDir} onClick={toggleSort} />
-                                    <HeaderButton label="Updated" sortKey="updated_datetime" curKey={sortKey} dir={sortDir} onClick={toggleSort} />
+                                    <HeaderButton label="Title" sortToken="song_title" curSort={sort} dir={sortDir} onClick={toggleSort} />
+                                    <HeaderButton label="Composer" sortToken="composer_last_name" curSort={sort} dir={sortDir} onClick={toggleSort} />
+                                    <HeaderButton label="Level" sortToken="skill_level_number" curSort={sort} dir={sortDir} onClick={toggleSort} />
+                                    <HeaderButton label="Updated" sortToken="updated_datetime" curSort={sort} dir={sortDir} onClick={toggleSort} />
                                 </div>
 
                                 {/* Table rows */}
                                 <div style={{ maxHeight: 420, overflow: "auto" }}>
-                                    {sortedSongs.map((r) => {
+                                    {songs.map((r) => {
                                         const composer = `${r.composer_first_name} ${r.composer_last_name}`;
                                         const updated = new Date(r.updated_datetime).toLocaleString();
                                         return (
@@ -724,7 +725,7 @@ export default function AdminPage() {
                                             </div>
                                         );
                                     })}
-                                    {sortedSongs.length === 0 && <div style={{ padding: 12, fontSize: 13 }}>No songs found.</div>}
+                                    {songs.length === 0 && <div style={{ padding: 12, fontSize: 13 }}>No songs found.</div>}
                                 </div>
                             </div>
                         )}

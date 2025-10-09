@@ -45,7 +45,7 @@ function HeaderButton(props: {
 
 export default function SongListPanel(): React.ReactElement {
     const [rows, setRows] = React.useState<SongListItem[]>([]);
-    const [sortKey, setSortKey] = React.useState<SortKey>("song_title");
+    const [sortKey, setSortKey] = React.useState<SortKey>("composer");
     const [sortDir, setSortDir] = React.useState<SortDir>("asc");
 
     const fetchList = React.useCallback(async (key: SortKey, dir: SortDir): Promise<void> => {
@@ -92,7 +92,7 @@ export default function SongListPanel(): React.ReactElement {
 
     return (
         // OUTER wrapper: centers the white card; avoids full-width white bar
-        <div style={{ width: "100%", display: "flex", justifyContent: "center" }}>
+        <div style={{ width: "100%", display: "flex", justifyContent: "center", alignItems: "flex-start" }}>
             {/* CARD: fixed width and fixed-height scroll area (~10 inches tall) */}
             <section
                 aria-labelledby="song-list-h"
@@ -101,9 +101,10 @@ export default function SongListPanel(): React.ReactElement {
                     border: "1px solid #e5e5e5",
                     borderRadius: 6,
                     overflow: "hidden",
-                    background: "#fff",
+                    background: "transparent",   // keep only header+scroller visible
                     color: "#111",
                     marginBottom: 24,
+                    alignSelf: "flex-start",      // opt-out of vertical stretching
                 }}
             >
                 <h3
