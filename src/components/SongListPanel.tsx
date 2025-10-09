@@ -103,6 +103,7 @@ export default function SongListPanel(): React.ReactElement {
                     overflow: "hidden",
                     background: "#fff",
                     color: "#111",
+                    marginBottom: 24,
                 }}
             >
                 <h3
@@ -126,7 +127,7 @@ export default function SongListPanel(): React.ReactElement {
                 <div
                     style={{
                         display: "grid",
-                        gridTemplateColumns: "2fr 1.6fr 1fr",
+                        gridTemplateColumns: "1.6fr 2fr 1fr", // Composer | Title | Level
                         padding: "8px 10px",
                         background: "#fafafa",
                         borderBottom: "1px solid #e5e5e5",
@@ -135,8 +136,8 @@ export default function SongListPanel(): React.ReactElement {
                         color: "#111",
                     }}
                 >
-                    <HeaderButton label="Title" sortKey="song_title" curKey={sortKey} dir={sortDir} onClick={toggleSort} />
                     <HeaderButton label="Composer" sortKey="composer" curKey={sortKey} dir={sortDir} onClick={toggleSort} />
+                    <HeaderButton label="Title" sortKey="song_title" curKey={sortKey} dir={sortDir} onClick={toggleSort} />
                     <HeaderButton label="Level" sortKey="skill_level_name" curKey={sortKey} dir={sortDir} onClick={toggleSort} />
                 </div>
 
@@ -155,7 +156,7 @@ export default function SongListPanel(): React.ReactElement {
                                 tabIndex={0}
                                 style={{
                                     display: "grid",
-                                    gridTemplateColumns: "2fr 1.6fr 1fr",
+                                    gridTemplateColumns: "1.6fr 2fr 1fr", // Composer | Title | Level
                                     padding: "8px 10px",
                                     borderBottom: "1px solid #f0f0f0",
                                     fontSize: 13,
@@ -167,19 +168,47 @@ export default function SongListPanel(): React.ReactElement {
                                 title="Open in a new tab"
                             >
                                 <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                                    {r.song_title}
+                                    {composer}
                                 </div>
                                 <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                                    {composer}
+                                    {r.song_title}
                                 </div>
                                 <div>{r.skill_level_name}</div>
                             </div>
                         );
                     })}
 
-                    {rows.length === 0 && (
-                        <div style={{ padding: 12, fontSize: 13, background: "#fff", color: "#111" }} />
-                    )}
+                    {/* Filler rows to show empty grid lines up to the fixed height */}
+                    {(() => {
+                        const ROW_HEIGHT = 40; // px (approx: padding + text line)
+                        const rowsPerView = Math.floor(960 / ROW_HEIGHT);
+                        const fillerCount = Math.max(0, rowsPerView - rows.length);
+                        const fillers: React.ReactElement[] = [];
+                        for (let i = 0; i < fillerCount; i++) {
+                            fillers.push(
+                                <div
+                                    key={`filler-${i}`}
+                                    aria-hidden="true"
+                                    style={{
+                                        display: "grid",
+                                        gridTemplateColumns: "1.6fr 2fr 1fr", // Composer | Title | Level
+                                        padding: "8px 10px",
+                                        borderBottom: "1px solid #f0f0f0",
+                                        fontSize: 13,
+                                        alignItems: "center",
+                                        background: "#fff",
+                                        color: "transparent", // keep line but hide any content
+                                        userSelect: "none",
+                                    }}
+                                >
+                                    <div> </div>
+                                    <div> </div>
+                                    <div> </div>
+                                </div>
+                            );
+                        }
+                        return fillers;
+                    })()}
                 </div>
             </section>
         </div>

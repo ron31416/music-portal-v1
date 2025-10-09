@@ -7,7 +7,7 @@ export default function HomePage() {
     <main className="mx-auto max-w-2xl p-6 space-y-6">
       <h1 className="text-3xl font-semibold">Music Portal</h1>
 
-      <section style={{ marginTop: 24, background: "#fff" }}>
+      <section style={{ marginTop: 24 }}>
         <SongListPanel />
       </section>
     </main>
