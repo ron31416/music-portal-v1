@@ -130,10 +130,10 @@ export default function SongListPanel(): React.ReactElement {
                         color: "#111",
                     }}
                 >
-                    <HeaderButton label="First" token="composer_first_name" curToken={sortToken} dir={sortDir} onClick={toggleSort} />
-                    <HeaderButton label="Last" token="composer_last_name" curToken={sortToken} dir={sortDir} onClick={toggleSort} />
-                    <HeaderButton label="Title" token="song_title" curToken={sortToken} dir={sortDir} onClick={toggleSort} />
-                    <HeaderButton label="Level" token="skill_level_number" curToken={sortToken} dir={sortDir} onClick={toggleSort} />
+                    <HeaderButton label="Composer Last" token="composer_last_name" curToken={sortToken} dir={sortDir} onClick={toggleSort} />
+                    <HeaderButton label="Composer First" token="composer_first_name" curToken={sortToken} dir={sortDir} onClick={toggleSort} />
+                    <HeaderButton label="Song Title" token="song_title" curToken={sortToken} dir={sortDir} onClick={toggleSort} />
+                    <HeaderButton label="Skill Level" token="skill_level_number" curToken={sortToken} dir={sortDir} onClick={toggleSort} />
                 </div>
 
                 {/* Fixed-height scroll area (10 inches ~= 960px) */}
