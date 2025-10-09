@@ -10,32 +10,80 @@ type SongListItem = {
     skill_level_name: string;
 };
 
+type SortKey = "song_title" | "composer" | "skill_level_name";
+type SortDir = "asc" | "desc";
+
+function HeaderButton(props: {
+    label: string;
+    sortKey: SortKey;
+    curKey: SortKey;
+    dir: SortDir;
+    onClick: (k: SortKey) => void;
+}) {
+    const active = props.curKey === props.sortKey;
+    const caret = active ? (props.dir === "asc" ? "▲" : "▼") : "";
+    return (
+        <button
+            type="button"
+            onClick={() => { props.onClick(props.sortKey); }}
+            title={`Sort by ${props.label}`}
+            style={{
+                textAlign: "left",
+                fontWeight: 600,
+                fontSize: 13,
+                background: "transparent",
+                border: "none",
+                padding: 0,
+                cursor: "pointer",
+                color: "#111",
+            }}
+        >
+            {props.label} {caret}
+        </button>
+    );
+}
+
 export default function SongListPanel(): React.ReactElement {
     const [rows, setRows] = React.useState<SongListItem[]>([]);
+    const [sortKey, setSortKey] = React.useState<SortKey>("song_title");
+    const [sortDir, setSortDir] = React.useState<SortDir>("asc");
+
+    const fetchList = React.useCallback(async (key: SortKey, dir: SortDir): Promise<void> => {
+        try {
+            const res = await fetch(
+                `/api/songlist?sort=${encodeURIComponent(key)}&dir=${encodeURIComponent(dir)}&limit=1000`,
+                { cache: "no-store" }
+            );
+            if (!res.ok) {
+                return;
+            }
+            const json: { items?: SongListItem[] } = await res.json();
+            setRows(Array.isArray(json.items) ? json.items : []);
+        } catch {
+            // intentionally silent (no status UI)
+        }
+    }, []);
 
     React.useEffect(() => {
-        let cancelled = false;
+        void fetchList(sortKey, sortDir);
+    }, [fetchList, sortKey, sortDir]);
 
-        async function fetchList(): Promise<void> {
-            try {
-                // Server returns sorted by title asc; no UI sort controls here.
-                const res = await fetch(`/api/songlist?sort=song_title&dir=asc&limit=1000`, { cache: "no-store" });
-                if (!res.ok) {
-                    // silent fail to keep UI "data only"
-                    return;
-                }
-                const json: { items?: SongListItem[] } = await res.json();
-                if (!cancelled) {
-                    setRows(Array.isArray(json.items) ? json.items : []);
-                }
-            } catch {
-                // keep silent; no status UI per requirements
+    const toggleSort = (key: SortKey): void => {
+        setSortKey(prev => {
+            if (prev === key) {
+                return prev;
+            } else {
+                return key;
             }
-        }
-
-        void fetchList();
-        return () => { cancelled = true; };
-    }, []);
+        });
+        setSortDir(prev => {
+            if (sortKey === key) {
+                return prev === "asc" ? "desc" : "asc";
+            } else {
+                return "asc";
+            }
+        });
+    };
 
     const openInNewTab = (id: number): void => {
         const url = `/viewer?src=${encodeURIComponent(`/api/song/${id}/mxl`)}`;
@@ -43,107 +91,97 @@ export default function SongListPanel(): React.ReactElement {
     };
 
     return (
-        <section
-            aria-labelledby="song-list-h"
-            style={{
-                // isolate visually: narrower than full window, centered
-                width: "min(720px, 92vw)",
-                margin: "0 auto",
-                border: "1px solid #e5e5e5",
-                borderRadius: 6,
-                overflow: "hidden",
-                background: "#fff",
-                color: "#111",
-            }}
-        >
-            <h3
-                id="song-list-h"
+        // OUTER wrapper: centers the white card; avoids full-width white bar
+        <div style={{ width: "100%", display: "flex", justifyContent: "center" }}>
+            {/* CARD: fixed width and fixed-height scroll area (~10 inches tall) */}
+            <section
+                aria-labelledby="song-list-h"
                 style={{
-                    position: "absolute",
-                    width: 1,
-                    height: 1,
-                    padding: 0,
-                    margin: -1,
+                    width: "min(660px, 90vw)",
+                    border: "1px solid #e5e5e5",
+                    borderRadius: 6,
                     overflow: "hidden",
-                    clip: "rect(0 0 0 0)",
-                    whiteSpace: "nowrap",
-                    border: 0,
-                }}
-            >
-                Song List
-            </h3>
-
-            {/* Header (static labels; no sort buttons) */}
-            <div
-                style={{
-                    display: "grid",
-                    gridTemplateColumns: "2fr 1.6fr 1fr",
-                    padding: "8px 10px",
-                    background: "#fafafa",
-                    borderBottom: "1px solid #e5e5e5",
-                    fontWeight: 600,
-                    fontSize: 13,
+                    background: "#fff",
                     color: "#111",
                 }}
             >
-                <div>Title</div>
-                <div>Composer</div>
-                <div>Level</div>
-            </div>
+                <h3
+                    id="song-list-h"
+                    style={{
+                        position: "absolute",
+                        width: 1,
+                        height: 1,
+                        padding: 0,
+                        margin: -1,
+                        overflow: "hidden",
+                        clip: "rect(0 0 0 0)",
+                        whiteSpace: "nowrap",
+                        border: 0,
+                    }}
+                >
+                    Song List
+                </h3>
 
-            {/* Rows (clickable; keyboard accessible) */}
-            <div
-                style={{
-                    // ~2× taller than before (was ~520px)
-                    maxHeight: 1040,
-                    overflow: "auto",
-                    background: "#fff",
-                }}
-            >
-                {rows.map((r) => {
-                    const composer = `${r.composer_first_name} ${r.composer_last_name}`;
-                    return (
-                        <div
-                            key={r.song_id}
-                            onClick={() => { openInNewTab(r.song_id); }}
-                            onKeyDown={(e: React.KeyboardEvent<HTMLDivElement>) => {
-                                if (e.key === "Enter" || e.key === " ") {
-                                    e.preventDefault();
-                                    openInNewTab(r.song_id);
-                                }
-                            }}
-                            role="link"
-                            tabIndex={0}
-                            style={{
-                                display: "grid",
-                                gridTemplateColumns: "2fr 1.6fr 1fr",
-                                padding: "8px 10px",
-                                borderBottom: "1px solid #f0f0f0",
-                                fontSize: 13,
-                                alignItems: "center",
-                                cursor: "pointer",
-                                background: "#fff",
-                                color: "#111",
-                            }}
-                            title="Open in a new tab"
-                        >
-                            <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                                {r.song_title}
-                            </div>
-                            <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                                {composer}
-                            </div>
-                            <div>{r.skill_level_name}</div>
-                        </div>
-                    );
-                })}
+                {/* Header with server-backed sorting */}
+                <div
+                    style={{
+                        display: "grid",
+                        gridTemplateColumns: "2fr 1.6fr 1fr",
+                        padding: "8px 10px",
+                        background: "#fafafa",
+                        borderBottom: "1px solid #e5e5e5",
+                        fontWeight: 600,
+                        fontSize: 13,
+                        color: "#111",
+                    }}
+                >
+                    <HeaderButton label="Title" sortKey="song_title" curKey={sortKey} dir={sortDir} onClick={toggleSort} />
+                    <HeaderButton label="Composer" sortKey="composer" curKey={sortKey} dir={sortDir} onClick={toggleSort} />
+                    <HeaderButton label="Level" sortKey="skill_level_name" curKey={sortKey} dir={sortDir} onClick={toggleSort} />
+                </div>
 
-                {rows.length === 0 && (
-                    <div style={{ padding: 12, fontSize: 13, background: "#fff", color: "#111" }}>
-                        {/* Keep this minimal per "nothing but raw data"—no spinners/status text */}
-                    </div>
-                )}
-            </div>
-        </section>
+                {/* Fixed-height scroll area (10 inches ~= 960px) */}
+                <div style={{ height: 960, overflow: "auto", background: "#fff" }}>
+                    {rows.map((r) => {
+                        const composer = `${r.composer_first_name} ${r.composer_last_name}`;
+                        return (
+                            <div
+                                key={r.song_id}
+                                onClick={() => { openInNewTab(r.song_id); }}
+                                onKeyDown={(e: React.KeyboardEvent<HTMLDivElement>) => {
+                                    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openInNewTab(r.song_id); }
+                                }}
+                                role="link"
+                                tabIndex={0}
+                                style={{
+                                    display: "grid",
+                                    gridTemplateColumns: "2fr 1.6fr 1fr",
+                                    padding: "8px 10px",
+                                    borderBottom: "1px solid #f0f0f0",
+                                    fontSize: 13,
+                                    alignItems: "center",
+                                    cursor: "pointer",
+                                    background: "#fff",
+                                    color: "#111",
+                                }}
+                                title="Open in a new tab"
+                            >
+                                <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                    {r.song_title}
+                                </div>
+                                <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                    {composer}
+                                </div>
+                                <div>{r.skill_level_name}</div>
+                            </div>
+                        );
+                    })}
+
+                    {rows.length === 0 && (
+                        <div style={{ padding: 12, fontSize: 13, background: "#fff", color: "#111" }} />
+                    )}
+                </div>
+            </section>
+        </div>
     );
 }

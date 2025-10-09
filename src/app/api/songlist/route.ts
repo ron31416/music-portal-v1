@@ -13,21 +13,15 @@ type SongListItem = {
     skill_level_name: string;
 };
 
-const ALLOWED_SORT: ReadonlyArray<keyof SongListItem> = [
-    "song_title",
-    "composer_last_name",
-    "composer_first_name",
-    "skill_level_name",
-] as const;
+type SortKey = "song_title" | "composer" | "skill_level_name";
 
 export async function GET(req: NextRequest): Promise<Response> {
     try {
         const url = new URL(req.url);
 
         // sort / dir
-        const sortParam = (url.searchParams.get("sort") ?? "song_title") as keyof SongListItem;
+        const sortParam = (url.searchParams.get("sort") ?? "song_title") as SortKey;
         const dirParam = (url.searchParams.get("dir") ?? "asc").toLowerCase();
-        const sort: keyof SongListItem = ALLOWED_SORT.includes(sortParam) ? sortParam : "song_title";
         const ascending = dirParam !== "desc";
 
         // limit (safe parse)
@@ -36,15 +30,40 @@ export async function GET(req: NextRequest): Promise<Response> {
         const limit = Number.isFinite(limitParsed) ? Math.min(Math.max(limitParsed, 1), 2000) : 1000;
         const rangeEnd = limit - 1;
 
-        const query = supabaseAdmin
+        // Build the multi-column ordering per your rules:
+        // - Composer click  => last, first, title, level   (primary dir applied to "last"; others ASC)
+        // - Title click     => title, last, first, level   (primary dir applied to "title"; others ASC)
+        // - Level click     => level, last, first, title   (primary dir applied to "level"; others ASC)
+        const orderCols: Array<{ col: string; asc: boolean }> = [];
+        if (sortParam === "composer") {
+            orderCols.push({ col: "composer_last_name", asc: ascending });
+            orderCols.push({ col: "composer_first_name", asc: true });
+            orderCols.push({ col: "song_title", asc: true });
+            orderCols.push({ col: "skill_level_name", asc: true });
+        } else if (sortParam === "song_title") {
+            orderCols.push({ col: "song_title", asc: ascending });
+            orderCols.push({ col: "composer_last_name", asc: true });
+            orderCols.push({ col: "composer_first_name", asc: true });
+            orderCols.push({ col: "skill_level_name", asc: true });
+        } else {
+            // sortParam === "skill_level_name"
+            orderCols.push({ col: "skill_level_name", asc: ascending });
+            orderCols.push({ col: "composer_last_name", asc: true });
+            orderCols.push({ col: "composer_first_name", asc: true });
+            orderCols.push({ col: "song_title", asc: true });
+        }
+
+        let query = supabaseAdmin
             .from("song")
             .select(
                 "song_id, song_title, composer_first_name, composer_last_name, skill_level_name"
             )
-            .order(sort as string, { ascending })
-            // stable tie-breaker
-            .order("song_id", { ascending: true })
             .range(0, rangeEnd);
+
+        // Apply multi-column ordering in sequence
+        for (const o of orderCols) {
+            query = query.order(o.col, { ascending: o.asc, nullsFirst: false });
+        }
 
         const { data, error } = await query;
 
