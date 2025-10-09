@@ -8,7 +8,7 @@ export async function GET() {
     try {
         const { data, error } = await supabaseAdmin
             .from('skill_level') // table name you created
-            .select('skill_level_name')
+            .select('skill_level_number, skill_level_name')
             .order('skill_level_number');
 
         if (error) {
@@ -18,7 +18,9 @@ export async function GET() {
             );
         }
 
-        const levels = (data ?? []).map(r => r.skill_level_name);
+        type Row = { skill_level_number: number; skill_level_name: string };
+        const rows = (data ?? []) as Row[];
+        const levels = rows.map(r => ({ number: r.skill_level_number, name: r.skill_level_name }));
         return new Response(JSON.stringify({ levels }), {
             status: 200,
             headers: {
