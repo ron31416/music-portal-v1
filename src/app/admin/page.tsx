@@ -691,7 +691,6 @@ export default function AdminPage() {
                                     <HeaderButton label="Composer" sortKey="composer_last_name" curKey={sortKey} dir={sortDir} onClick={toggleSort} />
                                     <HeaderButton label="Level" sortKey="skill_level_name" curKey={sortKey} dir={sortDir} onClick={toggleSort} />
                                     <HeaderButton label="Updated" sortKey="updated_datetime" curKey={sortKey} dir={sortDir} onClick={toggleSort} />
-                                    <div style={{ textAlign: "right" }}>Action</div>
                                 </div>
 
                                 {/* Table rows */}
@@ -703,9 +702,14 @@ export default function AdminPage() {
                                             <div
                                                 key={r.song_id}
                                                 onClick={() => { void loadSongRow(r); }}
+                                                onKeyDown={(e: React.KeyboardEvent<HTMLDivElement>) => {
+                                                    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); void loadSongRow(r); }
+                                                }}
+                                                role="button"
+                                                tabIndex={0}
                                                 style={{
                                                     display: "grid",
-                                                    gridTemplateColumns: "2fr 1.3fr 1fr 1.3fr 0.8fr",
+                                                    gridTemplateColumns: "2fr 1.3fr 1fr 1.3fr", // no Action column
                                                     padding: "8px 10px",
                                                     borderBottom: "1px solid #f0f0f0",
                                                     fontSize: 13,
@@ -717,15 +721,6 @@ export default function AdminPage() {
                                                 <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{composer || "\u2014"}</div>
                                                 <div>{r.skill_level_name}</div>
                                                 <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{updated}</div>
-                                                <div style={{ textAlign: "right" }}>
-                                                    <button
-                                                        type="button"
-                                                        onClick={(e) => { e.stopPropagation(); void loadSongRow(r); }}
-                                                        style={{ padding: "6px 10px", border: "1px solid #aaa", borderRadius: 6, background: "#fafafa", cursor: "pointer" }}
-                                                    >
-                                                        Load
-                                                    </button>
-                                                </div>
                                             </div>
                                         );
                                     })}
