@@ -11,22 +11,21 @@ type SongListItem = {
     skill_level_name: string;
 };
 
-type SortKey = "song_title" | "composer" | "skill_level_name";
 type SortDir = "asc" | "desc";
 
 function HeaderButton(props: {
     label: string;
-    sortKey: SortKey;
-    curKey: SortKey;
+    token: string;                 // server sort token, e.g. "composer_last_name"
+    curToken: string | null;       // null => let DB default
     dir: SortDir;
-    onClick: (k: SortKey) => void;
+    onClick: (token: string) => void;
 }) {
-    const active = props.curKey === props.sortKey;
+    const active = props.curToken === props.token;
     const caret = active ? (props.dir === "asc" ? "▲" : "▼") : "";
     return (
         <button
             type="button"
-            onClick={() => { props.onClick(props.sortKey); }}
+            onClick={() => { props.onClick(props.token); }}
             title={`Sort by ${props.label}`}
             style={{
                 textAlign: "left",
@@ -46,15 +45,18 @@ function HeaderButton(props: {
 
 export default function SongListPanel(): React.ReactElement {
     const [rows, setRows] = React.useState<SongListItem[]>([]);
-    const [sortKey, setSortKey] = React.useState<SortKey>("composer");
+    const [sortToken, setSortToken] = React.useState<string | null>(null); // null → DB default
     const [sortDir, setSortDir] = React.useState<SortDir>("asc");
 
-    const fetchList = React.useCallback(async (key: SortKey, dir: SortDir): Promise<void> => {
+    const fetchList = React.useCallback(async (token: string | null, dir: SortDir): Promise<void> => {
         try {
-            const res = await fetch(
-                `/api/songlist?sort=${encodeURIComponent(key)}&dir=${encodeURIComponent(dir)}&limit=1000`,
-                { cache: "no-store" }
-            );
+            const params = new URLSearchParams();
+            params.set("limit", "1000");
+            if (token !== null) {
+                params.set("sort", token);
+                params.set("dir", dir);
+            }
+            const res = await fetch(`/api/songlist?${params.toString()}`, { cache: "no-store" });
             if (!res.ok) {
                 return;
             }
@@ -66,35 +68,25 @@ export default function SongListPanel(): React.ReactElement {
     }, []);
 
     React.useEffect(() => {
-        void fetchList(sortKey, sortDir);
-    }, [fetchList, sortKey, sortDir]);
+        void fetchList(sortToken, sortDir);
+    }, [fetchList, sortToken, sortDir]);
 
-    const toggleSort = (key: SortKey): void => {
-        setSortKey(prev => {
-            if (prev === key) {
-                return prev;
-            } else {
-                return key;
-            }
-        });
-        setSortDir(prev => {
-            if (sortKey === key) {
-                return prev === "asc" ? "desc" : "asc";
-            } else {
-                return "asc";
-            }
-        });
+    const toggleSort = (token: string): void => {
+        const same = sortToken === token;
+        const newDir: SortDir = same ? (sortDir === "asc" ? "desc" : "asc") : "asc";
+        setSortToken(token);
+        setSortDir(newDir);
     };
 
     const openInNewTab = (id: number): void => {
-        const url = `/viewer?src=${encodeURIComponent(`/api/song/${id}/mxl`)}`;
+        // Avoid encoding the path; pass raw so the viewer fetches the correct URL.
+        const tabId = Date.now().toString(36);
+        const url = `/viewer?tab=${tabId}&src=/api/song/${id}/mxl`;
         window.open(url, "_blank", "noopener,noreferrer");
     };
 
     return (
-        // OUTER wrapper: centers the white card; avoids full-width white bar
         <div style={{ width: "100%", display: "flex", justifyContent: "center", alignItems: "flex-start" }}>
-            {/* CARD: fixed width and fixed-height scroll area (~10 inches tall) */}
             <section
                 aria-labelledby="song-list-h"
                 style={{
@@ -102,10 +94,10 @@ export default function SongListPanel(): React.ReactElement {
                     border: "1px solid #e5e5e5",
                     borderRadius: 6,
                     overflow: "hidden",
-                    background: "transparent",   // keep only header+scroller visible
+                    background: "transparent",
                     color: "#111",
                     marginBottom: 24,
-                    alignSelf: "flex-start",      // opt-out of vertical stretching
+                    alignSelf: "flex-start",
                 }}
             >
                 <h3
@@ -138,9 +130,10 @@ export default function SongListPanel(): React.ReactElement {
                         color: "#111",
                     }}
                 >
-                    <HeaderButton label="Composer" sortKey="composer" curKey={sortKey} dir={sortDir} onClick={toggleSort} />
-                    <HeaderButton label="Title" sortKey="song_title" curKey={sortKey} dir={sortDir} onClick={toggleSort} />
-                    <HeaderButton label="Level" sortKey="skill_level_name" curKey={sortKey} dir={sortDir} onClick={toggleSort} />
+                    {/* Use DB column tokens; Level sorts by the numeric truth */}
+                    <HeaderButton label="Composer" token="composer_last_name" curToken={sortToken} dir={sortDir} onClick={toggleSort} />
+                    <HeaderButton label="Title" token="song_title" curToken={sortToken} dir={sortDir} onClick={toggleSort} />
+                    <HeaderButton label="Level" token="skill_level_number" curToken={sortToken} dir={sortDir} onClick={toggleSort} />
                 </div>
 
                 {/* Fixed-height scroll area (10 inches ~= 960px) */}
@@ -152,13 +145,16 @@ export default function SongListPanel(): React.ReactElement {
                                 key={r.song_id}
                                 onClick={() => { openInNewTab(r.song_id); }}
                                 onKeyDown={(e: React.KeyboardEvent<HTMLDivElement>) => {
-                                    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openInNewTab(r.song_id); }
+                                    if (e.key === "Enter" || e.key === " ") {
+                                        e.preventDefault();
+                                        openInNewTab(r.song_id);
+                                    }
                                 }}
                                 role="link"
                                 tabIndex={0}
                                 style={{
                                     display: "grid",
-                                    gridTemplateColumns: "1.6fr 2fr 1fr", // Composer | Title | Level
+                                    gridTemplateColumns: "1.6fr 2fr 1fr",
                                     padding: "8px 10px",
                                     borderBottom: "1px solid #f0f0f0",
                                     fontSize: 13,
@@ -182,7 +178,7 @@ export default function SongListPanel(): React.ReactElement {
 
                     {/* Filler rows to show empty grid lines up to the fixed height */}
                     {(() => {
-                        const ROW_HEIGHT = 40; // px (approx: padding + text line)
+                        const ROW_HEIGHT = 40;
                         const rowsPerView = Math.floor(960 / ROW_HEIGHT);
                         const fillerCount = Math.max(0, rowsPerView - rows.length);
                         const fillers: React.ReactElement[] = [];
@@ -193,13 +189,13 @@ export default function SongListPanel(): React.ReactElement {
                                     aria-hidden="true"
                                     style={{
                                         display: "grid",
-                                        gridTemplateColumns: "1.6fr 2fr 1fr", // Composer | Title | Level
+                                        gridTemplateColumns: "1.6fr 2fr 1fr",
                                         padding: "8px 10px",
                                         borderBottom: "1px solid #f0f0f0",
                                         fontSize: 13,
                                         alignItems: "center",
                                         background: "#fff",
-                                        color: "transparent", // keep line but hide any content
+                                        color: "transparent",
                                         userSelect: "none",
                                     }}
                                 >
