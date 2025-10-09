@@ -328,7 +328,7 @@ export default function AdminPage() {
                 song_title: titleTrimmed,
                 composer_first_name: firstTrimmed,
                 composer_last_name: lastTrimmed,
-                skill_level_name: level,
+                skill_level_number: Number(level),
                 file_name: outFileName,
                 song_mxl_base64: base64,
             };
