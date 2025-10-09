@@ -121,7 +121,7 @@ export default function SongListPanel(): React.ReactElement {
                 <div
                     style={{
                         display: "grid",
-                        gridTemplateColumns: "1.2fr 1.2fr 2fr 1fr", // First | Last | Title | Level
+                        gridTemplateColumns: "1.2fr 1.2fr 2fr 1fr", // Last | First | Title | Level
                         padding: "8px 10px",
                         background: "#fafafa",
                         borderBottom: "1px solid #e5e5e5",
@@ -153,7 +153,7 @@ export default function SongListPanel(): React.ReactElement {
                                 tabIndex={0}
                                 style={{
                                     display: "grid",
-                                    gridTemplateColumns: "1.2fr 1.2fr 2fr 1fr", // First | Last | Title | Level
+                                    gridTemplateColumns: "1.2fr 1.2fr 2fr 1fr", // Last | First | Title | Level
                                     padding: "8px 10px",
                                     borderBottom: "1px solid #f0f0f0",
                                     fontSize: 13,
@@ -165,15 +165,17 @@ export default function SongListPanel(): React.ReactElement {
                                 title="Open in a new tab"
                             >
                                 <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                                    {r.composer_first_name}
+                                    {r.composer_last_name}
                                 </div>
                                 <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                                    {r.composer_last_name}
+                                    {r.composer_first_name}
                                 </div>
                                 <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                                     {r.song_title}
                                 </div>
-                                <div>{r.skill_level_name}</div>
+                                <div>
+                                    {r.skill_level_name}
+                                </div>
                             </div>
                         );
                     })}
@@ -191,7 +193,7 @@ export default function SongListPanel(): React.ReactElement {
                                     aria-hidden="true"
                                     style={{
                                         display: "grid",
-                                        gridTemplateColumns: "1.2fr 1.2fr 2fr 1fr", // First | Last | Title | Level
+                                        gridTemplateColumns: "1.2fr 1.2fr 2fr 1fr", // Last | First | Title | Level
                                         padding: "8px 10px",
                                         borderBottom: "1px solid #f0f0f0",
                                         fontSize: 13,
