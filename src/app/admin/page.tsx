@@ -868,17 +868,16 @@ export default function AdminPage(): React.ReactElement {
                                         fontSize: 13,
                                     }}
                                 >
-                                    <HeaderButton label="Last" sortToken="composer_last_name" curSort={sort} dir={sortDir} onClick={toggleSort} />
-                                    <HeaderButton label="First" sortToken="composer_first_name" curSort={sort} dir={sortDir} onClick={toggleSort} />
-                                    <HeaderButton label="Title" sortToken="song_title" curSort={sort} dir={sortDir} onClick={toggleSort} />
-                                    <HeaderButton label="Level" sortToken="skill_level_number" curSort={sort} dir={sortDir} onClick={toggleSort} />
-                                    <HeaderButton label="File" sortToken="file_name" curSort={sort} dir={sortDir} onClick={toggleSort} />
+                                    <HeaderButton label="Composer Last" sortToken="composer_last_name" curSort={sort} dir={sortDir} onClick={toggleSort} />
+                                    <HeaderButton label="Composer First" sortToken="composer_first_name" curSort={sort} dir={sortDir} onClick={toggleSort} />
+                                    <HeaderButton label="Song Title" sortToken="song_title" curSort={sort} dir={sortDir} onClick={toggleSort} />
+                                    <HeaderButton label="SKill Level" sortToken="skill_level_number" curSort={sort} dir={sortDir} onClick={toggleSort} />
+                                    <HeaderButton label="File Name" sortToken="file_name" curSort={sort} dir={sortDir} onClick={toggleSort} />
                                 </div>
 
                                 {/* Table rows */}
                                 <div style={{ maxHeight: 420, overflow: "auto" }}>
                                     {songs.map((r) => {
-                                        const updated = new Date(r.updated_datetime).toLocaleString();
                                         return (
                                             <div
                                                 key={r.song_id}
