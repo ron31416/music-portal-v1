@@ -121,7 +121,7 @@ export default function SongListPanel(): React.ReactElement {
                 <div
                     style={{
                         display: "grid",
-                        gridTemplateColumns: "1.6fr 2fr 1fr", // Composer | Title | Level
+                        gridTemplateColumns: "1.2fr 1.2fr 2fr 1fr", // First | Last | Title | Level
                         padding: "8px 10px",
                         background: "#fafafa",
                         borderBottom: "1px solid #e5e5e5",
@@ -130,8 +130,8 @@ export default function SongListPanel(): React.ReactElement {
                         color: "#111",
                     }}
                 >
-                    {/* Use DB column tokens; Level sorts by the numeric truth */}
-                    <HeaderButton label="Composer" token="composer_last_name" curToken={sortToken} dir={sortDir} onClick={toggleSort} />
+                    <HeaderButton label="First" token="composer_first_name" curToken={sortToken} dir={sortDir} onClick={toggleSort} />
+                    <HeaderButton label="Last" token="composer_last_name" curToken={sortToken} dir={sortDir} onClick={toggleSort} />
                     <HeaderButton label="Title" token="song_title" curToken={sortToken} dir={sortDir} onClick={toggleSort} />
                     <HeaderButton label="Level" token="skill_level_number" curToken={sortToken} dir={sortDir} onClick={toggleSort} />
                 </div>
@@ -139,7 +139,6 @@ export default function SongListPanel(): React.ReactElement {
                 {/* Fixed-height scroll area (10 inches ~= 960px) */}
                 <div style={{ height: 960, overflow: "auto", background: "#fff" }}>
                     {rows.map((r) => {
-                        const composer = `${r.composer_first_name} ${r.composer_last_name}`;
                         return (
                             <div
                                 key={r.song_id}
@@ -154,7 +153,7 @@ export default function SongListPanel(): React.ReactElement {
                                 tabIndex={0}
                                 style={{
                                     display: "grid",
-                                    gridTemplateColumns: "1.6fr 2fr 1fr",
+                                    gridTemplateColumns: "1.2fr 1.2fr 2fr 1fr", // First | Last | Title | Level
                                     padding: "8px 10px",
                                     borderBottom: "1px solid #f0f0f0",
                                     fontSize: 13,
@@ -166,7 +165,10 @@ export default function SongListPanel(): React.ReactElement {
                                 title="Open in a new tab"
                             >
                                 <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                                    {composer}
+                                    {r.composer_first_name}
+                                </div>
+                                <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                    {r.composer_last_name}
                                 </div>
                                 <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                                     {r.song_title}
@@ -189,7 +191,7 @@ export default function SongListPanel(): React.ReactElement {
                                     aria-hidden="true"
                                     style={{
                                         display: "grid",
-                                        gridTemplateColumns: "1.6fr 2fr 1fr",
+                                        gridTemplateColumns: "1.2fr 1.2fr 2fr 1fr", // First | Last | Title | Level
                                         padding: "8px 10px",
                                         borderBottom: "1px solid #f0f0f0",
                                         fontSize: 13,
@@ -199,6 +201,7 @@ export default function SongListPanel(): React.ReactElement {
                                         userSelect: "none",
                                     }}
                                 >
+                                    <div> </div>
                                     <div> </div>
                                     <div> </div>
                                     <div> </div>
