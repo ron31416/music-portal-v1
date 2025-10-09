@@ -91,21 +91,16 @@ export async function POST(req: Request) {
         // At this point types are safe to narrow
         const body = raw as SongPayload;
 
-        // Decode base64 → bytes and validate .mxl (ZIP); keep bytes for insert
-        let mxlBytes: Uint8Array;
+        // Decode base64 → bytes and validate .mxl (ZIP)
         try {
             const buf = Buffer.from(body.song_mxl_base64, "base64");
             const u8 = new Uint8Array(buf);
             if (!isZipMagic(u8)) {
                 return NextResponse.json(
-                    {
-                        error: "payload_not_mxl_zip",
-                        message: "Song bytes must be compressed .mxl (ZIP) format.",
-                    },
+                    { error: "payload_not_mxl_zip", message: "Song bytes must be compressed .mxl (ZIP) format." },
                     { status: 400 }
                 );
             }
-            mxlBytes = u8;
         } catch {
             return NextResponse.json(
                 { error: "invalid_base64", message: "song_mxl_base64 is not valid base64." },
