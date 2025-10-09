@@ -4,6 +4,7 @@ export const runtime = "nodejs";
 
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { Buffer } from "node:buffer";
 import type { PostgrestError } from "@supabase/supabase-js";
 import type { NextRequest } from "next/server";
 
@@ -90,10 +91,12 @@ export async function POST(req: Request) {
         // At this point types are safe to narrow
         const body = raw as SongPayload;
 
-        // Validate that the uploaded bytes are a ZIP (.mxl)
+        // Decode base64 → bytes and validate .mxl (ZIP); keep bytes for insert
+        let mxlBytes: Uint8Array;
         try {
             const buf = Buffer.from(body.song_mxl_base64, "base64");
-            if (!isZipMagic(new Uint8Array(buf))) {
+            const u8 = new Uint8Array(buf);
+            if (!isZipMagic(u8)) {
                 return NextResponse.json(
                     {
                         error: "payload_not_mxl_zip",
@@ -102,6 +105,7 @@ export async function POST(req: Request) {
                     { status: 400 }
                 );
             }
+            mxlBytes = u8;
         } catch {
             return NextResponse.json(
                 { error: "invalid_base64", message: "song_mxl_base64 is not valid base64." },
@@ -119,7 +123,7 @@ export async function POST(req: Request) {
                     composer_last_name: body.composer_last_name,
                     skill_level_name: body.skill_level_name,
                     file_name: body.file_name,
-                    song_mxl: body.song_mxl_base64,
+                    song_mxl: mxlBytes,
                     updated_datetime: new Date().toISOString(),
                 },
                 { onConflict: "file_name", ignoreDuplicates: false }
