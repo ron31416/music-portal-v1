@@ -107,8 +107,7 @@ export default function SongListPanel(): React.ReactElement {
     };
 
     const openViewer = (item: SongListItem): void => {
-        // Keep viewer route as /song/[id] (your /api/song/[id]/mxl matches this)
-        router.push(`/song/${item.song_id}`);
+        router.push(`/viewer?src=${encodeURIComponent(`/api/song/${item.song_id}/mxl`)}`);
     };
 
     return (

@@ -1,6 +1,7 @@
 // src/app/page.tsx
 import Link from "next/link";
 import { SONG, type Song } from "@/lib/song"; // use alias if configured
+import SongListPanel from "@/components/SongListPanel";
 
 export default function HomePage() {
   return (
@@ -25,6 +26,11 @@ export default function HomePage() {
           </li>
         ))}
       </ul>
+
+      {/* --- Student Song List (DB-backed) --- */}
+      <section style={{ marginTop: 24, background: "#fff" }}>
+        <SongListPanel />
+      </section>
     </main>
   );
 }
