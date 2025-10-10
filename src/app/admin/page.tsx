@@ -243,6 +243,8 @@ export default function AdminPage(): React.ReactElement {
     const [fileName, setFileName] = React.useState("");
     const [xmlPreview, setXmlPreview] = React.useState("");
 
+    const [songId, setSongId] = React.useState<number | null>(null);
+
     const fileInputRef = React.useRef<HTMLInputElement>(null);
 
     const listAbortRef = React.useRef<AbortController | null>(null);
@@ -335,6 +337,7 @@ export default function AdminPage(): React.ReactElement {
         setError("");
         setSaveOk("");
         setParsing(false);
+        setSongId(null);
         setTitle("");
         setComposerFirst("");
         setComposerLast("");
@@ -480,6 +483,7 @@ export default function AdminPage(): React.ReactElement {
             })();
 
             const payload = {
+                [SONG_COL.songId]: songId,
                 [SONG_COL.songTitle]: titleTrimmed,
                 [SONG_COL.composerFirstName]: firstTrimmed,
                 [SONG_COL.composerLastName]: lastTrimmed,
@@ -504,6 +508,10 @@ export default function AdminPage(): React.ReactElement {
                 const message = (json && (json.message || json.error)) || (await res.text()) || `Save failed (HTTP ${res.status})`;
                 setError(message);
                 return;
+            }
+
+            if (json && typeof json.song_id === "number" && Number.isFinite(json.song_id)) {
+                setSongId(json.song_id);
             }
 
             setSaveOk("Saved");
@@ -608,6 +616,7 @@ export default function AdminPage(): React.ReactElement {
         try {
             setError("");
             setSaveOk("");
+            setSongId(item.song_id);
 
             // abort any in-flight mxl fetch
             if (mxlAbortRef.current !== null) {
