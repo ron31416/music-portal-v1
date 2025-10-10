@@ -6,6 +6,7 @@ import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { Buffer } from "node:buffer";
 import type { NextRequest } from "next/server";
+import { SONG_COL } from "@/lib/songCols";
 
 function isObjectRecord(x: unknown): x is Record<string, unknown> {
     return typeof x === "object" && x !== null;
@@ -39,12 +40,21 @@ export async function POST(req: Request) {
         }
 
         // Minimal shape checks without hard-coding a big REQUIRED_KEYS array
-        const title = raw["song_title"];
-        const compFirst = raw["composer_first_name"];
-        const compLast = raw["composer_last_name"];
-        const levelNum = raw["skill_level_number"];
-        const fileName = raw["file_name"];
-        const mxlB64 = raw["song_mxl_base64"];
+        const title = raw[SONG_COL.songTitle];
+        const compFirst = raw[SONG_COL.composerFirstName];
+        const compLast = raw[SONG_COL.composerLastName];
+        const levelNum = raw[SONG_COL.skillLevelNumber];
+        const fileName = raw[SONG_COL.fileName];
+        const mxlB64 = raw[SONG_COL.songMxl];
+
+        const idRaw = (raw as Record<string, unknown>)[SONG_COL.songId];
+        let editSongId: number | null = null;
+        if (typeof idRaw === "number" && Number.isInteger(idRaw) && idRaw > 0) {
+            editSongId = idRaw;
+        } else if (typeof idRaw === "string" && /^\d+$/.test(idRaw)) {
+            const n = Number(idRaw);
+            if (Number.isInteger(n) && n > 0) { editSongId = n; }
+        }
 
         if (!isNonEmptyString(title)) {
             return NextResponse.json({ error: "song_title is required" }, { status: 400 });
@@ -62,7 +72,7 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: "file_name is required" }, { status: 400 });
         }
         if (!isNonEmptyString(mxlB64)) {
-            return NextResponse.json({ error: "song_mxl_base64 is required" }, { status: 400 });
+            return NextResponse.json({ error: "song_mxl is required" }, { status: 400 }); // ← message matches canonical key
         }
 
         // Decode base64 → bytes, validate ZIP, then convert to Postgres bytea hex literal (\x...)
@@ -87,36 +97,44 @@ export async function POST(req: Request) {
         }
 
         // Upsert with only unavoidable column names; uniqueness is handled by DB
-        const { data, error } = await supabaseAdmin
-            .from("song")
-            .upsert(
-                {
-                    song_title: String(title),
-                    composer_first_name: String(compFirst),
-                    composer_last_name: String(compLast),
-                    skill_level_number: Number(levelNum),
-                    file_name: String(fileName),
-                    song_mxl: mxlHex,
-                    updated_datetime: new Date().toISOString(),
-                },
-                { onConflict: "file_name", ignoreDuplicates: false }
-            )
-            .select("song_id")
-            .single();
+        const { data, error } = await supabaseAdmin.rpc("song_upsert_by_id", {
+            p_song_id: editSongId,                 // null for new, id for update
+            p_song_title: String(title),
+            p_composer_first_name: String(compFirst),
+            p_composer_last_name: String(compLast),
+            p_skill_level_number: Number(levelNum),
+            p_file_name: String(fileName),
+            p_song_mxl: mxlHex                     // bytea hex literal
+        });
 
         if (error) {
-            // Generic unique violation response without hard-coding constraint names
+            // Unique violation (file_name OR composite natural key)
             if (error.code === "23505") {
                 return NextResponse.json(
-                    { error: "conflict", message: "A song with these identifiers already exists." },
+                    {
+                        error: "conflict",
+                        message: "A song with the same file name or (title, composer, level) already exists."
+                    },
                     { status: 409 }
                 );
             }
+            // No row found on update path (our function raises P0002)
+            if (error.code === "P0002") {
+                return NextResponse.json(
+                    { error: "not_found", message: "song_id not found for update." },
+                    { status: 404 }
+                );
+            }
             return NextResponse.json(
-                { error: error.message ?? "Insert/Update failed" },
+                { error: error.message ?? "RPC song_upsert_by_id failed" },
                 { status: 500 }
             );
         }
+
+        // Function returns the effective song_id (integer)
+        const newId = typeof data === "number" ? data : null;
+
+        return NextResponse.json({ ok: true, song_id: newId }, { status: 200 });
 
         return NextResponse.json({ ok: true, song_id: data?.song_id }, { status: 200 });
     } catch (e) {

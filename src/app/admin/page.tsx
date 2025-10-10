@@ -2,6 +2,7 @@
 "use client";
 
 import React from "react";
+import { SONG_COL, type SongColToken } from "@/lib/songCols";
 
 // --- Config ---
 
@@ -181,10 +182,10 @@ function isLevel(x: unknown): x is Level {
 
 function HeaderButton(props: {
     label: string;
-    sortToken: string;      // single token sent to server (primary column)
-    curSort: string | null; // null => let DB default
+    sortToken: SongColToken;
+    curSort: SongColToken | null;
     dir: SortDir;
-    onClick: (k: string) => void;
+    onClick: (k: SongColToken) => void;
 }) {
     const active = props.curSort === props.sortToken;
     const caret = active ? (props.dir === "asc" ? "▲" : "▼") : "";
@@ -228,7 +229,7 @@ export default function AdminPage(): React.ReactElement {
     const [listError, setListError] = React.useState("");
     const [songs, setSongs] = React.useState<SongListItem[]>([]);
     // Server sorting only: no default token (DB will default to composer)
-    const [sort, setSort] = React.useState<string | null>(null);
+    const [sort, setSort] = React.useState<SongColToken | null>(null);
     const [sortDir, setSortDir] = React.useState<SortDir>("asc");
 
     // fields
@@ -243,6 +244,11 @@ export default function AdminPage(): React.ReactElement {
     const [xmlPreview, setXmlPreview] = React.useState("");
 
     const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+    const listAbortRef = React.useRef<AbortController | null>(null);
+    const listSeqRef = React.useRef(0);
+    const mxlAbortRef = React.useRef<AbortController | null>(null);
+    const mxlSeqRef = React.useRef(0);
 
     // fetch skill levels once (do NOT default-select)
     React.useEffect(() => {
@@ -292,6 +298,38 @@ export default function AdminPage(): React.ReactElement {
             cancelled = true;
         };
     }, []);
+
+    React.useEffect((): (() => void) => {
+        return () => {
+            if (listAbortRef.current !== null) {
+                listAbortRef.current.abort();
+            }
+            if (mxlAbortRef.current !== null) {
+                mxlAbortRef.current.abort();
+            }
+        };
+    }, []);
+
+    React.useEffect(() => {
+        if (!showList) {
+            return;
+        }
+
+        function onKey(e: KeyboardEvent): void {
+            if (e.key === "Escape") {
+                setShowList(false);
+            }
+        }
+        document.addEventListener("keydown", onKey);
+
+        const prevOverflow = document.body.style.overflow;
+        document.body.style.overflow = "hidden";
+
+        return () => {
+            document.removeEventListener("keydown", onKey);
+            document.body.style.overflow = prevOverflow;
+        };
+    }, [showList]);
 
     const onPick: React.ChangeEventHandler<HTMLInputElement> = async (e) => {
         setError("");
@@ -442,12 +480,12 @@ export default function AdminPage(): React.ReactElement {
             })();
 
             const payload = {
-                song_title: titleTrimmed,
-                composer_first_name: firstTrimmed,
-                composer_last_name: lastTrimmed,
-                skill_level_number: Number(level),
-                file_name: outFileName,
-                song_mxl_base64: base64,
+                [SONG_COL.songTitle]: titleTrimmed,
+                [SONG_COL.composerFirstName]: firstTrimmed,
+                [SONG_COL.composerLastName]: lastTrimmed,
+                [SONG_COL.skillLevelNumber]: Number(level),
+                [SONG_COL.fileName]: outFileName,
+                [SONG_COL.songMxl]: base64,
             };
 
             const res = await fetch(SAVE_ENDPOINT, {
@@ -477,28 +515,47 @@ export default function AdminPage(): React.ReactElement {
     };
 
     // ---- Admin Modal List (server-sorted) ----
-    const openList = async (overrideSort?: string, overrideDir?: SortDir): Promise<void> => {
+    const openList = async (overrideSort?: SongColToken, overrideDir?: SortDir): Promise<void> => {
         setShowList(true);
         setListError("");
         setListLoading(true);
+
+        // abort any in-flight list fetch
+        if (listAbortRef.current !== null) {
+            listAbortRef.current.abort();
+        }
+        const controller = new AbortController();
+        listAbortRef.current = controller;
+        const seq = listSeqRef.current + 1;
+        listSeqRef.current = seq;
+
         try {
             const params = new URLSearchParams();
             params.set("limit", "1000");
 
-            const effSort = overrideSort ?? sort;
+            const effSort: SongColToken | null = overrideSort ?? sort;
             const effDir: SortDir = overrideDir ?? sortDir;
 
-            // Only send sort params if explicitly set; DB defaults otherwise
             if (effSort !== null) {
                 params.set("sort", effSort);
                 params.set("dir", effDir);
             }
 
-            const res = await fetch(`/api/songlist?${params.toString()}`, { cache: "no-store" });
+            const res = await fetch(`/api/songlist?${params.toString()}`, {
+                cache: "no-store",
+                signal: controller.signal,
+            });
             if (!res.ok) {
                 throw new Error(`HTTP ${res.status}`);
             }
+
             const json = (await res.json()) as unknown;
+
+            // ignore stale responses
+            if (seq !== listSeqRef.current) {
+                return;
+            }
+
             const items = (json && typeof json === "object" ? (json as Record<string, unknown>).items : []) as unknown;
             if (Array.isArray(items)) {
                 const cast: SongListItem[] = [];
@@ -525,37 +582,79 @@ export default function AdminPage(): React.ReactElement {
             } else {
                 setSongs([]);
             }
-        } catch (e) {
+        } catch (e: unknown) {
+            // swallow AbortError; otherwise surface
+            const name = (e as { name?: string } | null)?.name ?? "";
+            if (name === "AbortError") {
+                return;
+            }
             setListError(e instanceof Error ? e.message : String(e));
             setSongs([]);
         } finally {
-            setListLoading(false);
+            if (seq === listSeqRef.current) {
+                setListLoading(false);
+            }
         }
     };
 
-    const toggleSort = (key: string): void => {
-        const newDir: SortDir = (sort === key) ? (sortDir === "asc" ? "desc" : "asc") : "asc";
+    const toggleSort = (key: SongColToken): void => {
+        const nextDir: SortDir = (sort === key) ? (sortDir === "asc" ? "desc" : "asc") : "asc";
         setSort(key);
-        setSortDir(newDir);
-        void openList(key, newDir); // refetch immediately with explicit token
+        setSortDir(() => nextDir);
+        void openList(key, nextDir);
     };
 
     const loadSongRow = async (item: SongListItem): Promise<void> => {
         try {
             setError("");
             setSaveOk("");
+
+            // abort any in-flight mxl fetch
+            if (mxlAbortRef.current !== null) {
+                mxlAbortRef.current.abort();
+            }
+            const controller = new AbortController();
+            mxlAbortRef.current = controller;
+            const seq = mxlSeqRef.current + 1;
+            mxlSeqRef.current = seq;
+
             setTitle(item.song_title || "");
             setComposerFirst(item.composer_first_name || "");
             setComposerLast(item.composer_last_name || "");
-            // set numeric level value (as string) for <select>
             setLevel(item.skill_level_number ? String(item.skill_level_number) : "");
             setFileName(item.file_name || "");
 
-            const res = await fetch(`/api/song/${item.song_id}/mxl`, { cache: "no-store" });
+            const res = await fetch(`/api/song/${item.song_id}/mxl`, { cache: "no-store", signal: controller.signal });
             if (!res.ok) {
-                throw new Error(`Fetch file failed (HTTP ${res.status})`);
+                const ct = res.headers.get("content-type") || "";
+                let detail = `HTTP ${res.status}`;
+                if (ct.includes("application/json")) {
+                    try {
+                        const j = await res.json();
+                        const msg = (j && typeof j === "object" ? (j as Record<string, unknown>).message : "") as unknown;
+                        if (typeof msg === "string" && msg.trim().length > 0) {
+                            detail = msg;
+                        }
+                    } catch {
+                        // ignore json parse
+                    }
+                } else if (ct.startsWith("text/")) {
+                    try {
+                        const t = await res.text();
+                        if (t) {
+                            detail = t.slice(0, 200);
+                        }
+                    } catch {
+                        // ignore text read
+                    }
+                }
+                throw new Error(`Fetch file failed: ${detail}`);
             }
+
             const blob = await res.blob();
+            if (seq !== mxlSeqRef.current) {
+                return; // ignore stale
+            }
 
             const ct = res.headers.get("content-type") || "";
             const isMxlByCt = ct.includes("musicxml+zip");
@@ -573,9 +672,16 @@ export default function AdminPage(): React.ReactElement {
 
             setFile(f);
             const meta = await extractMetadataAndXml(f, { isMxl, isXml });
+            if (seq !== mxlSeqRef.current) {
+                return; // ignore stale
+            }
             setXmlPreview(meta.xmlText || "");
             setShowList(false);
-        } catch (e) {
+        } catch (e: unknown) {
+            const name = (e as { name?: string } | null)?.name ?? "";
+            if (name === "AbortError") {
+                return;
+            }
             setError(e instanceof Error ? e.message : String(e));
         }
     };
@@ -799,6 +905,7 @@ export default function AdminPage(): React.ReactElement {
                     role="dialog"
                     aria-modal="true"
                     aria-label="Select a song"
+                    aria-labelledby="admin-song-dialog-h"
                     onClick={(e) => {
                         if (e.target === e.currentTarget) {
                             setShowList(false);
@@ -868,15 +975,15 @@ export default function AdminPage(): React.ReactElement {
                                         fontSize: 13,
                                     }}
                                 >
-                                    <HeaderButton label="Composer Last" sortToken="composer_last_name" curSort={sort} dir={sortDir} onClick={toggleSort} />
-                                    <HeaderButton label="Composer First" sortToken="composer_first_name" curSort={sort} dir={sortDir} onClick={toggleSort} />
-                                    <HeaderButton label="Song Title" sortToken="song_title" curSort={sort} dir={sortDir} onClick={toggleSort} />
-                                    <HeaderButton label="SKill Level" sortToken="skill_level_number" curSort={sort} dir={sortDir} onClick={toggleSort} />
-                                    <HeaderButton label="File Name" sortToken="file_name" curSort={sort} dir={sortDir} onClick={toggleSort} />
+                                    <HeaderButton label="Composer Last" sortToken={SONG_COL.composerLastName} curSort={sort} dir={sortDir} onClick={toggleSort} />
+                                    <HeaderButton label="Composer First" sortToken={SONG_COL.composerFirstName} curSort={sort} dir={sortDir} onClick={toggleSort} />
+                                    <HeaderButton label="Song Title" sortToken={SONG_COL.songTitle} curSort={sort} dir={sortDir} onClick={toggleSort} />
+                                    <HeaderButton label="Skill Level" sortToken={SONG_COL.skillLevelNumber} curSort={sort} dir={sortDir} onClick={toggleSort} />
+                                    <HeaderButton label="File Name" sortToken={SONG_COL.fileName} curSort={sort} dir={sortDir} onClick={toggleSort} />
                                 </div>
 
                                 {/* Table rows */}
-                                <div style={{ maxHeight: 420, overflow: "auto" }}>
+                                <div style={{ maxHeight: 420, overflow: "auto" }} aria-busy={listLoading}>
                                     {songs.map((r) => {
                                         return (
                                             <div
