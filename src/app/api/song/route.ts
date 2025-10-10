@@ -57,22 +57,22 @@ export async function POST(req: Request) {
         }
 
         if (!isNonEmptyString(title)) {
-            return NextResponse.json({ error: "song_title is required" }, { status: 400 });
+            return NextResponse.json({ error: "Song Title is required" }, { status: 400 });
         }
         if (!isNonEmptyString(compFirst)) {
-            return NextResponse.json({ error: "composer_first_name is required" }, { status: 400 });
+            return NextResponse.json({ error: "Composer First Name is required" }, { status: 400 });
         }
         if (!isNonEmptyString(compLast)) {
-            return NextResponse.json({ error: "composer_last_name is required" }, { status: 400 });
+            return NextResponse.json({ error: "Composer Last Name is required" }, { status: 400 });
         }
         if (!isPositiveInt(levelNum)) {
-            return NextResponse.json({ error: "skill_level_number must be a positive integer" }, { status: 400 });
+            return NextResponse.json({ error: "Skill Level is required" }, { status: 400 });
         }
         if (!isNonEmptyString(fileName)) {
-            return NextResponse.json({ error: "file_name is required" }, { status: 400 });
+            return NextResponse.json({ error: "File Name is required" }, { status: 400 });
         }
         if (!isNonEmptyString(mxlB64)) {
-            return NextResponse.json({ error: "song_mxl is required" }, { status: 400 }); // ← message matches canonical key
+            return NextResponse.json({ error: "MusicXML is required" }, { status: 400 }); // ← message matches canonical key
         }
 
         // Decode base64 → bytes, validate ZIP, then convert to Postgres bytea hex literal (\x...)

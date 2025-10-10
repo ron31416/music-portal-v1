@@ -94,7 +94,7 @@ export default function SongListPanel(): React.ReactElement {
             <section
                 aria-labelledby="song-list-h"
                 style={{
-                    width: "min(660px, 90vw)",
+                    width: "min(760px, 92vw)",   // ← ~½″ wider on each side
                     border: "1px solid #e5e5e5",
                     borderRadius: 6,
                     overflow: "hidden",
@@ -103,21 +103,20 @@ export default function SongListPanel(): React.ReactElement {
                     marginBottom: 24,
                     alignSelf: "flex-start",
                 }}
+            >                <h3
+                id="song-list-h"
+                style={{
+                    position: "absolute",
+                    width: 1,
+                    height: 1,
+                    padding: 0,
+                    margin: -1,
+                    overflow: "hidden",
+                    clip: "rect(0 0 0 0)",
+                    whiteSpace: "nowrap",
+                    border: 0,
+                }}
             >
-                <h3
-                    id="song-list-h"
-                    style={{
-                        position: "absolute",
-                        width: 1,
-                        height: 1,
-                        padding: 0,
-                        margin: -1,
-                        overflow: "hidden",
-                        clip: "rect(0 0 0 0)",
-                        whiteSpace: "nowrap",
-                        border: 0,
-                    }}
-                >
                     Song List
                 </h3>
 
@@ -127,17 +126,17 @@ export default function SongListPanel(): React.ReactElement {
                         display: "grid",
                         gridTemplateColumns: "1.2fr 1.2fr 2fr 1fr", // Last | First | Title | Level
                         padding: "8px 10px",
-                        background: "#fafafa",
-                        borderBottom: "1px solid #e5e5e5",
+                        background: "#f3f3f3",
+                        borderBottom: "1px solid #ddd",
                         fontWeight: 600,
                         fontSize: 13,
                         color: "#111",
                     }}
                 >
-                    <HeaderButton label="Last" token={SONG_COL.composerLastName} curToken={sortToken} dir={sortDir} onClick={toggleSort} />
-                    <HeaderButton label="First" token={SONG_COL.composerFirstName} curToken={sortToken} dir={sortDir} onClick={toggleSort} />
-                    <HeaderButton label="Title" token={SONG_COL.songTitle} curToken={sortToken} dir={sortDir} onClick={toggleSort} />
-                    <HeaderButton label="Level" token={SONG_COL.skillLevelNumber} curToken={sortToken} dir={sortDir} onClick={toggleSort} />
+                    <HeaderButton label="Composer Last" token={SONG_COL.composerLastName} curToken={sortToken} dir={sortDir} onClick={toggleSort} />
+                    <HeaderButton label="Composer First" token={SONG_COL.composerFirstName} curToken={sortToken} dir={sortDir} onClick={toggleSort} />
+                    <HeaderButton label="Song Title" token={SONG_COL.songTitle} curToken={sortToken} dir={sortDir} onClick={toggleSort} />
+                    <HeaderButton label="Skill Level" token={SONG_COL.skillLevelNumber} curToken={sortToken} dir={sortDir} onClick={toggleSort} />
                 </div>
 
                 {/* Fixed-height scroll area (10 inches ~= 960px) */}
