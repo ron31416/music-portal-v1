@@ -5,7 +5,6 @@ import React from "react";
 import { SONG_COL, type SongColToken } from "@/lib/songCols";
 
 const ROW_PX = 40;
-const LINE_PX = ROW_PX + 16;
 const TABLE_BODY_PX = ROW_PX * 24
 
 // Composer Last | Composer First | Song Title | Skill Level
@@ -134,14 +133,16 @@ export default function SongListPanel(): React.ReactElement {
                         display: "grid",
                         gridTemplateColumns: GRID_COLS,
                         height: ROW_PX,
-                        padding: "0 12px",
+                        lineHeight: `${ROW_PX}px`,     // ← match row line-height
+                        padding: "0 10px",             // ← match row horizontal padding
                         background: "#f3f3f3",
                         borderBottom: "1px solid #ddd",
+                        boxSizing: "border-box",
                         fontWeight: 600,
                         fontSize: 13,
                         color: "#111",
                         letterSpacing: 0.2,
-                        alignItems: "center",
+                        alignItems: "center",          // ok to keep; ensures non-text children center too
                     }}
                 >
                     <HeaderButton label="Composer Last" token={SONG_COL.composerLastName} curToken={sortToken} dir={sortDir} onClick={toggleSort} />
@@ -171,7 +172,7 @@ export default function SongListPanel(): React.ReactElement {
                                     padding: "8px 10px",
                                     borderBottom: "1px solid #f0f0f0",
                                     fontSize: 13,
-                                    lineHeight: `${LINE_PX}px`,
+                                    lineHeight: `${ROW_PX}px`,
                                     alignItems: "center",
                                     cursor: "pointer",
                                     background: "#fff",
@@ -211,7 +212,7 @@ export default function SongListPanel(): React.ReactElement {
                                         padding: "8px 10px",
                                         borderBottom: "1px solid #f0f0f0",
                                         fontSize: 13,
-                                        lineHeight: `${LINE_PX}px`,
+                                        lineHeight: `${ROW_PX}px`,
                                         alignItems: "center",
                                         background: "#fff",
                                         color: "transparent",
