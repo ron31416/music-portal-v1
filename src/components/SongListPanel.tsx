@@ -7,9 +7,9 @@ import { SONG_COL, type SongColToken } from "@/lib/songCols";
 const ROW_PX = 28;
 const ROW_COUNT = 20;
 const TABLE_BODY_PX = ROW_PX * ROW_COUNT
-
+const TABLE_WIDTH_PX = 820;
 // Composer Last | Composer First | Song Title | Skill Level
-const GRID_COLS = "1.2fr 1.2fr 2fr 1fr" as const;
+const GRID_COLS = "1fr 1fr 2fr 1fr" as const;
 
 type SongListItem = {
     song_id: number;
@@ -99,7 +99,7 @@ export default function SongListPanel(): React.ReactElement {
             <section
                 aria-labelledby="song-list-h"
                 style={{
-                    width: "min(760px, 92vw)",
+                    width: `min(${TABLE_WIDTH_PX}px, 92vw)`,
                     border: "1px solid #e5e5e5",
                     borderRadius: 6,
                     overflow: "hidden",
@@ -200,8 +200,7 @@ export default function SongListPanel(): React.ReactElement {
 
                     {/* Filler rows to show empty grid lines up to the fixed height */}
                     {(() => {
-                        const rowsPerView = Math.floor(TABLE_BODY_PX / ROW_PX);
-                        const fillerCount = Math.max(0, rowsPerView - rows.length);
+                        const fillerCount = Math.max(0, ROW_COUNT - rows.length);
                         const fillers: React.ReactElement[] = [];
                         for (let i = 0; i < fillerCount; i++) {
                             fillers.push(
@@ -211,8 +210,8 @@ export default function SongListPanel(): React.ReactElement {
                                     style={{
                                         display: "grid",
                                         gridTemplateColumns: GRID_COLS,
-                                        height: ROW_PX,              // fixed row height
-                                        padding: "0 10px",           // no vertical padding
+                                        height: ROW_PX,
+                                        padding: "0 10px",
                                         borderBottom: "1px solid #f0f0f0",
                                         fontSize: 13,
                                         alignItems: "center",
