@@ -169,11 +169,12 @@ export default function SongListPanel(): React.ReactElement {
                                 style={{
                                     display: "grid",
                                     gridTemplateColumns: GRID_COLS,
-                                    padding: "8px 10px",
+                                    height: ROW_PX,
+                                    padding: "0 10px",
                                     borderBottom: "1px solid #f0f0f0",
                                     fontSize: 13,
-                                    lineHeight: `${ROW_PX}px`,
                                     alignItems: "center",
+                                    boxSizing: "border-box",
                                     cursor: "pointer",
                                     background: "#fff",
                                     color: "#111",
@@ -209,11 +210,12 @@ export default function SongListPanel(): React.ReactElement {
                                     style={{
                                         display: "grid",
                                         gridTemplateColumns: GRID_COLS,
-                                        padding: "8px 10px",
+                                        height: ROW_PX,              // fixed row height
+                                        padding: "0 10px",           // no vertical padding
                                         borderBottom: "1px solid #f0f0f0",
                                         fontSize: 13,
-                                        lineHeight: `${ROW_PX}px`,
                                         alignItems: "center",
+                                        boxSizing: "border-box",
                                         background: "#fff",
                                         color: "transparent",
                                         userSelect: "none",
