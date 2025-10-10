@@ -4,8 +4,8 @@
 import React from "react";
 import { SONG_COL, type SongColToken } from "@/lib/songCols";
 
-const ROW_PX = 40;
-const TABLE_BODY_PX = ROW_PX * 24
+const ROW_PX = 32;
+const TABLE_BODY_PX = ROW_PX * ROW_PX
 
 // Composer Last | Composer First | Song Title | Skill Level
 const GRID_COLS = "1.2fr 1.2fr 2fr 1fr" as const;
