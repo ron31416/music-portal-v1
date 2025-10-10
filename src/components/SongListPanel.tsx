@@ -4,7 +4,12 @@
 import React from "react";
 import { SONG_COL, type SongColToken } from "@/lib/songCols";
 
-const DEFAULT_SORT: SongColToken = SONG_COL.composerLastName;
+const ROW_PX = 40;
+const LINE_PX = ROW_PX + 16;
+const TABLE_BODY_PX = ROW_PX * 24
+
+// Composer Last | Composer First | Song Title | Skill Level
+const GRID_COLS = "1.2fr 1.2fr 2fr 1fr" as const;
 
 type SongListItem = {
     song_id: number;
@@ -48,7 +53,7 @@ function HeaderButton(props: {
 
 export default function SongListPanel(): React.ReactElement {
     const [rows, setRows] = React.useState<SongListItem[]>([]);
-    const [sortToken, setSortToken] = React.useState<SongColToken | null>(DEFAULT_SORT);
+    const [sortToken, setSortToken] = React.useState<SongColToken | null>(SONG_COL.composerLastName);
     const [sortDir, setSortDir] = React.useState<SortDir>("asc");
 
     const fetchList = React.useCallback(async (token: SongColToken | null, dir: SortDir) => {
@@ -94,7 +99,7 @@ export default function SongListPanel(): React.ReactElement {
             <section
                 aria-labelledby="song-list-h"
                 style={{
-                    width: "min(760px, 92vw)",   // ← ~½″ wider on each side
+                    width: "min(760px, 92vw)",
                     border: "1px solid #e5e5e5",
                     borderRadius: 6,
                     overflow: "hidden",
@@ -102,6 +107,9 @@ export default function SongListPanel(): React.ReactElement {
                     color: "#111",
                     marginBottom: 24,
                     alignSelf: "flex-start",
+                    height: ROW_PX + TABLE_BODY_PX,
+                    display: "flex",
+                    flexDirection: "column",
                 }}
             >                <h3
                 id="song-list-h"
@@ -124,13 +132,16 @@ export default function SongListPanel(): React.ReactElement {
                 <div
                     style={{
                         display: "grid",
-                        gridTemplateColumns: "1.2fr 1.2fr 2fr 1fr", // Last | First | Title | Level
-                        padding: "8px 10px",
+                        gridTemplateColumns: GRID_COLS,
+                        height: ROW_PX,
+                        padding: "0 12px",
                         background: "#f3f3f3",
                         borderBottom: "1px solid #ddd",
                         fontWeight: 600,
                         fontSize: 13,
                         color: "#111",
+                        letterSpacing: 0.2,
+                        alignItems: "center",
                     }}
                 >
                     <HeaderButton label="Composer Last" token={SONG_COL.composerLastName} curToken={sortToken} dir={sortDir} onClick={toggleSort} />
@@ -140,7 +151,7 @@ export default function SongListPanel(): React.ReactElement {
                 </div>
 
                 {/* Fixed-height scroll area (10 inches ~= 960px) */}
-                <div style={{ height: 960, overflow: "auto", background: "#fff" }}>
+                <div style={{ height: TABLE_BODY_PX, overflow: "auto", background: "#fff" }}>
                     {rows.map((r) => {
                         return (
                             <div
@@ -156,10 +167,11 @@ export default function SongListPanel(): React.ReactElement {
                                 tabIndex={0}
                                 style={{
                                     display: "grid",
-                                    gridTemplateColumns: "1.2fr 1.2fr 2fr 1fr", // Last | First | Title | Level
+                                    gridTemplateColumns: GRID_COLS,
                                     padding: "8px 10px",
                                     borderBottom: "1px solid #f0f0f0",
                                     fontSize: 13,
+                                    lineHeight: `${LINE_PX}px`,
                                     alignItems: "center",
                                     cursor: "pointer",
                                     background: "#fff",
@@ -185,8 +197,7 @@ export default function SongListPanel(): React.ReactElement {
 
                     {/* Filler rows to show empty grid lines up to the fixed height */}
                     {(() => {
-                        const ROW_HEIGHT = 40;
-                        const rowsPerView = Math.floor(960 / ROW_HEIGHT);
+                        const rowsPerView = Math.floor(TABLE_BODY_PX / ROW_PX);
                         const fillerCount = Math.max(0, rowsPerView - rows.length);
                         const fillers: React.ReactElement[] = [];
                         for (let i = 0; i < fillerCount; i++) {
@@ -196,10 +207,11 @@ export default function SongListPanel(): React.ReactElement {
                                     aria-hidden="true"
                                     style={{
                                         display: "grid",
-                                        gridTemplateColumns: "1.2fr 1.2fr 2fr 1fr", // Last | First | Title | Level
+                                        gridTemplateColumns: GRID_COLS,
                                         padding: "8px 10px",
                                         borderBottom: "1px solid #f0f0f0",
                                         fontSize: 13,
+                                        lineHeight: `${LINE_PX}px`,
                                         alignItems: "center",
                                         background: "#fff",
                                         color: "transparent",
