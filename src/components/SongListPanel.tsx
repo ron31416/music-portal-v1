@@ -2,6 +2,9 @@
 "use client";
 
 import React from "react";
+import { SONG_COL, type SongColToken } from "@/lib/songCols";
+
+const DEFAULT_SORT: SongColToken = SONG_COL.composerLastName;
 
 type SongListItem = {
     song_id: number;
@@ -15,10 +18,10 @@ type SortDir = "asc" | "desc";
 
 function HeaderButton(props: {
     label: string;
-    token: string;                 // server sort token, e.g. "composer_last_name"
-    curToken: string | null;       // null => let DB default
+    token: SongColToken;
+    curToken: SongColToken | null;
     dir: SortDir;
-    onClick: (token: string) => void;
+    onClick: (token: SongColToken) => void;
 }) {
     const active = props.curToken === props.token;
     const caret = active ? (props.dir === "asc" ? "▲" : "▼") : "";
@@ -45,10 +48,10 @@ function HeaderButton(props: {
 
 export default function SongListPanel(): React.ReactElement {
     const [rows, setRows] = React.useState<SongListItem[]>([]);
-    const [sortToken, setSortToken] = React.useState<string | null>(null); // null → DB default
+    const [sortToken, setSortToken] = React.useState<SongColToken | null>(DEFAULT_SORT);
     const [sortDir, setSortDir] = React.useState<SortDir>("asc");
 
-    const fetchList = React.useCallback(async (token: string | null, dir: SortDir): Promise<void> => {
+    const fetchList = React.useCallback(async (token: SongColToken | null, dir: SortDir) => {
         try {
             const params = new URLSearchParams();
             params.set("limit", "1000");
@@ -71,12 +74,13 @@ export default function SongListPanel(): React.ReactElement {
         void fetchList(sortToken, sortDir);
     }, [fetchList, sortToken, sortDir]);
 
-    const toggleSort = (token: string): void => {
+    const toggleSort = (token: SongColToken): void => { // ← was (token: string)
         const same = sortToken === token;
         const newDir: SortDir = same ? (sortDir === "asc" ? "desc" : "asc") : "asc";
-        setSortToken(token);
+        setSortToken(token);   // ✅ now matches SongColToken | null
         setSortDir(newDir);
     };
+
 
     const openInNewTab = (id: number): void => {
         // Avoid encoding the path; pass raw so the viewer fetches the correct URL.
@@ -130,10 +134,10 @@ export default function SongListPanel(): React.ReactElement {
                         color: "#111",
                     }}
                 >
-                    <HeaderButton label="Composer Last" token="composer_last_name" curToken={sortToken} dir={sortDir} onClick={toggleSort} />
-                    <HeaderButton label="Composer First" token="composer_first_name" curToken={sortToken} dir={sortDir} onClick={toggleSort} />
-                    <HeaderButton label="Song Title" token="song_title" curToken={sortToken} dir={sortDir} onClick={toggleSort} />
-                    <HeaderButton label="Skill Level" token="skill_level_number" curToken={sortToken} dir={sortDir} onClick={toggleSort} />
+                    <HeaderButton label="Last" token={SONG_COL.composerLastName} curToken={sortToken} dir={sortDir} onClick={toggleSort} />
+                    <HeaderButton label="First" token={SONG_COL.composerFirstName} curToken={sortToken} dir={sortDir} onClick={toggleSort} />
+                    <HeaderButton label="Title" token={SONG_COL.songTitle} curToken={sortToken} dir={sortDir} onClick={toggleSort} />
+                    <HeaderButton label="Level" token={SONG_COL.skillLevelNumber} curToken={sortToken} dir={sortDir} onClick={toggleSort} />
                 </div>
 
                 {/* Fixed-height scroll area (10 inches ~= 960px) */}
