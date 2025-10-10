@@ -5,7 +5,9 @@ export const SONG_COL = {
     composerFirstName: "composer_first_name",
     composerLastName: "composer_last_name",
     skillLevelNumber: "skill_level_number",
+    skillLevelName: "skill_level_name",     //derived from join to skill_level
     fileName: "file_name",
+    insertedDatetime: "inserted_datetime",
     updatedDatetime: "updated_datetime",
     songMxl: "song_mxl",
 } as const;

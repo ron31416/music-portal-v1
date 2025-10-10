@@ -97,7 +97,7 @@ export async function POST(req: Request) {
         }
 
         // Upsert with only unavoidable column names; uniqueness is handled by DB
-        const { data, error } = await supabaseAdmin.rpc("song_upsert_by_id", {
+        const { data, error } = await supabaseAdmin.rpc("song_upsert", {
             p_song_id: editSongId,                 // null for new, id for update
             p_song_title: String(title),
             p_composer_first_name: String(compFirst),
@@ -126,7 +126,7 @@ export async function POST(req: Request) {
                 );
             }
             return NextResponse.json(
-                { error: error.message ?? "RPC song_upsert_by_id failed" },
+                { error: error.message ?? "RPC song_upsert failed" },
                 { status: 500 }
             );
         }
