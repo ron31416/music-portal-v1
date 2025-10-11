@@ -121,7 +121,7 @@ export default function SongListPanel(): React.ReactElement {
     const openInNewTab = (id: number): void => {
         // Avoid encoding the path; pass raw so the viewer fetches the correct URL.
         const tabId = Date.now().toString(36);
-        const url = `/viewer?tab=${tabId}&src=/api/song/${id}/mxl`;
+        const url = `/viewer?tab=${tabId}&id=${id}`;
         window.open(url, "_blank", "noopener,noreferrer");
     };
 

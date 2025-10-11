@@ -2,37 +2,37 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { SONG } from "@/lib/song";
 import ScoreOSMD from "@/components/ScoreOSMD";
 
-export default function ViewerClient() {
+function isPositiveIntString(v: string | null): v is string {
+  return v !== null && /^\d+$/.test(v);
+}
+
+export default function ViewerClient(): React.ReactElement {
   const params = useSearchParams();
-  const paramSrc = params.get("src") ?? undefined;
+  const id = isPositiveIntString(params.get("id")) ? params.get("id")! : undefined;
 
-  // Fallback to the first song if no ?src= was given
-  const effectiveSrc = paramSrc ?? SONG[0]?.src;
+  // Build the canonical, same-origin API URL from the id
+  const src = id !== undefined ? `/api/song/${id}/mxl` : undefined;
 
-  if (!effectiveSrc) {
+  if (src === undefined) {
     return (
       <p style={{ color: "crimson" }}>
-        No score source provided. Try opening with{" "}
-        <code>?src=/api/song/2/mxl</code>.
+        No score id provided. Open this page with <code>?id=2</code>.
       </p>
     );
   }
 
   return (
-    <>
-      <div
-        style={{
-          position: "relative",
-          background: "#fff",
-          width: "100%",
-          minHeight: 0,
-        }}
-      >
-        <ScoreOSMD src={effectiveSrc} />
-      </div>
-    </>
+    <div
+      style={{
+        position: "relative",
+        background: "#fff",
+        width: "100%",
+        minHeight: 0,
+      }}
+    >
+      <ScoreOSMD src={src} />
+    </div>
   );
 }
