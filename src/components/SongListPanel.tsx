@@ -9,6 +9,7 @@ import {
     DEFAULT_SORT,
     DEFAULT_DIR,
 } from "@/lib/songCols";
+import type { SongListItem } from "@/lib/types";
 
 const ROW_PX = 28;
 const ROW_COUNT = 25;
@@ -16,14 +17,6 @@ const TABLE_BODY_PX = ROW_PX * ROW_COUNT
 const TABLE_WIDTH_PX = 820;
 // Composer Last | Composer First | Song Title | Skill Level
 const GRID_COLS = "170px 170px 380px 90px" as const;
-
-type SongListItem = {
-    song_id: number;
-    song_title: string;
-    composer_first_name: string;
-    composer_last_name: string;
-    skill_level_name: string;
-};
 
 function HeaderButton(props: {
     label: string;
