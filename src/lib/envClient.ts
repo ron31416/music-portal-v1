@@ -1,4 +1,4 @@
-// src/lib/env.ts
+// src/lib/envClient.ts
 import { invariant } from "./invariant";
 
 const {
@@ -10,7 +10,7 @@ const {
 invariant(NEXT_PUBLIC_SUPABASE_URL, "Missing NEXT_PUBLIC_SUPABASE_URL");
 invariant(NEXT_PUBLIC_SUPABASE_ANON_KEY, "Missing NEXT_PUBLIC_SUPABASE_ANON_KEY");
 
-export const env = {
+export const envClient = {
   NEXT_PUBLIC_SUPABASE_URL: NEXT_PUBLIC_SUPABASE_URL!,
   NEXT_PUBLIC_SUPABASE_ANON_KEY: NEXT_PUBLIC_SUPABASE_ANON_KEY!,
 } as const;

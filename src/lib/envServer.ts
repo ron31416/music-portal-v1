@@ -1,4 +1,4 @@
-// src/lib/serverEnv.ts
+// src/lib/envServer.ts
 import { invariant } from "./invariant";
 
 /**
@@ -13,7 +13,7 @@ const {
 invariant(SUPABASE_URL, "Missing SUPABASE_URL");
 invariant(SUPABASE_SERVICE_ROLE_KEY, "Missing SUPABASE_SERVICE_ROLE_KEY");
 
-export const serverEnv = {
+export const envServer = {
     SUPABASE_URL: SUPABASE_URL!,
     SUPABASE_SERVICE_ROLE_KEY: SUPABASE_SERVICE_ROLE_KEY!,
 } as const;
