@@ -10,6 +10,19 @@ const SAVE_ENDPOINT = "/api/song";
 const SONG_LIST_ENDPOINT = "/api/songlist";
 const XML_PREVIEW_HEIGHT = 420;
 
+// --- Table Config (admin list) ---
+const TABLE_ROW_PX = 28;                 // height of a single row
+const TABLE_VISIBLE_ROWS = 15;           // fixed number of visible rows
+const TABLE_BODY_PX = TABLE_ROW_PX * TABLE_VISIBLE_ROWS;
+
+const TABLE_HEADER_BG = "#1b1b1b";       // dark header background
+const TABLE_HEADER_FG = "#ffffff";       // header text (white)
+const TABLE_BORDER = "#2a2a2a";          // table border + grid lines
+
+const TABLE_ROW_BG_EVEN = "#0e0e0e";     // zebra even
+const TABLE_ROW_BG_ODD = "#141414";     // zebra odd
+const TABLE_ROW_FG = "#e6e6e6";     // body text
+
 type SaveResponse = {
     ok?: boolean;
     song_id?: number;
@@ -900,21 +913,29 @@ export default function AdminPage(): React.ReactElement {
 
             {/* Inline song list (always visible) */}
             <section className="space-y-2" aria-labelledby="songs-h" style={{ marginTop: 24 }}>
-                <h2 id="songs-h" style={{ marginTop: 0, fontSize: 18, fontWeight: 600 }}>Songs</h2>
+                <h2 id="songs-h" style={{ marginTop: 0, fontSize: 18, fontWeight: 600, color: "#fff" }}>Songs</h2>
 
-                {listLoading && <p>Loading…</p>}
-                {listError && <p style={{ color: "#b00020" }}>Error: {listError}</p>}
+                {listLoading && <p style={{ color: "#ddd" }}>Loading…</p>}
+                {listError && <p style={{ color: "#ff6b6b" }}>Error: {listError}</p>}
 
                 {!listLoading && !listError && (
-                    <div style={{ border: "1px solid #e5e5e5", borderRadius: 6, overflow: "hidden" }}>
-                        {/* Table header */}
+                    <div
+                        style={{
+                            border: `1px solid ${TABLE_BORDER}`,
+                            borderRadius: 6,
+                            overflow: "hidden",
+                            background: "#0b0b0b",
+                        }}
+                    >
+                        {/* Table header (dark) */}
                         <div
                             style={{
                                 display: "grid",
-                                gridTemplateColumns: "1.3fr 1.3fr 2fr 1fr 1.3fr", // Last | First | Title | Level | File
+                                gridTemplateColumns: "1.3fr 1.3fr 2fr 1fr 1.3fr",
                                 padding: "8px 10px",
-                                background: "#fafafa",
-                                borderBottom: "1px solid #e5e5e5",
+                                background: TABLE_HEADER_BG,
+                                color: TABLE_HEADER_FG,
+                                borderBottom: `1px solid ${TABLE_BORDER}`,
                                 fontWeight: 600,
                                 fontSize: 13,
                             }}
@@ -926,9 +947,19 @@ export default function AdminPage(): React.ReactElement {
                             <HeaderButton label="File Name" sortToken={SONG_COL.fileName} curSort={sort} dir={sortDir} onClick={toggleSort} />
                         </div>
 
-                        {/* Table rows */}
-                        <div style={{ maxHeight: 420, overflow: "auto" }} aria-busy={listLoading}>
-                            {songs.map((r) => {
+                        {/* Table body (fixed height = 15 rows) */}
+                        <div
+                            style={{
+                                minHeight: TABLE_BODY_PX,
+                                maxHeight: TABLE_BODY_PX,
+                                overflow: "auto",
+                                borderTop: `1px solid ${TABLE_BORDER}`,
+                            }}
+                            aria-busy={listLoading}
+                        >
+                            {/* Data rows */}
+                            {songs.map((r, idx) => {
+                                const bg = (idx % 2 === 0) ? TABLE_ROW_BG_EVEN : TABLE_ROW_BG_ODD;
                                 return (
                                     <div
                                         key={r.song_id}
@@ -945,10 +976,14 @@ export default function AdminPage(): React.ReactElement {
                                             display: "grid",
                                             gridTemplateColumns: "1.3fr 1.3fr 2fr 1fr 1.3fr",
                                             padding: "8px 10px",
-                                            borderBottom: "1px solid #f0f0f0",
+                                            borderBottom: `1px solid ${TABLE_BORDER}`,
                                             fontSize: 13,
                                             alignItems: "center",
                                             cursor: "pointer",
+                                            background: bg,
+                                            color: TABLE_ROW_FG,
+                                            height: TABLE_ROW_PX,
+                                            lineHeight: `${TABLE_ROW_PX - 10}px`, // visual centering
                                         }}
                                     >
                                         <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.composer_last_name || "\u2014"}</div>
@@ -959,7 +994,35 @@ export default function AdminPage(): React.ReactElement {
                                     </div>
                                 );
                             })}
-                            {songs.length === 0 && <div style={{ padding: 12, fontSize: 13 }}>No songs found.</div>}
+
+                            {/* Padding rows (if fewer than 15) */}
+                            {songs.length < TABLE_VISIBLE_ROWS && Array.from({ length: TABLE_VISIBLE_ROWS - songs.length }).map((_, i) => {
+                                const idx = songs.length + i;
+                                const bg = (idx % 2 === 0) ? TABLE_ROW_BG_EVEN : TABLE_ROW_BG_ODD;
+                                return (
+                                    <div
+                                        key={`pad-${i}`}
+                                        aria-hidden="true"
+                                        style={{
+                                            display: "grid",
+                                            gridTemplateColumns: "1.3fr 1.3fr 2fr 1fr 1.3fr",
+                                            padding: "8px 10px",
+                                            borderBottom: `1px solid ${TABLE_BORDER}`,
+                                            fontSize: 13,
+                                            alignItems: "center",
+                                            background: bg,
+                                            color: TABLE_ROW_FG,
+                                            height: TABLE_ROW_PX,
+                                        }}
+                                    >
+                                        <div>&nbsp;</div>
+                                        <div>&nbsp;</div>
+                                        <div>&nbsp;</div>
+                                        <div>&nbsp;</div>
+                                        <div>&nbsp;</div>
+                                    </div>
+                                );
+                            })}
                         </div>
                     </div>
                 )}
