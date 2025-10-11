@@ -13,7 +13,7 @@ const XML_PREVIEW_HEIGHT = 200;
 
 // --- Table Config (admin list) ---
 const TABLE_ROW_PX = 28;                 // height of a single row
-const TABLE_ROW_COUNT = 15;           // fixed number of visible rows
+const TABLE_ROW_COUNT = 10;           // fixed number of visible rows
 const TABLE_BODY_PX = TABLE_ROW_PX * TABLE_ROW_COUNT;
 
 // Fixed grid column widths (Admin list: Last | First | Title | Level | File)
@@ -847,10 +847,15 @@ export default function AdminPage(): React.ReactElement {
                     Edit Song
                 </h2>
 
+                <div style={{ fontSize: 12, margin: "4px 0 8px", color: "#9aa0a6" }}>
+                    debug → isDark: {String(isDark)} | T.bgCard: {T.bgCard} | T.border: {T.border}
+                </div>
+
                 <div
                     style={{
                         padding: 16,
-                        border: `1px solid ${T.border}`,
+                        //border: `1px solid ${T.border}`,
+                        border: `1px solid ${isDark ? "#2a2a2a" : "#dddddd"}`,
                         borderRadius: 8,
                         background: T.bgCard,
                         backgroundColor: T.bgCard, // ensures no CSS reset overrides
