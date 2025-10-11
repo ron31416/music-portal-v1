@@ -3,6 +3,7 @@
 
 import React from "react";
 import { SONG_COL, type SongColToken } from "@/lib/songCols";
+import { usePrefersDark, themeTokens, fieldStyle } from "@/lib/theme";
 
 // --- Config ---
 
@@ -15,16 +16,8 @@ const TABLE_ROW_PX = 28;                 // height of a single row
 const TABLE_ROW_COUNT = 15;           // fixed number of visible rows
 const TABLE_BODY_PX = TABLE_ROW_PX * TABLE_ROW_COUNT;
 
-const TABLE_HEADER_BG = "#1b1b1b";       // dark header background
-const TABLE_HEADER_FG = "#ffffff";       // header text (white)
-const TABLE_BORDER = "#2a2a2a";          // table border + grid lines
-
-const TABLE_ROW_BG_EVEN = "#0e0e0e";     // zebra even
-const TABLE_ROW_BG_ODD = "#141414";     // zebra odd
-const TABLE_ROW_FG = "#e6e6e6";     // body text
-
 // Fixed grid column widths (Admin list: Last | First | Title | Level | File)
-const GRID_COLS = "160px 160px 360px 100px 240px" as const;
+const GRID_COLS = "160px 160px 300px 100px 300px" as const;
 
 type SaveResponse = {
     ok?: boolean;
@@ -203,6 +196,7 @@ function HeaderButton(props: {
     curSort: SongColToken | null;
     dir: SortDir;
     onClick: (k: SongColToken) => void;
+    color?: string;
 }) {
     const active = props.curSort === props.sortToken;
     const caret = active ? (props.dir === "asc" ? "▲" : "▼") : "";
@@ -213,23 +207,21 @@ function HeaderButton(props: {
                 props.onClick(props.sortToken);
             }}
             title={`Sort by ${props.label}`}
-            style={{ textAlign: "left", fontWeight: 600, fontSize: 13, background: "transparent", border: "none", padding: 0, cursor: "pointer" }}
+            style={{
+                textAlign: "left",
+                fontWeight: 600,
+                fontSize: 13,
+                background: "transparent",
+                border: "none",
+                padding: 0,
+                cursor: "pointer",
+                color: props.color ?? "#111",
+            }}
         >
             {props.label} {caret}
         </button>
     );
 }
-
-// --- Styles ---
-
-const roStyle: React.CSSProperties = {
-    width: "100%",
-    padding: "8px 10px",
-    border: "1px solid #ccc",
-    borderRadius: 6,
-    background: "#fdfdfd",
-    color: "#111",
-};
 
 // --- Component ---
 
@@ -268,6 +260,10 @@ export default function AdminPage(): React.ReactElement {
     const listSeqRef = React.useRef(0);
     const mxlAbortRef = React.useRef<AbortController | null>(null);
     const mxlSeqRef = React.useRef(0);
+
+    const isDark = usePrefersDark();
+    const T = themeTokens(isDark);        // card/bg/rows/header/border colors
+    const fieldCss = fieldStyle(isDark);  // inputs + textarea base style
 
     // Fast lookup for duplicates: file_name -> song_id (exact, case-sensitive)
     const fileNameToIdRef = React.useRef<Map<string, number>>(new Map());
@@ -731,11 +727,11 @@ export default function AdminPage(): React.ReactElement {
                 {!listLoading && !listError && (
                     <div
                         style={{
-                            border: `1px solid ${TABLE_BORDER}`,
+                            border: `1px solid ${T.border}`,
                             borderRadius: 6,
                             overflowX: "hidden",
                             overflowY: "hidden",
-                            background: "#0b0b0b",
+                            background: T.bgCard,
                         }}
                     >
                         {/* Header */}
@@ -744,9 +740,9 @@ export default function AdminPage(): React.ReactElement {
                                 display: "grid",
                                 gridTemplateColumns: GRID_COLS,
                                 padding: "8px 10px",
-                                background: TABLE_HEADER_BG,
-                                color: TABLE_HEADER_FG,
-                                borderBottom: `1px solid ${TABLE_BORDER}`,
+                                background: T.headerBg,
+                                color: T.headerFg,
+                                borderBottom: `1px solid ${T.border}`,
                                 fontWeight: 600,
                                 fontSize: 13,
                             }}
@@ -765,13 +761,13 @@ export default function AdminPage(): React.ReactElement {
                                 maxHeight: TABLE_BODY_PX,
                                 overflowY: needsScroll ? "auto" : "hidden",
                                 overflowX: "hidden",
-                                borderTop: `1px solid ${TABLE_BORDER}`,
+                                borderTop: `1px solid ${T.border}`,
                             }}
                             aria-busy={listLoading}
                         >
                             {/* Data rows */}
                             {songs.map((r, idx) => {
-                                const bg = (idx % 2 === 0) ? TABLE_ROW_BG_EVEN : TABLE_ROW_BG_ODD;
+                                const bg = (idx % 2 === 0) ? T.rowEven : T.rowOdd;
                                 return (
                                     <div
                                         key={r.song_id}
@@ -785,12 +781,12 @@ export default function AdminPage(): React.ReactElement {
                                             display: "grid",
                                             gridTemplateColumns: GRID_COLS,
                                             padding: "8px 10px",
-                                            borderBottom: `1px solid ${TABLE_BORDER}`,
+                                            borderBottom: `1px solid ${T.border}`,
                                             fontSize: 13,
                                             alignItems: "center",
                                             cursor: "pointer",
                                             background: bg,
-                                            color: TABLE_ROW_FG,
+                                            color: T.rowFg,
                                             height: TABLE_ROW_PX,
                                             lineHeight: `${TABLE_ROW_PX - 10}px`,
                                         }}
@@ -807,7 +803,7 @@ export default function AdminPage(): React.ReactElement {
                             {/* Padding rows up to 15 */}
                             {songs.length < TABLE_ROW_COUNT && Array.from({ length: TABLE_ROW_COUNT - songs.length }).map((_, i) => {
                                 const idx = songs.length + i;
-                                const bg = (idx % 2 === 0) ? TABLE_ROW_BG_EVEN : TABLE_ROW_BG_ODD;
+                                const bg = (idx % 2 === 0) ? T.rowEven : T.rowOdd;
                                 return (
                                     <div
                                         key={`pad-${i}`}
@@ -816,11 +812,11 @@ export default function AdminPage(): React.ReactElement {
                                             display: "grid",
                                             gridTemplateColumns: GRID_COLS,
                                             padding: "8px 10px",
-                                            borderBottom: `1px solid ${TABLE_BORDER}`,
+                                            borderBottom: `1px solid ${T.border}`,
                                             fontSize: 13,
                                             alignItems: "center",
                                             background: bg,
-                                            color: TABLE_ROW_FG,
+                                            color: T.rowFg,
                                             height: TABLE_ROW_PX,
                                         }}
                                     >
@@ -893,7 +889,7 @@ export default function AdminPage(): React.ReactElement {
                             type="text"
                             value={title}
                             onChange={(e) => { setTitle(e.target.value); }}
-                            style={roStyle}
+                            style={fieldCss}
                         />
 
                         <label style={{ alignSelf: "center", fontWeight: 600 }}>Composer</label>
@@ -903,14 +899,14 @@ export default function AdminPage(): React.ReactElement {
                                 value={composerFirst}
                                 onChange={(e) => { setComposerFirst(e.target.value); }}
                                 placeholder="First"
-                                style={roStyle}
+                                style={fieldCss}
                             />
                             <input
                                 type="text"
                                 value={composerLast}
                                 onChange={(e) => { setComposerLast(e.target.value); }}
                                 placeholder="Last"
-                                style={roStyle}
+                                style={fieldCss}
                             />
                         </div>
 
@@ -919,7 +915,7 @@ export default function AdminPage(): React.ReactElement {
                             value={level}
                             onChange={(e) => { setLevel(e.target.value); }}
                             disabled={levelsLoading || !!levelsError || levels.length === 0}
-                            style={{ ...roStyle, appearance: "auto" as const }}
+                            style={{ ...fieldCss, appearance: "auto" as const }}
                         >
                             <option value="" disabled>— Select a level —</option>
                             {levels.map((lvl) => {
@@ -938,7 +934,7 @@ export default function AdminPage(): React.ReactElement {
                         )}
 
                         <label style={{ alignSelf: "center", fontWeight: 600 }}>File Name</label>
-                        <input type="text" value={fileName} readOnly style={roStyle} />
+                        <input type="text" value={fileName} readOnly style={fieldCss} />
 
                         <label style={{ alignSelf: "start", fontWeight: 600, paddingTop: 6 }}>MusicXML</label>
                         <textarea
@@ -947,19 +943,15 @@ export default function AdminPage(): React.ReactElement {
                             onChange={(e) => { setXmlPreview(e.target.value); }}
                             spellCheck={false}
                             style={{
+                                ...fieldCss,
                                 width: "100%",
                                 margin: 0,
-                                background: "#fff",
-                                border: "1px solid #ccc",
-                                borderRadius: 6,
-                                padding: "8px 10px",
                                 minHeight: XML_PREVIEW_HEIGHT,
                                 maxHeight: XML_PREVIEW_HEIGHT,
                                 overflow: "auto",
                                 resize: "vertical",
                                 fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
                                 fontSize: 13,
-                                color: "#000",
                                 lineHeight: 1.4,
                             }}
                         />
