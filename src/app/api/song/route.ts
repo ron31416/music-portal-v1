@@ -3,23 +3,53 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 import { NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
-import { Buffer } from "node:buffer";
 import type { NextRequest } from "next/server";
+import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { SONG_COL } from "@/lib/songCols";
+import { Buffer } from "node:buffer";
+import { z } from "zod";
+
+/* =========================
+   Response helpers / types
+   ========================= */
+
+type OkResponse = { ok: true; song_id: number | null };
+type ErrResponse = { ok: false; error: string; message?: string };
+
+function ok(body: OkResponse, status = 200): NextResponse<OkResponse> {
+    return NextResponse.json<OkResponse>(body, { status });
+}
+function err(message: string, status = 400, extra?: { message?: string }): NextResponse<ErrResponse> {
+    return NextResponse.json<ErrResponse>({ ok: false, error: message, ...(extra ?? {}) }, { status });
+}
+
+/* =========================
+   Validation
+   - We read incoming fields via SONG_COL keys,
+     then validate a canonical object with Zod.
+   ========================= */
+
+const CanonicalSaveSchema = z.object({
+    song_id: z.number().int().positive().optional(),
+    song_title: z.string().trim().min(1, "song_title is required"),
+    composer_first_name: z.string().trim().min(1, "composer_first_name is required"),
+    composer_last_name: z.string().trim().min(1, "composer_last_name is required"),
+    // Your DB function expects a NUMBER, not a name:
+    skill_level_number: z.number().int().positive({ message: "skill_level_number must be a positive integer" }),
+    file_name: z.string().trim().min(1, "file_name is required"),
+    // Base64 of the .mxl zip; required on create, optional on pure metadata update.
+    mxl_base64: z.string().trim().min(1, "mxl_base64 is required"),
+});
+
+type CanonicalSaveInput = z.infer<typeof CanonicalSaveSchema>;
+
+/* =========================
+   Small guards
+   ========================= */
 
 function isObjectRecord(x: unknown): x is Record<string, unknown> {
     return typeof x === "object" && x !== null;
 }
-
-function isNonEmptyString(v: unknown): v is string {
-    return typeof v === "string" && v.trim().length > 0;
-}
-
-function isPositiveInt(v: unknown): v is number {
-    return typeof v === "number" && Number.isInteger(v) && v > 0;
-}
-
 function isZipMagic(u8: Uint8Array): boolean {
     return (
         u8.length >= 4 &&
@@ -29,127 +59,104 @@ function isZipMagic(u8: Uint8Array): boolean {
         (u8[3] === 0x04 || u8[3] === 0x06 || u8[3] === 0x08)
     );
 }
+function base64ToByteaHex(b64: string): string {
+    const norm = b64.replace(/\s+/g, "");
+    const u8 = new Uint8Array(Buffer.from(norm, "base64"));
+    if (!isZipMagic(u8)) {
+        throw new Error("payload_not_mxl_zip");
+    }
+    return "\\x" + Buffer.from(u8).toString("hex");
+}
 
-// ---- POST /api/song  (create/update a song) ----
-export async function POST(req: Request) {
+/* =========================
+   POST /api/song  (create/update a song)
+   Uses your RPC: song_upsert(p_*), returns integer song_id
+   ========================= */
+
+export async function POST(req: Request): Promise<NextResponse<OkResponse | ErrResponse>> {
     try {
         const raw = (await req.json()) as unknown;
-
         if (!isObjectRecord(raw)) {
-            return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+            return err("Invalid JSON body", 400);
         }
 
-        // Minimal shape checks without hard-coding a big REQUIRED_KEYS array
-        const title = raw[SONG_COL.songTitle];
-        const compFirst = raw[SONG_COL.composerFirstName];
-        const compLast = raw[SONG_COL.composerLastName];
-        const levelNum = raw[SONG_COL.skillLevelNumber];
-        const fileName = raw[SONG_COL.fileName];
-        const mxlB64 = raw[SONG_COL.songMxl];
+        // Map from your column constants to a canonical object we can validate.
+        const candidate: CanonicalSaveInput = {
+            song_id: (() => {
+                const v = raw[SONG_COL.songId];
+                if (typeof v === "number" && Number.isInteger(v) && v > 0) { return v; }
+                if (typeof v === "string" && /^\d+$/.test(v)) {
+                    const n = Number(v);
+                    if (Number.isInteger(n) && n > 0) { return n; }
+                }
+                return undefined;
+            })(),
+            song_title: String(raw[SONG_COL.songTitle] ?? ""),
+            composer_first_name: String(raw[SONG_COL.composerFirstName] ?? ""),
+            composer_last_name: String(raw[SONG_COL.composerLastName] ?? ""),
+            // DB expects NUMBER, not name:
+            skill_level_number: Number(raw[SONG_COL.skillLevelNumber]),
+            file_name: String(raw[SONG_COL.fileName] ?? ""),
+            mxl_base64: String(raw[SONG_COL.songMxl] ?? ""),
+        };
 
-        const idRaw = (raw as Record<string, unknown>)[SONG_COL.songId];
-        let editSongId: number | null = null;
-        if (typeof idRaw === "number" && Number.isInteger(idRaw) && idRaw > 0) {
-            editSongId = idRaw;
-        } else if (typeof idRaw === "string" && /^\d+$/.test(idRaw)) {
-            const n = Number(idRaw);
-            if (Number.isInteger(n) && n > 0) { editSongId = n; }
+        const parsed = CanonicalSaveSchema.safeParse(candidate);
+        if (!parsed.success) {
+            const first = parsed.error.issues[0];
+            return err(first?.message ?? "Invalid request body", 400);
         }
+        const input = parsed.data;
 
-        if (!isNonEmptyString(title)) {
-            return NextResponse.json({ error: "Song Title is required" }, { status: 400 });
-        }
-        if (!isNonEmptyString(compFirst)) {
-            return NextResponse.json({ error: "Composer First Name is required" }, { status: 400 });
-        }
-        if (!isNonEmptyString(compLast)) {
-            return NextResponse.json({ error: "Composer Last Name is required" }, { status: 400 });
-        }
-        if (!isPositiveInt(levelNum)) {
-            return NextResponse.json({ error: "Skill Level is required" }, { status: 400 });
-        }
-        if (!isNonEmptyString(fileName)) {
-            return NextResponse.json({ error: "File Name is required" }, { status: 400 });
-        }
-        if (!isNonEmptyString(mxlB64)) {
-            return NextResponse.json({ error: "MusicXML is required" }, { status: 400 }); // ← message matches canonical key
-        }
-
-        // Decode base64 → bytes, validate ZIP, then convert to Postgres bytea hex literal (\x...)
-        let mxlHex: string;
+        // Convert base64 to Postgres bytea hex literal
+        let mxlHex: string | null = null;
         try {
-            const buf = Buffer.from(mxlB64, "base64");
-            const u8 = new Uint8Array(buf);
-
-            if (!isZipMagic(u8)) {
-                return NextResponse.json(
-                    { error: "payload_not_mxl_zip", message: "Song bytes must be compressed .mxl (ZIP) format." },
-                    { status: 400 }
-                );
+            mxlHex = base64ToByteaHex(input.mxl_base64);
+        } catch (e) {
+            if (e instanceof Error && e.message === "payload_not_mxl_zip") {
+                return err("payload_not_mxl_zip", 400, { message: "Song bytes must be compressed .mxl (ZIP) format." });
             }
-
-            mxlHex = "\\x" + Buffer.from(u8).toString("hex");
-        } catch {
-            return NextResponse.json(
-                { error: "invalid_base64", message: "song_mxl_base64 is not valid base64." },
-                { status: 400 }
-            );
+            return err("invalid_base64", 400, { message: "mxl_base64 is not valid base64." });
         }
 
-        // Upsert with only unavoidable column names; uniqueness is handled by DB
+        // RPC to your actual function + argument names
         const { data, error } = await supabaseAdmin.rpc("song_upsert", {
-            p_song_id: editSongId,                 // null for new, id for update
-            p_song_title: String(title),
-            p_composer_first_name: String(compFirst),
-            p_composer_last_name: String(compLast),
-            p_skill_level_number: Number(levelNum),
-            p_file_name: String(fileName),
-            p_song_mxl: mxlHex                     // bytea hex literal
+            p_song_id: input.song_id ?? null,
+            p_song_title: input.song_title,
+            p_composer_first_name: input.composer_first_name,
+            p_composer_last_name: input.composer_last_name,
+            p_skill_level_number: input.skill_level_number,
+            p_file_name: input.file_name,
+            p_song_mxl: mxlHex, // bytea hex literal
         });
 
         if (error) {
-            // Unique violation (file_name OR composite natural key)
             if (error.code === "23505") {
-                return NextResponse.json(
-                    {
-                        error: "conflict",
-                        message: "A song with the same file name or (title, composer, level) already exists."
-                    },
-                    { status: 409 }
-                );
+                return err("conflict", 409, { message: "A song with the same file name or (title, composer, level) already exists." });
             }
-            // No row found on update path (our function raises P0002)
             if (error.code === "P0002") {
-                return NextResponse.json(
-                    { error: "not_found", message: "song_id not found for update." },
-                    { status: 404 }
-                );
+                return err("not_found", 404, { message: "song_id not found for update." });
             }
-            return NextResponse.json(
-                { error: error.message ?? "RPC song_upsert failed" },
-                { status: 500 }
-            );
+            return err(error.message ?? "RPC song_upsert failed", 500);
         }
 
-        // Function returns the effective song_id (integer)
-        const newId = typeof data === "number" ? data : null;
-
-        return NextResponse.json({ ok: true, song_id: newId }, { status: 200 });
-
-        return NextResponse.json({ ok: true, song_id: data?.song_id }, { status: 200 });
+        const songId = typeof data === "number" ? data : null;
+        return ok({ ok: true, song_id: songId }, 200);
     } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
-        return NextResponse.json({ error: msg }, { status: 500 });
+        return err(msg, 500);
     }
 }
 
-// ---- GET /api/song  (list songs; server-owned ordering via DB function) ----
+/* =========================
+   GET /api/song  (list songs; DB decides columns/order)
+   (Kept as-is; standardize later if you want)
+   ========================= */
+
 export async function GET(req: NextRequest): Promise<Response> {
     try {
         const url = new URL(req.url);
 
-        // Pass-through of tokens only; no hard-coded column lists here
-        const sort = url.searchParams.get("sort") ?? null; // e.g. "composer_last_name"
+        const sort = url.searchParams.get("sort") ?? null;
         const dirRaw = (url.searchParams.get("dir") ?? "").toLowerCase();
         const dir = dirRaw === "desc" ? "desc" : "asc";
 
@@ -161,7 +168,6 @@ export async function GET(req: NextRequest): Promise<Response> {
         const offsetNum = Number(offsetParam);
         const offset = Number.isFinite(offsetNum) ? Math.max(offsetNum, 0) : 0;
 
-        // Delegate ordering & column choice to the DB function
         const { data, error } = await supabaseAdmin.rpc("song_list", {
             p_sort_column: sort ?? undefined,
             p_sort_direction: dir,
