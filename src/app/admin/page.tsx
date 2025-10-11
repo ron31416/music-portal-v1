@@ -24,7 +24,7 @@ const TABLE_ROW_BG_ODD = "#141414";     // zebra odd
 const TABLE_ROW_FG = "#e6e6e6";     // body text
 
 // Fixed grid column widths (Admin list: Last | First | Title | Level | File)
-const GRID_COLS = "170px 170px 380px 110px 260px" as const;
+const GRID_COLS = "160px 160px 360px 100px 240px" as const;
 
 type SaveResponse = {
     ok?: boolean;
@@ -733,7 +733,7 @@ export default function AdminPage(): React.ReactElement {
                         style={{
                             border: `1px solid ${TABLE_BORDER}`,
                             borderRadius: 6,
-                            overflowX: "auto",
+                            overflowX: "hidden",
                             overflowY: "hidden",
                             background: "#0b0b0b",
                         }}
@@ -838,7 +838,7 @@ export default function AdminPage(): React.ReactElement {
             </section>
 
             {/* ===== LOAD FILE BUTTON (BELOW GRID, RIGHT-ALIGNED) ===== */}
-            <section aria-label="actions" style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
+            <section aria-label="actions" style={{ display: "flex", justifyContent: "flex-end", marginTop: 6 }}>
                 <input
                     ref={fileInputRef}
                     id="song-file-input"
@@ -865,7 +865,7 @@ export default function AdminPage(): React.ReactElement {
             </section>
 
             {/* ===== EDIT PANEL (ALWAYS VISIBLE, BELOW GRID) ===== */}
-            <section aria-labelledby="edit-song-h" style={{ marginTop: 16 }}>
+            <section aria-labelledby="edit-song-h" style={{ marginTop: 8 }}>
                 <h2
                     id="edit-song-h"
                     style={{
