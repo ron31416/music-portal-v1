@@ -64,17 +64,16 @@ export default function SongListPanel(): React.ReactElement {
         function measure(): void {
             const el = scrollRef.current;
             if (el === null) { return; }
-            // scrollbars only appear on the inner scroller; offsetWidth - clientWidth = scrollbar width (if present)
+            // Measure actual scrollbar width; if there is no overflow, this should be 0.
             const width = Math.max(0, el.offsetWidth - el.clientWidth);
             setScrollbarPx(width);
         }
 
-        // Measure now (after rows render), and on window resize.
-        // Using rAF to ensure layout has settled.
+        // Measure after mount/render and on resize.
         const raf = requestAnimationFrame(() => { measure(); });
         window.addEventListener("resize", measure);
 
-        // Also observe size changes on the scroll container itself (safer across browsers)
+        // Observe the scroll container itself, in case its box changes.
         let ro: ResizeObserver | null = null;
         if (typeof ResizeObserver !== "undefined") {
             ro = new ResizeObserver(() => { measure(); });
@@ -86,7 +85,7 @@ export default function SongListPanel(): React.ReactElement {
             window.removeEventListener("resize", measure);
             if (ro !== null) { ro.disconnect(); }
         };
-        // Re-measure whenever row content changes (can add/remove the vertical scrollbar)
+        // Re-measure when rows change (overflow may start/stop).
     }, [rows]);
 
     const fetchList = React.useCallback(async (token: SongColToken | null, dir: SortDir) => {
@@ -192,10 +191,11 @@ export default function SongListPanel(): React.ReactElement {
                     ref={scrollRef}
                     style={{
                         height: TABLE_BODY_PX,
-                        overflow: "auto",
+                        // Show scrollbar only when content exceeds the viewport.
+                        overflowX: "hidden",
+                        overflowY: "auto",
                         background: "#fff",
-                        // Helps some browsers keep space for the vertical scrollbar (prevents column drift)
-                        scrollbarGutter: "stable",
+                        // No reserved gutter; header alignment handled by measured scrollbarPx.
                         boxSizing: "border-box",
                     }}
                 >
