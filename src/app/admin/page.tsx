@@ -6,8 +6,9 @@ import { SONG_COL, type SongColToken } from "@/lib/songCols";
 
 // --- Config ---
 
-const SAVE_ENDPOINT = "/api/song"; // posts to app/api/song/route.ts
-const XML_PREVIEW_HEIGHT = 420;    // adjust MusicXML textarea height
+const SAVE_ENDPOINT = "/api/song";
+const SONG_LIST_ENDPOINT = "/api/songlist";
+const XML_PREVIEW_HEIGHT = 420;
 
 type SaveResponse = {
     ok?: boolean;
@@ -217,18 +218,19 @@ const roStyle: React.CSSProperties = {
 // --- Component ---
 
 export default function AdminPage(): React.ReactElement {
+    // File / edit state
     const [file, setFile] = React.useState<File | null>(null);
     const [parsing, setParsing] = React.useState(false);
     const [error, setError] = React.useState("");
     const [saving, setSaving] = React.useState(false);
     const [saveOk, setSaveOk] = React.useState("");
 
-    // Load Song list state
-    const [showList, setShowList] = React.useState(false);
+    // Song list state (inline, always visible)
+    const [songs, setSongs] = React.useState<SongListItem[]>([]);
     const [listLoading, setListLoading] = React.useState(false);
     const [listError, setListError] = React.useState("");
-    const [songs, setSongs] = React.useState<SongListItem[]>([]);
-    // Server sorting only: no default token (DB will default to composer)
+
+    // Server sorting only
     const [sort, setSort] = React.useState<SongColToken | null>(null);
     const [sortDir, setSortDir] = React.useState<SortDir>("asc");
 
@@ -246,11 +248,13 @@ export default function AdminPage(): React.ReactElement {
     const [songId, setSongId] = React.useState<number | null>(null);
 
     const fileInputRef = React.useRef<HTMLInputElement>(null);
-
     const listAbortRef = React.useRef<AbortController | null>(null);
     const listSeqRef = React.useRef(0);
     const mxlAbortRef = React.useRef<AbortController | null>(null);
     const mxlSeqRef = React.useRef(0);
+
+    // Fast lookup for duplicates: file_name -> song_id (exact, case-sensitive)
+    const fileNameToIdRef = React.useRef<Map<string, number>>(new Map());
 
     // fetch skill levels once (do NOT default-select)
     React.useEffect(() => {
@@ -301,7 +305,9 @@ export default function AdminPage(): React.ReactElement {
         };
     }, []);
 
-    React.useEffect((): (() => void) => {
+    // fetch list on mount
+    React.useEffect(() => {
+        void refreshSongList();
         return () => {
             if (listAbortRef.current !== null) {
                 listAbortRef.current.abort();
@@ -310,28 +316,181 @@ export default function AdminPage(): React.ReactElement {
                 mxlAbortRef.current.abort();
             }
         };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    React.useEffect(() => {
-        if (!showList) {
-            return;
-        }
+    async function refreshSongList(overrideSort?: SongColToken | null, overrideDir?: SortDir): Promise<void> {
+        setListError("");
+        setListLoading(true);
 
-        function onKey(e: KeyboardEvent): void {
-            if (e.key === "Escape") {
-                setShowList(false);
+        if (listAbortRef.current !== null) {
+            listAbortRef.current.abort();
+        }
+        const controller = new AbortController();
+        listAbortRef.current = controller;
+        const seq = listSeqRef.current + 1;
+        listSeqRef.current = seq;
+
+        try {
+            const params = new URLSearchParams();
+            params.set("limit", "5000"); // generous ceiling
+            const effSort = overrideSort ?? sort;
+            const effDir: SortDir = overrideDir ?? sortDir;
+
+            if (effSort !== null) {
+                params.set("sort", effSort);
+                params.set("dir", effDir);
+            }
+
+            const res = await fetch(`${SONG_LIST_ENDPOINT}?${params.toString()}`, {
+                cache: "no-store",
+                signal: controller.signal,
+            });
+            if (!res.ok) {
+                throw new Error(`HTTP ${res.status}`);
+            }
+            const json = (await res.json()) as unknown;
+
+            if (seq !== listSeqRef.current) {
+                return; // stale
+            }
+
+            const items = (json && typeof json === "object" ? (json as Record<string, unknown>).items : []) as unknown;
+
+            const cast: SongListItem[] = [];
+            if (Array.isArray(items)) {
+                for (const it of items) {
+                    if (it && typeof it === "object") {
+                        const r = it as Record<string, unknown>;
+                        const id = r.song_id;
+                        if (typeof id === "number" && Number.isFinite(id)) {
+                            cast.push({
+                                song_id: id,
+                                song_title: String(r.song_title ?? ""),
+                                composer_first_name: String(r.composer_first_name ?? ""),
+                                composer_last_name: String(r.composer_last_name ?? ""),
+                                skill_level_name: String(r.skill_level_name ?? ""),
+                                skill_level_number: Number(r.skill_level_number ?? 0),
+                                file_name: String(r.file_name ?? ""),
+                                inserted_datetime: String(r.inserted_datetime ?? ""),
+                                updated_datetime: String(r.updated_datetime ?? ""),
+                            });
+                        }
+                    }
+                }
+            }
+            setSongs(cast);
+
+            // rebuild exact filename map
+            const m = new Map<string, number>();
+            for (const row of cast) {
+                if (row.file_name && typeof row.song_id === "number") {
+                    m.set(row.file_name, row.song_id);
+                }
+            }
+            fileNameToIdRef.current = m;
+        } catch (e: unknown) {
+            const name = (e as { name?: string } | null)?.name ?? "";
+            if (name === "AbortError") {
+                return;
+            }
+            setListError(e instanceof Error ? e.message : String(e));
+            setSongs([]);
+            fileNameToIdRef.current = new Map();
+        } finally {
+            if (seq === listSeqRef.current) {
+                setListLoading(false);
             }
         }
-        document.addEventListener("keydown", onKey);
+    }
 
-        const prevOverflow = document.body.style.overflow;
-        document.body.style.overflow = "hidden";
+    const toggleSort = (key: SongColToken): void => {
+        const nextDir: SortDir = (sort === key) ? (sortDir === "asc" ? "desc" : "asc") : "asc";
+        setSort(key);
+        setSortDir(nextDir);
+        void refreshSongList(key, nextDir);
+    };
 
-        return () => {
-            document.removeEventListener("keydown", onKey);
-            document.body.style.overflow = prevOverflow;
-        };
-    }, [showList]);
+    const loadSongRow = async (item: SongListItem): Promise<void> => {
+        try {
+            setError("");
+            setSaveOk("");
+            setSongId(item.song_id);
+
+            if (mxlAbortRef.current !== null) {
+                mxlAbortRef.current.abort();
+            }
+            const controller = new AbortController();
+            mxlAbortRef.current = controller;
+            const seq = mxlSeqRef.current + 1;
+            mxlSeqRef.current = seq;
+
+            setTitle(item.song_title || "");
+            setComposerFirst(item.composer_first_name || "");
+            setComposerLast(item.composer_last_name || "");
+            setLevel(item.skill_level_number ? String(item.skill_level_number) : "");
+            setFileName(item.file_name || "");
+
+            const res = await fetch(`/api/song/${item.song_id}/mxl`, { cache: "no-store", signal: controller.signal });
+            if (!res.ok) {
+                const ct = res.headers.get("content-type") || "";
+                let detail = `HTTP ${res.status}`;
+                if (ct.includes("application/json")) {
+                    try {
+                        const j = await res.json();
+                        const msg = (j && typeof j === "object" ? (j as Record<string, unknown>).message : "") as unknown;
+                        if (typeof msg === "string" && msg.trim().length > 0) {
+                            detail = msg;
+                        }
+                    } catch {
+                        // ignore json parse
+                    }
+                } else if (ct.startsWith("text/")) {
+                    try {
+                        const t = await res.text();
+                        if (t) {
+                            detail = t.slice(0, 200);
+                        }
+                    } catch {
+                        // ignore text read
+                    }
+                }
+                throw new Error(`Fetch file failed: ${detail}`);
+            }
+
+            const blob = await res.blob();
+            if (seq !== mxlSeqRef.current) {
+                return; // ignore stale
+            }
+
+            const ct = res.headers.get("content-type") || "";
+            const isMxlByCt = ct.includes("musicxml+zip");
+            const isXmlByCt = ct.includes("musicxml+xml") && !isMxlByCt;
+
+            const lower = (item.file_name || "").toLowerCase();
+            const isMxlByName = lower.endsWith(".mxl") || lower.endsWith(".zip");
+            const isXmlByName = lower.endsWith(".musicxml") || lower.endsWith(".xml");
+
+            const isMxl = isMxlByCt || isMxlByName;
+            const isXml = (!isMxl) && (isXmlByCt || isXmlByName);
+
+            const type = ct || (isMxl ? "application/vnd.recordare.musicxml+zip" : "application/vnd.recordare.musicxml+xml");
+            const f = new File([blob], item.file_name || (isMxl ? "song.mxl" : "song.musicxml"), { type });
+
+            setFile(f);
+            const meta = await extractMetadataAndXml(f, { isMxl, isXml });
+            if (seq !== mxlSeqRef.current) {
+                return; // ignore stale
+            }
+            setXmlPreview(meta.xmlText || "");
+        } catch (e: unknown) {
+            const name = (e as { name?: string } | null)?.name ?? "";
+            if (name === "AbortError") {
+                return;
+            }
+            setError(e instanceof Error ? e.message : String(e));
+        }
+    };
 
     const onPick: React.ChangeEventHandler<HTMLInputElement> = async (e) => {
         setError("");
@@ -347,6 +506,17 @@ export default function AdminPage(): React.ReactElement {
 
         const f = e.target.files?.[0] ?? null;
         if (!f) {
+            setFile(null);
+            return;
+        }
+
+        // Duplicate check using in-memory map (exact, case-sensitive)
+        const existingId = fileNameToIdRef.current.get(f.name);
+        if (typeof existingId === "number") {
+            window.alert(`This file has already been loaded (song_id=${existingId}).`);
+            if (fileInputRef.current) {
+                fileInputRef.current.value = "";
+            }
             setFile(null);
             return;
         }
@@ -515,6 +685,14 @@ export default function AdminPage(): React.ReactElement {
             }
 
             setSaveOk("Saved");
+
+            // Reset input so the same file selection can trigger again if needed
+            if (fileInputRef.current) {
+                fileInputRef.current.value = "";
+            }
+
+            // Refresh list so the new row appears and the duplicate map is updated
+            await refreshSongList();
         } catch (err) {
             setError(err instanceof Error ? err.message : String(err));
         } finally {
@@ -522,201 +700,13 @@ export default function AdminPage(): React.ReactElement {
         }
     };
 
-    // ---- Admin Modal List (server-sorted) ----
-    const openList = async (overrideSort?: SongColToken, overrideDir?: SortDir): Promise<void> => {
-        setShowList(true);
-        setListError("");
-        setListLoading(true);
-
-        // abort any in-flight list fetch
-        if (listAbortRef.current !== null) {
-            listAbortRef.current.abort();
-        }
-        const controller = new AbortController();
-        listAbortRef.current = controller;
-        const seq = listSeqRef.current + 1;
-        listSeqRef.current = seq;
-
-        try {
-            const params = new URLSearchParams();
-            params.set("limit", "1000");
-
-            const effSort: SongColToken | null = overrideSort ?? sort;
-            const effDir: SortDir = overrideDir ?? sortDir;
-
-            if (effSort !== null) {
-                params.set("sort", effSort);
-                params.set("dir", effDir);
-            }
-
-            const res = await fetch(`/api/songlist?${params.toString()}`, {
-                cache: "no-store",
-                signal: controller.signal,
-            });
-            if (!res.ok) {
-                throw new Error(`HTTP ${res.status}`);
-            }
-
-            const json = (await res.json()) as unknown;
-
-            // ignore stale responses
-            if (seq !== listSeqRef.current) {
-                return;
-            }
-
-            const items = (json && typeof json === "object" ? (json as Record<string, unknown>).items : []) as unknown;
-            if (Array.isArray(items)) {
-                const cast: SongListItem[] = [];
-                for (const it of items) {
-                    if (it && typeof it === "object") {
-                        const r = it as Record<string, unknown>;
-                        const id = r.song_id;
-                        if (typeof id === "number" && Number.isFinite(id)) {
-                            cast.push({
-                                song_id: id,
-                                song_title: String(r.song_title ?? ""),
-                                composer_first_name: String(r.composer_first_name ?? ""),
-                                composer_last_name: String(r.composer_last_name ?? ""),
-                                skill_level_name: String(r.skill_level_name ?? ""),
-                                skill_level_number: Number(r.skill_level_number ?? 0),
-                                file_name: String(r.file_name ?? ""),
-                                inserted_datetime: String(r.inserted_datetime ?? ""),
-                                updated_datetime: String(r.updated_datetime ?? ""),
-                            });
-                        }
-                    }
-                }
-                setSongs(cast);
-            } else {
-                setSongs([]);
-            }
-        } catch (e: unknown) {
-            // swallow AbortError; otherwise surface
-            const name = (e as { name?: string } | null)?.name ?? "";
-            if (name === "AbortError") {
-                return;
-            }
-            setListError(e instanceof Error ? e.message : String(e));
-            setSongs([]);
-        } finally {
-            if (seq === listSeqRef.current) {
-                setListLoading(false);
-            }
-        }
-    };
-
-    const toggleSort = (key: SongColToken): void => {
-        const nextDir: SortDir = (sort === key) ? (sortDir === "asc" ? "desc" : "asc") : "asc";
-        setSort(key);
-        setSortDir(() => nextDir);
-        void openList(key, nextDir);
-    };
-
-    const loadSongRow = async (item: SongListItem): Promise<void> => {
-        try {
-            setError("");
-            setSaveOk("");
-            setSongId(item.song_id);
-
-            // abort any in-flight mxl fetch
-            if (mxlAbortRef.current !== null) {
-                mxlAbortRef.current.abort();
-            }
-            const controller = new AbortController();
-            mxlAbortRef.current = controller;
-            const seq = mxlSeqRef.current + 1;
-            mxlSeqRef.current = seq;
-
-            setTitle(item.song_title || "");
-            setComposerFirst(item.composer_first_name || "");
-            setComposerLast(item.composer_last_name || "");
-            setLevel(item.skill_level_number ? String(item.skill_level_number) : "");
-            setFileName(item.file_name || "");
-
-            const res = await fetch(`/api/song/${item.song_id}/mxl`, { cache: "no-store", signal: controller.signal });
-            if (!res.ok) {
-                const ct = res.headers.get("content-type") || "";
-                let detail = `HTTP ${res.status}`;
-                if (ct.includes("application/json")) {
-                    try {
-                        const j = await res.json();
-                        const msg = (j && typeof j === "object" ? (j as Record<string, unknown>).message : "") as unknown;
-                        if (typeof msg === "string" && msg.trim().length > 0) {
-                            detail = msg;
-                        }
-                    } catch {
-                        // ignore json parse
-                    }
-                } else if (ct.startsWith("text/")) {
-                    try {
-                        const t = await res.text();
-                        if (t) {
-                            detail = t.slice(0, 200);
-                        }
-                    } catch {
-                        // ignore text read
-                    }
-                }
-                throw new Error(`Fetch file failed: ${detail}`);
-            }
-
-            const blob = await res.blob();
-            if (seq !== mxlSeqRef.current) {
-                return; // ignore stale
-            }
-
-            const ct = res.headers.get("content-type") || "";
-            const isMxlByCt = ct.includes("musicxml+zip");
-            const isXmlByCt = ct.includes("musicxml+xml") && !isMxlByCt;
-
-            const lower = (item.file_name || "").toLowerCase();
-            const isMxlByName = lower.endsWith(".mxl") || lower.endsWith(".zip");
-            const isXmlByName = lower.endsWith(".musicxml") || lower.endsWith(".xml");
-
-            const isMxl = isMxlByCt || isMxlByName;
-            const isXml = (!isMxl) && (isXmlByCt || isXmlByName);
-
-            const type = ct || (isMxl ? "application/vnd.recordare.musicxml+zip" : "application/vnd.recordare.musicxml+xml");
-            const f = new File([blob], item.file_name || (isMxl ? "song.mxl" : "song.musicxml"), { type });
-
-            setFile(f);
-            const meta = await extractMetadataAndXml(f, { isMxl, isXml });
-            if (seq !== mxlSeqRef.current) {
-                return; // ignore stale
-            }
-            setXmlPreview(meta.xmlText || "");
-            setShowList(false);
-        } catch (e: unknown) {
-            const name = (e as { name?: string } | null)?.name ?? "";
-            if (name === "AbortError") {
-                return;
-            }
-            setError(e instanceof Error ? e.message : String(e));
-        }
-    };
-
     return (
         <main style={{ maxWidth: 860, margin: "40px auto", padding: "0 16px" }}>
-            {/* Top bar: Load button */}
-            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
-                <button
-                    type="button"
-                    onClick={() => {
-                        void openList();
-                    }}
-                    style={{
-                        padding: "8px 12px",
-                        border: "1px solid #aaa",
-                        borderRadius: 6,
-                        background: "#fafafa",
-                        cursor: "pointer",
-                        color: "#111",
-                    }}
-                >
-                    Load Song
-                </button>
+            {/* Top: Load File UI (always visible) */}
+            <section className="space-y-2" aria-labelledby="load-file-h">
+                <h2 id="load-file-h" style={{ marginTop: 0, fontSize: 18, fontWeight: 600 }}>Load File</h2>
 
-                <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 12 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                     <input
                         ref={fileInputRef}
                         id="song-file-input"
@@ -745,289 +735,235 @@ export default function AdminPage(): React.ReactElement {
                     </button>
                     {parsing && (<span aria-live="polite" style={{ alignSelf: "center" }}>Parsing…</span>)}
                 </div>
-            </div>
 
-            {/* Card only after a file is selected */}
-            {(file || xmlPreview || title || composerFirst || composerLast || level) && (
-                <section aria-labelledby="add-song-h">
-                    <h2
-                        id="add-song-h"
-                        style={{
-                            position: "absolute",
-                            width: 1, height: 1, padding: 0, margin: -1, overflow: "hidden",
-                            clip: "rect(0 0 0 0)", whiteSpace: "nowrap", border: 0,
-                        }}
-                    >
-                        Add song
-                    </h2>
-
-                    <div style={{ padding: 16, border: "1px solid #ddd", borderRadius: 8, background: "#fff", color: "#000" }}>
-                        <div
+                {/* Card only after a file is selected / fields populated */}
+                {(file || xmlPreview || title || composerFirst || composerLast || level) && (
+                    <section aria-labelledby="add-song-h">
+                        <h3
+                            id="add-song-h"
                             style={{
-                                marginTop: 0,
-                                display: "grid",
-                                gridTemplateColumns: "120px 1fr",
-                                rowGap: 10,
-                                columnGap: 12,
+                                position: "absolute",
+                                width: 1, height: 1, padding: 0, margin: -1, overflow: "hidden",
+                                clip: "rect(0 0 0 0)", whiteSpace: "nowrap", border: 0,
                             }}
                         >
-                            <label style={{ alignSelf: "center", fontWeight: 600 }}>Song Title</label>
-                            <input
-                                type="text"
-                                value={title}
-                                onChange={(e) => {
-                                    setTitle(e.target.value);
-                                }}
-                                style={roStyle}
-                            />
+                            Add song
+                        </h3>
 
-                            <label style={{ alignSelf: "center", fontWeight: 600 }}>Composer</label>
-                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                        <div style={{ padding: 16, border: "1px solid #ddd", borderRadius: 8, background: "#fff", color: "#000" }}>
+                            <div
+                                style={{
+                                    marginTop: 0,
+                                    display: "grid",
+                                    gridTemplateColumns: "120px 1fr",
+                                    rowGap: 10,
+                                    columnGap: 12,
+                                }}
+                            >
+                                <label style={{ alignSelf: "center", fontWeight: 600 }}>Song Title</label>
                                 <input
                                     type="text"
-                                    value={composerFirst}
+                                    value={title}
                                     onChange={(e) => {
-                                        setComposerFirst(e.target.value);
+                                        setTitle(e.target.value);
                                     }}
-                                    placeholder="First"
                                     style={roStyle}
                                 />
-                                <input
-                                    type="text"
-                                    value={composerLast}
+
+                                <label style={{ alignSelf: "center", fontWeight: 600 }}>Composer</label>
+                                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                                    <input
+                                        type="text"
+                                        value={composerFirst}
+                                        onChange={(e) => {
+                                            setComposerFirst(e.target.value);
+                                        }}
+                                        placeholder="First"
+                                        style={roStyle}
+                                    />
+                                    <input
+                                        type="text"
+                                        value={composerLast}
+                                        onChange={(e) => {
+                                            setComposerLast(e.target.value);
+                                        }}
+                                        placeholder="Last"
+                                        style={roStyle}
+                                    />
+                                </div>
+
+                                <label style={{ alignSelf: "center", fontWeight: 600 }}>Skill Level</label>
+                                <select
+                                    value={level}
                                     onChange={(e) => {
-                                        setComposerLast(e.target.value);
+                                        setLevel(e.target.value);
                                     }}
-                                    placeholder="Last"
-                                    style={roStyle}
-                                />
-                            </div>
-
-                            <label style={{ alignSelf: "center", fontWeight: 600 }}>Skill Level</label>
-                            <select
-                                value={level}
-                                onChange={(e) => {
-                                    setLevel(e.target.value);
-                                }}
-                                disabled={levelsLoading || !!levelsError || levels.length === 0}
-                                style={{ ...roStyle, appearance: "auto" as const }}
-                            >
-                                {/* disabled placeholder so the field starts blank */}
-                                <option value="" disabled>
-                                    — Select a level —
-                                </option>
-                                {levels.map((lvl) => {
-                                    return (
-                                        <option key={lvl.number} value={String(lvl.number)}>
-                                            {lvl.name}
-                                        </option>
-                                    );
-                                })}
-                            </select>
-
-                            {levelsError && (
-                                <div style={{ gridColumn: "1 / span 2", color: "#b00020" }}>
-                                    Failed to load skill levels: {levelsError}
-                                </div>
-                            )}
-
-                            <label style={{ alignSelf: "center", fontWeight: 600 }}>File Name</label>
-                            <input type="text" value={fileName} readOnly style={roStyle} />
-
-                            <label style={{ alignSelf: "start", fontWeight: 600, paddingTop: 6 }}>MusicXML</label>
-                            <textarea
-                                aria-label="XML"
-                                value={xmlPreview}
-                                onChange={(e) => {
-                                    setXmlPreview(e.target.value);
-                                }}
-                                spellCheck={false}
-                                style={{
-                                    width: "100%",
-                                    margin: 0,
-                                    background: "#fff",
-                                    border: "1px solid #ccc",
-                                    borderRadius: 6,
-                                    padding: "8px 10px",
-                                    minHeight: XML_PREVIEW_HEIGHT,
-                                    maxHeight: XML_PREVIEW_HEIGHT,
-                                    overflow: "auto",
-                                    resize: "vertical",
-                                    fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
-                                    fontSize: 13,
-                                    color: "#000",
-                                    lineHeight: 1.4,
-                                }}
-                            />
-                        </div>
-
-                        <div
-                            style={{
-                                marginTop: 16,
-                                display: "flex",
-                                alignItems: "center",
-                                gap: 12,
-                            }}
-                        >
-                            <span
-                                aria-live="polite"
-                                role={error ? "alert" : saveOk ? "status" : undefined}
-                                title={error || saveOk || ""}
-                                style={{
-                                    flex: 1,
-                                    minWidth: 0,
-                                    whiteSpace: "nowrap",
-                                    overflow: "hidden",
-                                    textOverflow: "ellipsis",
-                                    textAlign: "right",
-                                    color: error ? "#b00020" : "#111",
-                                    fontWeight: 500,
-                                    margin: 0,
-                                    visibility: (error || saveOk) ? "visible" : "hidden",
-                                }}
-                            >
-                                {error || saveOk || ""}
-                            </span>
-
-                            <button
-                                type="button"
-                                onClick={onSave}
-                                disabled={saving}
-                                style={{
-                                    padding: "8px 12px",
-                                    border: "1px solid #aaa",
-                                    borderRadius: 6,
-                                    background: saving ? "#eee" : "#fafafa",
-                                    cursor: saving ? "default" : "pointer",
-                                    marginLeft: "auto",
-                                }}
-                            >
-                                {saving ? "Saving…" : "Save Song"}
-                            </button>
-                        </div>
-                    </div>
-                </section>
-            )}
-
-            {showList && (
-                <div
-                    role="dialog"
-                    aria-modal="true"
-                    aria-label="Select a song"
-                    aria-labelledby="admin-song-dialog-h"
-                    onClick={(e) => {
-                        if (e.target === e.currentTarget) {
-                            setShowList(false);
-                        }
-                    }}
-                    style={{
-                        position: "fixed",
-                        inset: 0,
-                        background: "rgba(0,0,0,0.4)",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        padding: 12,
-                        zIndex: 50,
-                    }}
-                >
-                    <div
-                        onClick={(e) => e.stopPropagation()}
-                        style={{
-                            width: "min(860px, 96vw)",
-                            background: "#fff",
-                            color: "#000",
-                            borderRadius: 8,
-                            border: "1px solid #ddd",
-                            padding: 16,
-                            boxShadow: "0 8px 24px rgba(0,0,0,0.25)",
-                        }}
-                    >
-                        {/* Header */}
-                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-                            <h3 style={{ margin: 0, fontSize: 18, fontWeight: 600 }}>Select a Song</h3>
-                            <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        void openList(sort ?? undefined, sortDir);
-                                    }}
-                                    style={{ padding: "6px 10px", border: "1px solid #aaa", borderRadius: 6, background: "#fafafa", cursor: "pointer" }}
+                                    disabled={levelsLoading || !!levelsError || levels.length === 0}
+                                    style={{ ...roStyle, appearance: "auto" as const }}
                                 >
-                                    Refresh
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => setShowList(false)}
-                                    style={{ padding: "6px 10px", border: "1px solid #aaa", borderRadius: 6, background: "#f5f5f5", cursor: "pointer" }}
-                                >
-                                    Close
-                                </button>
-                            </div>
-                        </div>
-
-                        {/* Body */}
-                        {listLoading && <p>Loading…</p>}
-                        {listError && <p style={{ color: "#b00020" }}>Error: {listError}</p>}
-
-                        {!listLoading && !listError && (
-                            <div style={{ border: "1px solid #e5e5e5", borderRadius: 6, overflow: "hidden" }}>
-                                {/* Table header */}
-                                <div
-                                    style={{
-                                        display: "grid",
-                                        gridTemplateColumns: "1.3fr 1.3fr 2fr 1fr 1.3fr", // Last | First | Title | Level | File
-                                        padding: "8px 10px",
-                                        background: "#fafafa",
-                                        borderBottom: "1px solid #e5e5e5",
-                                        fontWeight: 600,
-                                        fontSize: 13,
-                                    }}
-                                >
-                                    <HeaderButton label="Composer Last" sortToken={SONG_COL.composerLastName} curSort={sort} dir={sortDir} onClick={toggleSort} />
-                                    <HeaderButton label="Composer First" sortToken={SONG_COL.composerFirstName} curSort={sort} dir={sortDir} onClick={toggleSort} />
-                                    <HeaderButton label="Song Title" sortToken={SONG_COL.songTitle} curSort={sort} dir={sortDir} onClick={toggleSort} />
-                                    <HeaderButton label="Skill Level" sortToken={SONG_COL.skillLevelNumber} curSort={sort} dir={sortDir} onClick={toggleSort} />
-                                    <HeaderButton label="File Name" sortToken={SONG_COL.fileName} curSort={sort} dir={sortDir} onClick={toggleSort} />
-                                </div>
-
-                                {/* Table rows */}
-                                <div style={{ maxHeight: 420, overflow: "auto" }} aria-busy={listLoading}>
-                                    {songs.map((r) => {
+                                    <option value="" disabled>
+                                        — Select a level —
+                                    </option>
+                                    {levels.map((lvl) => {
                                         return (
-                                            <div
-                                                key={r.song_id}
-                                                onClick={() => { void loadSongRow(r); }}
-                                                onKeyDown={(e: React.KeyboardEvent<HTMLDivElement>) => {
-                                                    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); void loadSongRow(r); }
-                                                }}
-                                                role="button"
-                                                tabIndex={0}
-                                                style={{
-                                                    display: "grid",
-                                                    gridTemplateColumns: "1.3fr 1.3fr 2fr 1fr 1.3fr", // Last | First | Title | Level | File
-                                                    padding: "8px 10px",
-                                                    borderBottom: "1px solid #f0f0f0",
-                                                    fontSize: 13,
-                                                    alignItems: "center",
-                                                    cursor: "pointer",
-                                                }}
-                                            >
-                                                <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.composer_last_name || "\u2014"}</div>
-                                                <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.composer_first_name || "\u2014"}</div>
-                                                <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.song_title}</div>
-                                                <div>{r.skill_level_name}</div>
-                                                <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.file_name || "\u2014"}</div>
-                                            </div>
+                                            <option key={lvl.number} value={String(lvl.number)}>
+                                                {lvl.name}
+                                            </option>
                                         );
                                     })}
-                                    {songs.length === 0 && <div style={{ padding: 12, fontSize: 13 }}>No songs found.</div>}
-                                </div>
+                                </select>
+
+                                {levelsError && (
+                                    <div style={{ gridColumn: "1 / span 2", color: "#b00020" }}>
+                                        Failed to load skill levels: {levelsError}
+                                    </div>
+                                )}
+
+                                <label style={{ alignSelf: "center", fontWeight: 600 }}>File Name</label>
+                                <input type="text" value={fileName} readOnly style={roStyle} />
+
+                                <label style={{ alignSelf: "start", fontWeight: 600, paddingTop: 6 }}>MusicXML</label>
+                                <textarea
+                                    aria-label="XML"
+                                    value={xmlPreview}
+                                    onChange={(e) => {
+                                        setXmlPreview(e.target.value);
+                                    }}
+                                    spellCheck={false}
+                                    style={{
+                                        width: "100%",
+                                        margin: 0,
+                                        background: "#fff",
+                                        border: "1px solid #ccc",
+                                        borderRadius: 6,
+                                        padding: "8px 10px",
+                                        minHeight: XML_PREVIEW_HEIGHT,
+                                        maxHeight: XML_PREVIEW_HEIGHT,
+                                        overflow: "auto",
+                                        resize: "vertical",
+                                        fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+                                        fontSize: 13,
+                                        color: "#000",
+                                        lineHeight: 1.4,
+                                    }}
+                                />
                             </div>
-                        )}
+
+                            <div
+                                style={{
+                                    marginTop: 16,
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: 12,
+                                }}
+                            >
+                                <span
+                                    aria-live="polite"
+                                    role={error ? "alert" : saveOk ? "status" : undefined}
+                                    title={error || saveOk || ""}
+                                    style={{
+                                        flex: 1,
+                                        minWidth: 0,
+                                        whiteSpace: "nowrap",
+                                        overflow: "hidden",
+                                        textOverflow: "ellipsis",
+                                        textAlign: "right",
+                                        color: error ? "#b00020" : "#111",
+                                        fontWeight: 500,
+                                        margin: 0,
+                                        visibility: (error || saveOk) ? "visible" : "hidden",
+                                    }}
+                                >
+                                    {error || saveOk || ""}
+                                </span>
+
+                                <button
+                                    type="button"
+                                    onClick={onSave}
+                                    disabled={saving}
+                                    style={{
+                                        padding: "8px 12px",
+                                        border: "1px solid #aaa",
+                                        borderRadius: 6,
+                                        background: saving ? "#eee" : "#fafafa",
+                                        cursor: saving ? "default" : "pointer",
+                                        marginLeft: "auto",
+                                    }}
+                                >
+                                    {saving ? "Saving…" : "Save Song"}
+                                </button>
+                            </div>
+                        </div>
+                    </section>
+                )}
+            </section>
+
+            {/* Inline song list (always visible) */}
+            <section className="space-y-2" aria-labelledby="songs-h" style={{ marginTop: 24 }}>
+                <h2 id="songs-h" style={{ marginTop: 0, fontSize: 18, fontWeight: 600 }}>Songs</h2>
+
+                {listLoading && <p>Loading…</p>}
+                {listError && <p style={{ color: "#b00020" }}>Error: {listError}</p>}
+
+                {!listLoading && !listError && (
+                    <div style={{ border: "1px solid #e5e5e5", borderRadius: 6, overflow: "hidden" }}>
+                        {/* Table header */}
+                        <div
+                            style={{
+                                display: "grid",
+                                gridTemplateColumns: "1.3fr 1.3fr 2fr 1fr 1.3fr", // Last | First | Title | Level | File
+                                padding: "8px 10px",
+                                background: "#fafafa",
+                                borderBottom: "1px solid #e5e5e5",
+                                fontWeight: 600,
+                                fontSize: 13,
+                            }}
+                        >
+                            <HeaderButton label="Composer Last" sortToken={SONG_COL.composerLastName} curSort={sort} dir={sortDir} onClick={toggleSort} />
+                            <HeaderButton label="Composer First" sortToken={SONG_COL.composerFirstName} curSort={sort} dir={sortDir} onClick={toggleSort} />
+                            <HeaderButton label="Song Title" sortToken={SONG_COL.songTitle} curSort={sort} dir={sortDir} onClick={toggleSort} />
+                            <HeaderButton label="Skill Level" sortToken={SONG_COL.skillLevelNumber} curSort={sort} dir={sortDir} onClick={toggleSort} />
+                            <HeaderButton label="File Name" sortToken={SONG_COL.fileName} curSort={sort} dir={sortDir} onClick={toggleSort} />
+                        </div>
+
+                        {/* Table rows */}
+                        <div style={{ maxHeight: 420, overflow: "auto" }} aria-busy={listLoading}>
+                            {songs.map((r) => {
+                                return (
+                                    <div
+                                        key={r.song_id}
+                                        onClick={() => { void loadSongRow(r); }}
+                                        onKeyDown={(e: React.KeyboardEvent<HTMLDivElement>) => {
+                                            if (e.key === "Enter" || e.key === " ") {
+                                                e.preventDefault();
+                                                void loadSongRow(r);
+                                            }
+                                        }}
+                                        role="button"
+                                        tabIndex={0}
+                                        style={{
+                                            display: "grid",
+                                            gridTemplateColumns: "1.3fr 1.3fr 2fr 1fr 1.3fr",
+                                            padding: "8px 10px",
+                                            borderBottom: "1px solid #f0f0f0",
+                                            fontSize: 13,
+                                            alignItems: "center",
+                                            cursor: "pointer",
+                                        }}
+                                    >
+                                        <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.composer_last_name || "\u2014"}</div>
+                                        <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.composer_first_name || "\u2014"}</div>
+                                        <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.song_title}</div>
+                                        <div>{r.skill_level_name}</div>
+                                        <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.file_name || "\u2014"}</div>
+                                    </div>
+                                );
+                            })}
+                            {songs.length === 0 && <div style={{ padding: 12, fontSize: 13 }}>No songs found.</div>}
+                        </div>
                     </div>
-                </div>
-            )}
+                )}
+            </section>
         </main>
     );
 }
