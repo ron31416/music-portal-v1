@@ -11,18 +11,7 @@ import {
     isSortableSongColToken,
     type SortableSongColToken,
 } from "@/lib/songCols";
-
-/* =========================
-   Types returned to the UI
-   ========================= */
-
-export type SongListItem = {
-    song_id: number;
-    song_title: string;
-    composer_first_name: string;
-    composer_last_name: string;
-    skill_level_name: string;
-};
+import type { SongListItem, SongListResponse } from "@/lib/types";
 
 /* =========================
    Query validation (Zod)
@@ -95,7 +84,7 @@ function parseQuery(req: NextRequest): {
    GET /api/songlist
    ========================= */
 
-export async function GET(req: NextRequest): Promise<NextResponse<{ items: SongListItem[] } | { error: string }>> {
+export async function GET(req: NextRequest): Promise<NextResponse<SongListResponse | { error: string }>> {
     try {
         const { sortToken, dir, limit, offset } = parseQuery(req);
 
