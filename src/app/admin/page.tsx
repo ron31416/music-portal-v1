@@ -747,11 +747,11 @@ export default function AdminPage(): React.ReactElement {
                                 fontSize: 13,
                             }}
                         >
-                            <HeaderButton label="Composer Last" sortToken={SONG_COL.composerLastName} curSort={sort} dir={sortDir} onClick={toggleSort} />
-                            <HeaderButton label="Composer First" sortToken={SONG_COL.composerFirstName} curSort={sort} dir={sortDir} onClick={toggleSort} />
-                            <HeaderButton label="Song Title" sortToken={SONG_COL.songTitle} curSort={sort} dir={sortDir} onClick={toggleSort} />
-                            <HeaderButton label="Skill Level" sortToken={SONG_COL.skillLevelNumber} curSort={sort} dir={sortDir} onClick={toggleSort} />
-                            <HeaderButton label="File Name" sortToken={SONG_COL.fileName} curSort={sort} dir={sortDir} onClick={toggleSort} />
+                            <HeaderButton label="Composer Last" sortToken={SONG_COL.composerLastName} curSort={sort} dir={sortDir} onClick={toggleSort} color={T.headerFg} />
+                            <HeaderButton label="Composer First" sortToken={SONG_COL.composerFirstName} curSort={sort} dir={sortDir} onClick={toggleSort} color={T.headerFg} />
+                            <HeaderButton label="Song Title" sortToken={SONG_COL.songTitle} curSort={sort} dir={sortDir} onClick={toggleSort} color={T.headerFg} />
+                            <HeaderButton label="Skill Level" sortToken={SONG_COL.skillLevelNumber} curSort={sort} dir={sortDir} onClick={toggleSort} color={T.headerFg} />
+                            <HeaderButton label="File Name" sortToken={SONG_COL.fileName} curSort={sort} dir={sortDir} onClick={toggleSort} color={T.headerFg} />
                         </div>
 
                         {/* Body: fixed 15 rows; scrollbar only when needed */}
@@ -833,33 +833,6 @@ export default function AdminPage(): React.ReactElement {
                 )}
             </section>
 
-            {/* ===== LOAD FILE BUTTON (BELOW GRID, RIGHT-ALIGNED) ===== */}
-            <section aria-label="actions" style={{ display: "flex", justifyContent: "flex-end", marginTop: 6 }}>
-                <input
-                    ref={fileInputRef}
-                    id="song-file-input"
-                    type="file"
-                    accept=".mxl,.musicxml,application/vnd.recordare.musicxml+xml,application/vnd.recordare.musicxml,application/zip"
-                    onChange={onPick}
-                    style={{ display: "none" }}
-                />
-                <button
-                    type="button"
-                    onClick={() => { if (fileInputRef.current) { fileInputRef.current.click(); } }}
-                    style={{
-                        padding: "8px 12px",
-                        border: "1px solid #aaa",
-                        borderRadius: 6,
-                        background: "#fafafa",
-                        cursor: "pointer",
-                        color: "#111",
-                    }}
-                >
-                    Load File
-                </button>
-                {parsing && (<span aria-live="polite" style={{ alignSelf: "center", marginLeft: 10, color: "#ddd" }}>Parsing…</span>)}
-            </section>
-
             {/* ===== EDIT PANEL (ALWAYS VISIBLE, BELOW GRID) ===== */}
             <section aria-labelledby="edit-song-h" style={{ marginTop: 8 }}>
                 <h2
@@ -874,7 +847,7 @@ export default function AdminPage(): React.ReactElement {
                     Edit Song
                 </h2>
 
-                <div style={{ padding: 16, border: "1px solid #ddd", borderRadius: 8, background: "#fff", color: "#000" }}>
+                <div style={{ padding: 16, border: `1px solid ${T.border}`, borderRadius: 8, background: T.bgCard, color: T.fgCard }}>
                     <div
                         style={{
                             marginTop: 0,
@@ -965,18 +938,45 @@ export default function AdminPage(): React.ReactElement {
                             gap: 12,
                         }}
                     >
+                        {/* Hidden file input lives inside the card now */}
+                        <input
+                            ref={fileInputRef}
+                            id="song-file-input"
+                            type="file"
+                            accept=".mxl,.musicxml,application/vnd.recordare.musicxml+xml,application/vnd.recordare.musicxml,application/zip"
+                            onChange={onPick}
+                            style={{ display: "none" }}
+                        />
+
+                        {/* Left: Load File */}
+                        <button
+                            type="button"
+                            onClick={() => { if (fileInputRef.current) { fileInputRef.current.click(); } }}
+                            style={{
+                                padding: "8px 12px",
+                                border: `1px solid ${T.border}`,
+                                borderRadius: 6,
+                                background: isDark ? "#1f1f1f" : "#fafafa",
+                                color: isDark ? "#fff" : "#111",
+                                cursor: "pointer",
+                            }}
+                        >
+                            Load File
+                        </button>
+
+                        {/* Center: status */}
                         <span
                             aria-live="polite"
-                            role={error ? "alert" : saveOk ? "status" : undefined}
-                            title={error || saveOk || ""}
+                            role={parsing ? "status" : error ? "alert" : saveOk ? "status" : undefined}
+                            title={parsing ? "Parsing…" : (error || saveOk || "")}
                             style={{
                                 flex: 1,
                                 minWidth: 0,
                                 whiteSpace: "nowrap",
                                 overflow: "hidden",
                                 textOverflow: "ellipsis",
-                                textAlign: "right",
-                                color: error ? "#b00020" : "#111",
+                                textAlign: "center",
+                                color: error ? "#ff6b6b" : T.fgCard,
                                 fontWeight: 500,
                                 margin: 0,
                                 visibility: (error || saveOk) ? "visible" : "hidden",
@@ -985,17 +985,19 @@ export default function AdminPage(): React.ReactElement {
                             {error || saveOk || ""}
                         </span>
 
+                        {/* Right: Save Song */}
                         <button
                             type="button"
                             onClick={onSave}
                             disabled={saving}
                             style={{
                                 padding: "8px 12px",
-                                border: "1px solid #aaa",
+                                border: `1px solid ${T.border}`,
                                 borderRadius: 6,
-                                background: saving ? "#eee" : "#fafafa",
+                                background: isDark ? "#1f1f1f" : "#fafafa",
+                                color: isDark ? "#fff" : "#111",
                                 cursor: saving ? "default" : "pointer",
-                                marginLeft: "auto",
+                                opacity: saving ? 0.7 : 1,
                             }}
                         >
                             {saving ? "Saving…" : "Save Song"}
