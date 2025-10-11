@@ -188,7 +188,7 @@ export default function SongListPanel(): React.ReactElement {
                     <HeaderButton label="Composer Last Name" token={SONG_COL.composerLastName} curToken={sortToken} dir={sortDir} onClick={toggleSort} />
                     <HeaderButton label="Composer First Name" token={SONG_COL.composerFirstName} curToken={sortToken} dir={sortDir} onClick={toggleSort} />
                     <HeaderButton label="Song Title" token={SONG_COL.songTitle} curToken={sortToken} dir={sortDir} onClick={toggleSort} />
-                    <HeaderButton label="Skill Level" token={SONG_COL.skillLevelNumber} curToken={sortToken} dir={sortDir} onClick={toggleSort} />
+                    <HeaderButton label="Intermediate" token={SONG_COL.skillLevelNumber} curToken={sortToken} dir={sortDir} onClick={toggleSort} />
                 </div>
 
                 {/* Fixed-height scroll area (body) */}
