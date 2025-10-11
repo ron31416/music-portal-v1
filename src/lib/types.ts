@@ -20,13 +20,6 @@ export type SongListItem = Readonly<{
 }>;
 
 /* ============================================================
-   POST /api/song response
-   ============================================================ */
-
-export type SaveSongOk = ApiOk<{ song_id: number | null }>;
-export type SaveSongErr = ApiErr;
-
-/* ============================================================
    GET /api/songlist response
    (current contract in your UI: { items: SongListItem[] })
    ============================================================ */
