@@ -128,6 +128,9 @@ export default function SongListPanel(): React.ReactElement {
         window.open(url, "_blank", "noopener,noreferrer");
     };
 
+    // Decide overflow deterministically: scrolling only when we have more than ROW_COUNT real rows
+    const needsScroll: boolean = rows.length > ROW_COUNT;
+
     return (
         <div style={{ width: "100%", display: "flex", justifyContent: "center", alignItems: "flex-start" }}>
             <section
@@ -193,11 +196,12 @@ export default function SongListPanel(): React.ReactElement {
                     ref={scrollRef}
                     style={{
                         height: TABLE_BODY_PX,
-                        // Show scrollbar only when content exceeds the viewport.
+                        // Show the vertical scrollbar only when we actually have more real rows than visible slots.
                         overflowX: "hidden",
-                        overflowY: "auto",
+                        overflowY: needsScroll ? "auto" : "hidden",
                         background: "#fff",
-                        // No reserved gutter; header alignment handled by measured scrollbarPx.
+                        // Reserve gutter only when a classic (non-overlay) scrollbar is present (width > 0).
+                        scrollbarGutter: scrollbarPx > 0 ? "stable" : undefined,
                         boxSizing: "border-box",
                     }}
                 >
