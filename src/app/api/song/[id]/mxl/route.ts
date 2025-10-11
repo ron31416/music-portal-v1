@@ -6,10 +6,41 @@ import type { NextRequest } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { Buffer } from "node:buffer";
 
+/* =========================
+   Shared constants / types
+   ========================= */
+
+const MXL_MIME = "application/vnd.recordare.musicxml+zip" as const;
+// We don't cache since the MXL may be updated during admin edits
+const CACHE_CONTROL_NO_STORE = "no-store" as const;
+
 type Row = {
     song_mxl: unknown;
     song_title: string | null;
 };
+
+/* =========================
+   Small helpers
+   ========================= */
+
+function badRequest(message: string): Response {
+    return new Response(JSON.stringify({ ok: false, error: "bad_request", message }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+    });
+}
+function notFound(message: string): Response {
+    return new Response(JSON.stringify({ ok: false, error: "not_found", message }), {
+        status: 404,
+        headers: { "Content-Type": "application/json" },
+    });
+}
+function serverError(message: string): Response {
+    return new Response(JSON.stringify({ ok: false, error: "server_error", message }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+    });
+}
 
 /** Make a brand-new ArrayBuffer (no SharedArrayBuffer union) */
 function toArrayBuffer(u8: Uint8Array): ArrayBuffer {
@@ -28,11 +59,14 @@ function normalizeToArrayBuffer(raw: unknown): ArrayBuffer {
         // Most common: "\x..." hex string from Postgres bytea
         if (raw.startsWith("\\x")) {
             const hex = raw.slice(2);
+            if (hex.length === 0) { throw new Error("song_mxl hex payload is empty"); }
             const u8 = new Uint8Array(Buffer.from(hex, "hex"));
             return toArrayBuffer(u8);
         }
         // Fallback: base64 string
-        const u8 = new Uint8Array(Buffer.from(raw, "base64"));
+        const trimmed = raw.replace(/\s+/g, "");
+        if (trimmed.length === 0) { throw new Error("song_mxl base64 payload is empty"); }
+        const u8 = new Uint8Array(Buffer.from(trimmed, "base64"));
         return toArrayBuffer(u8);
     }
 
@@ -47,15 +81,24 @@ function normalizeToArrayBuffer(raw: unknown): ArrayBuffer {
     throw new Error(`Unsupported song_mxl type: ${typeof raw}`);
 }
 
+/* =========================
+   GET /api/song/[id]/mxl
+   ========================= */
+
 export async function GET(
     req: NextRequest,
-    ctx: { params: Promise<{ id: string }> } // ← Next 15 requires Promise here
+    ctx: { params: Promise<{ id: string }> } // Next.js 15
 ): Promise<Response> {
     try {
         const { id } = await ctx.params;
+
+        // Guard: digits-only positive integer (reject "1e3", "-1", "abc")
+        if (!/^\d+$/.test(id)) {
+            return badRequest("id must be a positive integer");
+        }
         const songId = Number(id);
-        if (!Number.isFinite(songId)) {
-            return new Response("Bad id", { status: 400 });
+        if (!Number.isFinite(songId) || songId <= 0) {
+            return badRequest("id must be a positive integer");
         }
 
         const { data, error } = await supabaseAdmin
@@ -65,21 +108,27 @@ export async function GET(
             .single();
 
         if (error) {
-            return new Response(
-                JSON.stringify({ message: error.message }),
-                { status: 500, headers: { "Content-Type": "application/json" } }
-            );
+            // Database/permission error
+            return serverError(error.message);
         }
         if (!data) {
-            return new Response("Not found", { status: 404 });
+            return notFound("Song not found");
         }
 
         const row = data as Row;
-        const ab = normalizeToArrayBuffer(row.song_mxl);
+
+        let ab: ArrayBuffer;
+        try {
+            ab = normalizeToArrayBuffer(row.song_mxl);
+        } catch (e) {
+            const message = e instanceof Error ? e.message : "Failed to decode song_mxl";
+            return serverError(message);
+        }
+
         const title = row.song_title ?? "score";
 
-        // Optional: /api/song/:id/mxl?debug=1
-        if (req.nextUrl.searchParams.get("debug")) {
+        // Optional debug: /api/song/:id/mxl?debug=1
+        if (req.nextUrl.searchParams.get("debug") === "1") {
             return new Response(
                 JSON.stringify({ ok: true, byteLength: ab.byteLength }),
                 { status: 200, headers: { "Content-Type": "application/json" } }
@@ -89,18 +138,13 @@ export async function GET(
         return new Response(ab, {
             status: 200,
             headers: {
-                // .mxl (compressed MusicXML)
-                "Content-Type": "application/vnd.recordare.musicxml+zip",
+                "Content-Type": MXL_MIME,
                 "Content-Disposition": `inline; filename="${encodeURIComponent(title + ".mxl")}"`,
-                "Cache-Control": "no-store",
+                "Cache-Control": CACHE_CONTROL_NO_STORE,
             },
         });
     } catch (e) {
-        const message =
-            e instanceof Error ? e.message : typeof e === "string" ? e : JSON.stringify(e);
-        return new Response(
-            JSON.stringify({ error: message }),
-            { status: 500, headers: { "Content-Type": "application/json" } }
-        );
+        const message = e instanceof Error ? e.message : typeof e === "string" ? e : JSON.stringify(e);
+        return serverError(message);
     }
 }
