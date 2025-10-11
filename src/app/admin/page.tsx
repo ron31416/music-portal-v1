@@ -12,8 +12,8 @@ const XML_PREVIEW_HEIGHT = 420;
 
 // --- Table Config (admin list) ---
 const TABLE_ROW_PX = 28;                 // height of a single row
-const TABLE_VISIBLE_ROWS = 15;           // fixed number of visible rows
-const TABLE_BODY_PX = TABLE_ROW_PX * TABLE_VISIBLE_ROWS;
+const TABLE_ROW_COUNT = 15;           // fixed number of visible rows
+const TABLE_BODY_PX = TABLE_ROW_PX * TABLE_ROW_COUNT;
 
 const TABLE_HEADER_BG = "#1b1b1b";       // dark header background
 const TABLE_HEADER_FG = "#ffffff";       // header text (white)
@@ -22,6 +22,9 @@ const TABLE_BORDER = "#2a2a2a";          // table border + grid lines
 const TABLE_ROW_BG_EVEN = "#0e0e0e";     // zebra even
 const TABLE_ROW_BG_ODD = "#141414";     // zebra odd
 const TABLE_ROW_FG = "#e6e6e6";     // body text
+
+// Fixed grid column widths (Admin list: Last | First | Title | Level | File)
+const GRID_COLS = "170px 170px 380px 110px 260px" as const;
 
 type SaveResponse = {
     ok?: boolean;
@@ -713,206 +716,13 @@ export default function AdminPage(): React.ReactElement {
         }
     };
 
+    // Decide overflow deterministically: scrolling only when we have more than TABLE_VISIBLE_ROWS real rows
+    const needsScroll: boolean = songs.length > TABLE_ROW_COUNT;
+
     return (
-        <main style={{ maxWidth: 860, margin: "40px auto", padding: "0 16px" }}>
-            {/* Top: Load File UI (always visible) */}
-            <section className="space-y-2" aria-labelledby="load-file-h">
-                <h2 id="load-file-h" style={{ marginTop: 0, fontSize: 18, fontWeight: 600 }}>Load File</h2>
-
-                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                    <input
-                        ref={fileInputRef}
-                        id="song-file-input"
-                        type="file"
-                        accept=".mxl,.musicxml,application/vnd.recordare.musicxml+xml,application/vnd.recordare.musicxml,application/zip"
-                        onChange={onPick}
-                        style={{ display: "none" }}
-                    />
-                    <button
-                        type="button"
-                        onClick={() => {
-                            if (fileInputRef.current) {
-                                fileInputRef.current.click();
-                            }
-                        }}
-                        style={{
-                            padding: "8px 12px",
-                            border: "1px solid #aaa",
-                            borderRadius: 6,
-                            background: "#fafafa",
-                            cursor: "pointer",
-                            color: "#111",
-                        }}
-                    >
-                        Load File
-                    </button>
-                    {parsing && (<span aria-live="polite" style={{ alignSelf: "center" }}>Parsing…</span>)}
-                </div>
-
-                {/* Card only after a file is selected / fields populated */}
-                {(file || xmlPreview || title || composerFirst || composerLast || level) && (
-                    <section aria-labelledby="add-song-h">
-                        <h3
-                            id="add-song-h"
-                            style={{
-                                position: "absolute",
-                                width: 1, height: 1, padding: 0, margin: -1, overflow: "hidden",
-                                clip: "rect(0 0 0 0)", whiteSpace: "nowrap", border: 0,
-                            }}
-                        >
-                            Add song
-                        </h3>
-
-                        <div style={{ padding: 16, border: "1px solid #ddd", borderRadius: 8, background: "#fff", color: "#000" }}>
-                            <div
-                                style={{
-                                    marginTop: 0,
-                                    display: "grid",
-                                    gridTemplateColumns: "120px 1fr",
-                                    rowGap: 10,
-                                    columnGap: 12,
-                                }}
-                            >
-                                <label style={{ alignSelf: "center", fontWeight: 600 }}>Song Title</label>
-                                <input
-                                    type="text"
-                                    value={title}
-                                    onChange={(e) => {
-                                        setTitle(e.target.value);
-                                    }}
-                                    style={roStyle}
-                                />
-
-                                <label style={{ alignSelf: "center", fontWeight: 600 }}>Composer</label>
-                                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                                    <input
-                                        type="text"
-                                        value={composerFirst}
-                                        onChange={(e) => {
-                                            setComposerFirst(e.target.value);
-                                        }}
-                                        placeholder="First"
-                                        style={roStyle}
-                                    />
-                                    <input
-                                        type="text"
-                                        value={composerLast}
-                                        onChange={(e) => {
-                                            setComposerLast(e.target.value);
-                                        }}
-                                        placeholder="Last"
-                                        style={roStyle}
-                                    />
-                                </div>
-
-                                <label style={{ alignSelf: "center", fontWeight: 600 }}>Skill Level</label>
-                                <select
-                                    value={level}
-                                    onChange={(e) => {
-                                        setLevel(e.target.value);
-                                    }}
-                                    disabled={levelsLoading || !!levelsError || levels.length === 0}
-                                    style={{ ...roStyle, appearance: "auto" as const }}
-                                >
-                                    <option value="" disabled>
-                                        — Select a level —
-                                    </option>
-                                    {levels.map((lvl) => {
-                                        return (
-                                            <option key={lvl.number} value={String(lvl.number)}>
-                                                {lvl.name}
-                                            </option>
-                                        );
-                                    })}
-                                </select>
-
-                                {levelsError && (
-                                    <div style={{ gridColumn: "1 / span 2", color: "#b00020" }}>
-                                        Failed to load skill levels: {levelsError}
-                                    </div>
-                                )}
-
-                                <label style={{ alignSelf: "center", fontWeight: 600 }}>File Name</label>
-                                <input type="text" value={fileName} readOnly style={roStyle} />
-
-                                <label style={{ alignSelf: "start", fontWeight: 600, paddingTop: 6 }}>MusicXML</label>
-                                <textarea
-                                    aria-label="XML"
-                                    value={xmlPreview}
-                                    onChange={(e) => {
-                                        setXmlPreview(e.target.value);
-                                    }}
-                                    spellCheck={false}
-                                    style={{
-                                        width: "100%",
-                                        margin: 0,
-                                        background: "#fff",
-                                        border: "1px solid #ccc",
-                                        borderRadius: 6,
-                                        padding: "8px 10px",
-                                        minHeight: XML_PREVIEW_HEIGHT,
-                                        maxHeight: XML_PREVIEW_HEIGHT,
-                                        overflow: "auto",
-                                        resize: "vertical",
-                                        fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
-                                        fontSize: 13,
-                                        color: "#000",
-                                        lineHeight: 1.4,
-                                    }}
-                                />
-                            </div>
-
-                            <div
-                                style={{
-                                    marginTop: 16,
-                                    display: "flex",
-                                    alignItems: "center",
-                                    gap: 12,
-                                }}
-                            >
-                                <span
-                                    aria-live="polite"
-                                    role={error ? "alert" : saveOk ? "status" : undefined}
-                                    title={error || saveOk || ""}
-                                    style={{
-                                        flex: 1,
-                                        minWidth: 0,
-                                        whiteSpace: "nowrap",
-                                        overflow: "hidden",
-                                        textOverflow: "ellipsis",
-                                        textAlign: "right",
-                                        color: error ? "#b00020" : "#111",
-                                        fontWeight: 500,
-                                        margin: 0,
-                                        visibility: (error || saveOk) ? "visible" : "hidden",
-                                    }}
-                                >
-                                    {error || saveOk || ""}
-                                </span>
-
-                                <button
-                                    type="button"
-                                    onClick={onSave}
-                                    disabled={saving}
-                                    style={{
-                                        padding: "8px 12px",
-                                        border: "1px solid #aaa",
-                                        borderRadius: 6,
-                                        background: saving ? "#eee" : "#fafafa",
-                                        cursor: saving ? "default" : "pointer",
-                                        marginLeft: "auto",
-                                    }}
-                                >
-                                    {saving ? "Saving…" : "Save Song"}
-                                </button>
-                            </div>
-                        </div>
-                    </section>
-                )}
-            </section>
-
-            {/* Inline song list (always visible) */}
-            <section className="space-y-2" aria-labelledby="songs-h" style={{ marginTop: 24 }}>
+        <main style={{ maxWidth: 1100, margin: "24px auto", padding: "0 16px" }}>
+            {/* ===== SONG LIST (TOP) ===== */}
+            <section className="space-y-2" aria-labelledby="songs-h" style={{ marginTop: 0 }}>
                 <h2 id="songs-h" style={{ marginTop: 0, fontSize: 18, fontWeight: 600, color: "#fff" }}>Songs</h2>
 
                 {listLoading && <p style={{ color: "#ddd" }}>Loading…</p>}
@@ -923,15 +733,16 @@ export default function AdminPage(): React.ReactElement {
                         style={{
                             border: `1px solid ${TABLE_BORDER}`,
                             borderRadius: 6,
-                            overflow: "hidden",
+                            overflowX: "auto",
+                            overflowY: "hidden",
                             background: "#0b0b0b",
                         }}
                     >
-                        {/* Table header (dark) */}
+                        {/* Header */}
                         <div
                             style={{
                                 display: "grid",
-                                gridTemplateColumns: "1.3fr 1.3fr 2fr 1fr 1.3fr",
+                                gridTemplateColumns: GRID_COLS,
                                 padding: "8px 10px",
                                 background: TABLE_HEADER_BG,
                                 color: TABLE_HEADER_FG,
@@ -947,12 +758,13 @@ export default function AdminPage(): React.ReactElement {
                             <HeaderButton label="File Name" sortToken={SONG_COL.fileName} curSort={sort} dir={sortDir} onClick={toggleSort} />
                         </div>
 
-                        {/* Table body (fixed height = 15 rows) */}
+                        {/* Body: fixed 15 rows; scrollbar only when needed */}
                         <div
                             style={{
                                 minHeight: TABLE_BODY_PX,
                                 maxHeight: TABLE_BODY_PX,
-                                overflow: "auto",
+                                overflowY: needsScroll ? "auto" : "hidden",
+                                overflowX: "hidden",
                                 borderTop: `1px solid ${TABLE_BORDER}`,
                             }}
                             aria-busy={listLoading}
@@ -965,16 +777,13 @@ export default function AdminPage(): React.ReactElement {
                                         key={r.song_id}
                                         onClick={() => { void loadSongRow(r); }}
                                         onKeyDown={(e: React.KeyboardEvent<HTMLDivElement>) => {
-                                            if (e.key === "Enter" || e.key === " ") {
-                                                e.preventDefault();
-                                                void loadSongRow(r);
-                                            }
+                                            if (e.key === "Enter" || e.key === " ") { e.preventDefault(); void loadSongRow(r); }
                                         }}
                                         role="button"
                                         tabIndex={0}
                                         style={{
                                             display: "grid",
-                                            gridTemplateColumns: "1.3fr 1.3fr 2fr 1fr 1.3fr",
+                                            gridTemplateColumns: GRID_COLS,
                                             padding: "8px 10px",
                                             borderBottom: `1px solid ${TABLE_BORDER}`,
                                             fontSize: 13,
@@ -983,7 +792,7 @@ export default function AdminPage(): React.ReactElement {
                                             background: bg,
                                             color: TABLE_ROW_FG,
                                             height: TABLE_ROW_PX,
-                                            lineHeight: `${TABLE_ROW_PX - 10}px`, // visual centering
+                                            lineHeight: `${TABLE_ROW_PX - 10}px`,
                                         }}
                                     >
                                         <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.composer_last_name || "\u2014"}</div>
@@ -995,8 +804,8 @@ export default function AdminPage(): React.ReactElement {
                                 );
                             })}
 
-                            {/* Padding rows (if fewer than 15) */}
-                            {songs.length < TABLE_VISIBLE_ROWS && Array.from({ length: TABLE_VISIBLE_ROWS - songs.length }).map((_, i) => {
+                            {/* Padding rows up to 15 */}
+                            {songs.length < TABLE_ROW_COUNT && Array.from({ length: TABLE_ROW_COUNT - songs.length }).map((_, i) => {
                                 const idx = songs.length + i;
                                 const bg = (idx % 2 === 0) ? TABLE_ROW_BG_EVEN : TABLE_ROW_BG_ODD;
                                 return (
@@ -1005,7 +814,7 @@ export default function AdminPage(): React.ReactElement {
                                         aria-hidden="true"
                                         style={{
                                             display: "grid",
-                                            gridTemplateColumns: "1.3fr 1.3fr 2fr 1fr 1.3fr",
+                                            gridTemplateColumns: GRID_COLS,
                                             padding: "8px 10px",
                                             borderBottom: `1px solid ${TABLE_BORDER}`,
                                             fontSize: 13,
@@ -1026,6 +835,181 @@ export default function AdminPage(): React.ReactElement {
                         </div>
                     </div>
                 )}
+            </section>
+
+            {/* ===== LOAD FILE BUTTON (BELOW GRID, RIGHT-ALIGNED) ===== */}
+            <section aria-label="actions" style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
+                <input
+                    ref={fileInputRef}
+                    id="song-file-input"
+                    type="file"
+                    accept=".mxl,.musicxml,application/vnd.recordare.musicxml+xml,application/vnd.recordare.musicxml,application/zip"
+                    onChange={onPick}
+                    style={{ display: "none" }}
+                />
+                <button
+                    type="button"
+                    onClick={() => { if (fileInputRef.current) { fileInputRef.current.click(); } }}
+                    style={{
+                        padding: "8px 12px",
+                        border: "1px solid #aaa",
+                        borderRadius: 6,
+                        background: "#fafafa",
+                        cursor: "pointer",
+                        color: "#111",
+                    }}
+                >
+                    Load File
+                </button>
+                {parsing && (<span aria-live="polite" style={{ alignSelf: "center", marginLeft: 10, color: "#ddd" }}>Parsing…</span>)}
+            </section>
+
+            {/* ===== EDIT PANEL (ALWAYS VISIBLE, BELOW GRID) ===== */}
+            <section aria-labelledby="edit-song-h" style={{ marginTop: 16 }}>
+                <h2
+                    id="edit-song-h"
+                    style={{
+                        marginTop: 0,
+                        fontSize: 18,
+                        fontWeight: 600,
+                        color: "#fff",
+                    }}
+                >
+                    Edit Song
+                </h2>
+
+                <div style={{ padding: 16, border: "1px solid #ddd", borderRadius: 8, background: "#fff", color: "#000" }}>
+                    <div
+                        style={{
+                            marginTop: 0,
+                            display: "grid",
+                            gridTemplateColumns: "120px 1fr",
+                            rowGap: 10,
+                            columnGap: 12,
+                        }}
+                    >
+                        <label style={{ alignSelf: "center", fontWeight: 600 }}>Song Title</label>
+                        <input
+                            type="text"
+                            value={title}
+                            onChange={(e) => { setTitle(e.target.value); }}
+                            style={roStyle}
+                        />
+
+                        <label style={{ alignSelf: "center", fontWeight: 600 }}>Composer</label>
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                            <input
+                                type="text"
+                                value={composerFirst}
+                                onChange={(e) => { setComposerFirst(e.target.value); }}
+                                placeholder="First"
+                                style={roStyle}
+                            />
+                            <input
+                                type="text"
+                                value={composerLast}
+                                onChange={(e) => { setComposerLast(e.target.value); }}
+                                placeholder="Last"
+                                style={roStyle}
+                            />
+                        </div>
+
+                        <label style={{ alignSelf: "center", fontWeight: 600 }}>Skill Level</label>
+                        <select
+                            value={level}
+                            onChange={(e) => { setLevel(e.target.value); }}
+                            disabled={levelsLoading || !!levelsError || levels.length === 0}
+                            style={{ ...roStyle, appearance: "auto" as const }}
+                        >
+                            <option value="" disabled>— Select a level —</option>
+                            {levels.map((lvl) => {
+                                return (
+                                    <option key={lvl.number} value={String(lvl.number)}>
+                                        {lvl.name}
+                                    </option>
+                                );
+                            })}
+                        </select>
+
+                        {levelsError && (
+                            <div style={{ gridColumn: "1 / span 2", color: "#b00020" }}>
+                                Failed to load skill levels: {levelsError}
+                            </div>
+                        )}
+
+                        <label style={{ alignSelf: "center", fontWeight: 600 }}>File Name</label>
+                        <input type="text" value={fileName} readOnly style={roStyle} />
+
+                        <label style={{ alignSelf: "start", fontWeight: 600, paddingTop: 6 }}>MusicXML</label>
+                        <textarea
+                            aria-label="XML"
+                            value={xmlPreview}
+                            onChange={(e) => { setXmlPreview(e.target.value); }}
+                            spellCheck={false}
+                            style={{
+                                width: "100%",
+                                margin: 0,
+                                background: "#fff",
+                                border: "1px solid #ccc",
+                                borderRadius: 6,
+                                padding: "8px 10px",
+                                minHeight: XML_PREVIEW_HEIGHT,
+                                maxHeight: XML_PREVIEW_HEIGHT,
+                                overflow: "auto",
+                                resize: "vertical",
+                                fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+                                fontSize: 13,
+                                color: "#000",
+                                lineHeight: 1.4,
+                            }}
+                        />
+                    </div>
+
+                    <div
+                        style={{
+                            marginTop: 16,
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 12,
+                        }}
+                    >
+                        <span
+                            aria-live="polite"
+                            role={error ? "alert" : saveOk ? "status" : undefined}
+                            title={error || saveOk || ""}
+                            style={{
+                                flex: 1,
+                                minWidth: 0,
+                                whiteSpace: "nowrap",
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                                textAlign: "right",
+                                color: error ? "#b00020" : "#111",
+                                fontWeight: 500,
+                                margin: 0,
+                                visibility: (error || saveOk) ? "visible" : "hidden",
+                            }}
+                        >
+                            {error || saveOk || ""}
+                        </span>
+
+                        <button
+                            type="button"
+                            onClick={onSave}
+                            disabled={saving}
+                            style={{
+                                padding: "8px 12px",
+                                border: "1px solid #aaa",
+                                borderRadius: 6,
+                                background: saving ? "#eee" : "#fafafa",
+                                cursor: saving ? "default" : "pointer",
+                                marginLeft: "auto",
+                            }}
+                        >
+                            {saving ? "Saving…" : "Save Song"}
+                        </button>
+                    </div>
+                </div>
             </section>
         </main>
     );
