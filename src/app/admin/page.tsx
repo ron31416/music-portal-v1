@@ -9,7 +9,7 @@ import { usePrefersDark, themeTokens, fieldStyle } from "@/lib/theme";
 
 const SAVE_ENDPOINT = "/api/song";
 const SONG_LIST_ENDPOINT = "/api/songlist";
-const XML_PREVIEW_HEIGHT = 420;
+const XML_PREVIEW_HEIGHT = 200;
 
 // --- Table Config (admin list) ---
 const TABLE_ROW_PX = 28;                 // height of a single row
@@ -834,7 +834,7 @@ export default function AdminPage(): React.ReactElement {
             </section>
 
             {/* ===== EDIT PANEL (ALWAYS VISIBLE, BELOW GRID) ===== */}
-            <section aria-labelledby="edit-song-h" style={{ marginTop: 8 }}>
+            <section aria-labelledby="edit-song-h" style={{ marginTop: 8, background: "transparent" }}>
                 <h2
                     id="edit-song-h"
                     style={{
@@ -847,7 +847,17 @@ export default function AdminPage(): React.ReactElement {
                     Edit Song
                 </h2>
 
-                <div style={{ padding: 16, border: `1px solid ${T.border}`, borderRadius: 8, background: T.bgCard, color: T.fgCard }}>
+                <div
+                    style={{
+                        padding: 16,
+                        border: `1px solid ${T.border}`,
+                        borderRadius: 8,
+                        background: T.bgCard,
+                        backgroundColor: T.bgCard, // ensures no CSS reset overrides
+                        color: T.fgCard,
+                        boxShadow: "0 0 0 1px transparent", // harmless; helps confirm layer
+                    }}
+                >
                     <div
                         style={{
                             marginTop: 0,
@@ -855,6 +865,7 @@ export default function AdminPage(): React.ReactElement {
                             gridTemplateColumns: "120px 1fr",
                             rowGap: 10,
                             columnGap: 12,
+                            background: "transparent",
                         }}
                     >
                         <label style={{ alignSelf: "center", fontWeight: 600 }}>Song Title</label>
