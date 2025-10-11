@@ -2,7 +2,13 @@
 "use client";
 
 import React from "react";
-import { SONG_COL, type SongColToken } from "@/lib/songCols";
+import {
+    SONG_COL,
+    type SongColToken,
+    type SortDir,
+    DEFAULT_SORT,
+    DEFAULT_DIR,
+} from "@/lib/songCols";
 
 const ROW_PX = 28;
 const ROW_COUNT = 25;
@@ -18,8 +24,6 @@ type SongListItem = {
     composer_last_name: string;
     skill_level_name: string;
 };
-
-type SortDir = "asc" | "desc";
 
 function HeaderButton(props: {
     label: string;
@@ -53,8 +57,8 @@ function HeaderButton(props: {
 
 export default function SongListPanel(): React.ReactElement {
     const [rows, setRows] = React.useState<SongListItem[]>([]);
-    const [sortToken, setSortToken] = React.useState<SongColToken | null>(SONG_COL.composerLastName);
-    const [sortDir, setSortDir] = React.useState<SortDir>("asc");
+    const [sortToken, setSortToken] = React.useState<SongColToken | null>(DEFAULT_SORT);
+    const [sortDir, setSortDir] = React.useState<SortDir>(DEFAULT_DIR);
 
     // — Scrollbar measurement (for header alignment) —
     const scrollRef = React.useRef<HTMLDivElement | null>(null);

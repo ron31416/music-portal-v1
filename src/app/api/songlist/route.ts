@@ -6,7 +6,11 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
-import { SONG_COL } from "@/lib/songCols";
+import {
+    tokenToSql,
+    isSortableSongColToken,
+    type SortableSongColToken,
+} from "@/lib/songCols";
 
 /* =========================
    Types returned to the UI
@@ -19,30 +23,6 @@ export type SongListItem = {
     composer_last_name: string;
     skill_level_name: string;
 };
-
-/* =========================
-   Sort token → SQL whitelist
-   (no string interpolation)
-   ========================= */
-
-// Only these tokens are allowed for sorting (whitelist)
-type SortableSongColToken =
-    | typeof SONG_COL.songId
-    | typeof SONG_COL.songTitle
-    | typeof SONG_COL.composerFirstName
-    | typeof SONG_COL.composerLastName
-    | typeof SONG_COL.skillLevelNumber;
-
-const TOKEN_TO_SQL: Readonly<Record<SortableSongColToken, string>> = {
-    [SONG_COL.songId]: "song_id",
-    [SONG_COL.songTitle]: "song_title",
-    [SONG_COL.composerFirstName]: "composer_first_name",
-    [SONG_COL.composerLastName]: "composer_last_name",
-    [SONG_COL.skillLevelNumber]: "skill_level_number",
-} as const;
-
-// Fast membership check for query parsing
-const VALID_TOKENS: ReadonlySet<string> = new Set(Object.keys(TOKEN_TO_SQL));
 
 /* =========================
    Query validation (Zod)
@@ -89,8 +69,8 @@ function parseQuery(req: NextRequest): {
         const q: QueryInput = parsed.data;
 
         // Keep only allowed sortable tokens
-        if (typeof q.sort === "string" && VALID_TOKENS.has(q.sort)) {
-            sortToken = q.sort as SortableSongColToken;
+        if (isSortableSongColToken(q.sort)) {
+            sortToken = q.sort;
         }
 
         if (q.dir === "asc" || q.dir === "desc") {
@@ -120,7 +100,8 @@ export async function GET(req: NextRequest): Promise<NextResponse<{ items: SongL
         const { sortToken, dir, limit, offset } = parseQuery(req);
 
         // Map token → SQL column name safely (or leave undefined to let the DB choose a default)
-        const sortColumn: string | undefined = sortToken !== null ? TOKEN_TO_SQL[sortToken] : undefined;
+        const sortColumn: string | undefined =
+            sortToken !== null ? tokenToSql[sortToken] : undefined;
 
         const { data, error } = await supabaseAdmin.rpc("song_list", {
             p_sort_column: sortColumn,
