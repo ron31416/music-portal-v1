@@ -5,7 +5,7 @@ import React from "react";
 import { SONG_COL, type SongColToken } from "@/lib/songCols";
 
 const ROW_PX = 28;
-const ROW_COUNT = 20;
+const ROW_COUNT = 25;
 const TABLE_BODY_PX = ROW_PX * ROW_COUNT
 const TABLE_WIDTH_PX = 820;
 // Composer Last | Composer First | Song Title | Skill Level
@@ -188,7 +188,7 @@ export default function SongListPanel(): React.ReactElement {
                     <HeaderButton label="Composer Last Name" token={SONG_COL.composerLastName} curToken={sortToken} dir={sortDir} onClick={toggleSort} />
                     <HeaderButton label="Composer First Name" token={SONG_COL.composerFirstName} curToken={sortToken} dir={sortDir} onClick={toggleSort} />
                     <HeaderButton label="Song Title" token={SONG_COL.songTitle} curToken={sortToken} dir={sortDir} onClick={toggleSort} />
-                    <HeaderButton label="Intermediate" token={SONG_COL.skillLevelNumber} curToken={sortToken} dir={sortDir} onClick={toggleSort} />
+                    <HeaderButton label="Skill Level" token={SONG_COL.skillLevelNumber} curToken={sortToken} dir={sortDir} onClick={toggleSort} />
                 </div>
 
                 {/* Fixed-height scroll area (body) */}
