@@ -64,16 +64,18 @@ export default function SongListPanel(): React.ReactElement {
         function measure(): void {
             const el = scrollRef.current;
             if (el === null) { return; }
-            // Measure actual scrollbar width; if there is no overflow, this should be 0.
+            // 0 when there’s no vertical scrollbar (or overlay scrollbars), >0 for classic scrollbars
             const width = Math.max(0, el.offsetWidth - el.clientWidth);
             setScrollbarPx(width);
         }
 
-        // Measure after mount/render and on resize.
+        // Measure after layout settles
         const raf = requestAnimationFrame(() => { measure(); });
+
+        // Re-measure on window resize
         window.addEventListener("resize", measure);
 
-        // Observe the scroll container itself, in case its box changes.
+        // Re-measure if the scroll container’s box changes
         let ro: ResizeObserver | null = null;
         if (typeof ResizeObserver !== "undefined") {
             ro = new ResizeObserver(() => { measure(); });
@@ -85,7 +87,7 @@ export default function SongListPanel(): React.ReactElement {
             window.removeEventListener("resize", measure);
             if (ro !== null) { ro.disconnect(); }
         };
-        // Re-measure when rows change (overflow may start/stop).
+        // Re-measure when rows change (overflow may start/stop)
     }, [rows]);
 
     const fetchList = React.useCallback(async (token: SongColToken | null, dir: SortDir) => {
@@ -199,7 +201,8 @@ export default function SongListPanel(): React.ReactElement {
                         boxSizing: "border-box",
                     }}
                 >
-                    {rows.map((r) => {
+                    {rows.map((r, idx) => {
+                        const isLastVisibleRow: boolean = (idx === Math.min(rows.length, ROW_COUNT) - 1);
                         return (
                             <div
                                 key={r.song_id}
@@ -217,7 +220,7 @@ export default function SongListPanel(): React.ReactElement {
                                     gridTemplateColumns: GRID_COLS,
                                     height: ROW_PX,
                                     padding: "0 10px",
-                                    borderBottom: "1px solid #f0f0f0",
+                                    borderBottom: isLastVisibleRow ? "none" : "1px solid #f0f0f0",
                                     fontSize: 13,
                                     alignItems: "center",
                                     boxSizing: "border-box",
@@ -257,7 +260,7 @@ export default function SongListPanel(): React.ReactElement {
                                         gridTemplateColumns: GRID_COLS,
                                         height: ROW_PX,
                                         padding: "0 10px",
-                                        borderBottom: "1px solid #f0f0f0",
+                                        borderBottom: i === fillerCount - 1 ? "none" : "1px solid #f0f0f0",
                                         fontSize: 13,
                                         alignItems: "center",
                                         boxSizing: "border-box",
