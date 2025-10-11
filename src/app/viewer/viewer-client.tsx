@@ -2,7 +2,7 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import ScoreOSMD from "@/components/ScoreOSMD";
+import ScoreViewer from "@/components/ScoreViewer";
 
 function isPositiveIntString(v: string | null): v is string {
   return v !== null && /^\d+$/.test(v);
@@ -32,7 +32,7 @@ export default function ViewerClient(): React.ReactElement {
         minHeight: 0,
       }}
     >
-      <ScoreOSMD src={src} />
+      <ScoreViewer src={src} />
     </div>
   );
 }
