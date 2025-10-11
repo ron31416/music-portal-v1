@@ -1,107 +1,144 @@
-// app/api/songlist/route.ts
+// src/app/api/songlist/route.ts
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
+import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { z } from "zod";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
-import { SONG_COL, type SongColToken } from "@/lib/songCols";
+import { SONG_COL } from "@/lib/songCols";
 
-// --- Types that mirror the DB function result (flat shape; no joins) ---
+/* =========================
+   Types returned to the UI
+   ========================= */
 
-export type SongListItemFull = {
+export type SongListItem = {
     song_id: number;
-    song_title: string | null;
-    composer_first_name: string | null;
-    composer_last_name: string | null;
-    skill_level_number: number;
-    skill_level_name: string | null;
-    file_name: string | null;
-    inserted_datetime: string; // ISO from timestamptz
-    updated_datetime: string;  // ISO from timestamptz
+    song_title: string;
+    composer_first_name: string;
+    composer_last_name: string;
+    skill_level_name: string;
 };
 
-type SortDir = "asc" | "desc";
-type AllowedSort = SongColToken | "skill_level_name";
+/* =========================
+   Sort token → SQL whitelist
+   (no string interpolation)
+   ========================= */
 
-// Allow-list exactly what the DB function supports
-const SORT_ALLOW = new Set<AllowedSort>([
-    SONG_COL.songId,
-    SONG_COL.songTitle,
-    SONG_COL.composerFirstName,
-    SONG_COL.composerLastName,
-    SONG_COL.skillLevelNumber,
-    SONG_COL.fileName,
-    SONG_COL.insertedDatetime,
-    SONG_COL.updatedDatetime,
-]);
+// Only these tokens are allowed for sorting (whitelist)
+type SortableSongColToken =
+    | typeof SONG_COL.songId
+    | typeof SONG_COL.songTitle
+    | typeof SONG_COL.composerFirstName
+    | typeof SONG_COL.composerLastName
+    | typeof SONG_COL.skillLevelNumber;
 
-function normalizeDir(raw: string | null): SortDir {
-    const v = (raw || "").toLowerCase();
-    if (v === "desc") { return "desc"; }
-    return "asc";
+const TOKEN_TO_SQL: Readonly<Record<SortableSongColToken, string>> = {
+    [SONG_COL.songId]: "song_id",
+    [SONG_COL.songTitle]: "song_title",
+    [SONG_COL.composerFirstName]: "composer_first_name",
+    [SONG_COL.composerLastName]: "composer_last_name",
+    [SONG_COL.skillLevelNumber]: "skill_level_number",
+} as const;
+
+// Fast membership check for query parsing
+const VALID_TOKENS: ReadonlySet<string> = new Set(Object.keys(TOKEN_TO_SQL));
+
+/* =========================
+   Query validation (Zod)
+   ========================= */
+
+const QuerySchema = z.object({
+    sort: z.string().optional(),                    // validated against VALID_TOKENS below
+    dir: z.enum(["asc", "desc"]).optional(),
+    limit: z
+        .string()
+        .transform((s) => Number(s))
+        .pipe(z.number().int().min(1).max(2000))
+        .optional(),
+    offset: z
+        .string()
+        .transform((s) => Number(s))
+        .pipe(z.number().int().min(0))
+        .optional(),
+});
+
+type QueryInput = z.infer<typeof QuerySchema>;
+
+function parseQuery(req: NextRequest): {
+    sortToken: SortableSongColToken | null;
+    dir: "asc" | "desc";
+    limit: number;
+    offset: number;
+} {
+    const url = new URL(req.url);
+    const raw = {
+        sort: url.searchParams.get("sort") ?? undefined,
+        dir: (url.searchParams.get("dir") ?? undefined)?.toLowerCase(),
+        limit: url.searchParams.get("limit") ?? undefined,
+        offset: url.searchParams.get("offset") ?? undefined,
+    };
+
+    const parsed = QuerySchema.safeParse(raw);
+    let sortToken: SortableSongColToken | null = null;
+    let dir: "asc" | "desc" = "asc";
+    let limit = 1000;
+    let offset = 0;
+
+    if (parsed.success) {
+        const q: QueryInput = parsed.data;
+
+        // Keep only allowed sortable tokens
+        if (typeof q.sort === "string" && VALID_TOKENS.has(q.sort)) {
+            sortToken = q.sort as SortableSongColToken;
+        }
+
+        if (q.dir === "asc" || q.dir === "desc") {
+            dir = q.dir;
+        }
+
+        if (typeof q.limit === "number") {
+            limit = q.limit;
+        }
+
+        if (typeof q.offset === "number") {
+            offset = q.offset;
+        }
+    } else {
+        // If validation fails, we just fall back to defaults (no hard failure).
+    }
+
+    return { sortToken, dir, limit, offset };
 }
 
-function normalizeSort(raw: string | null): AllowedSort {
-    const v = (raw || "") as AllowedSort;
-    if (SORT_ALLOW.has(v)) { return v; }
-    return SONG_COL.composerLastName;
-}
+/* =========================
+   GET /api/songlist
+   ========================= */
 
-function clampLimit(raw: string | null): number {
-    const n = Number(raw);
-    if (!Number.isFinite(n)) { return 1000; }
-    return Math.min(Math.max(n, 1), 2000);
-}
-
-function clampOffset(raw: string | null): number {
-    const n = Number(raw);
-    if (!Number.isFinite(n) || n < 0) { return 0; }
-    return n;
-}
-
-// ---- Route ----
-
-export async function GET(req: NextRequest): Promise<Response> {
+export async function GET(req: NextRequest): Promise<NextResponse<{ items: SongListItem[] } | { error: string }>> {
     try {
-        const url = new URL(req.url);
+        const { sortToken, dir, limit, offset } = parseQuery(req);
 
-        const sort = normalizeSort(url.searchParams.get("sort"));
-        const dir = normalizeDir(url.searchParams.get("dir"));
-        const limit = clampLimit(url.searchParams.get("limit"));
-        const offset = clampOffset(url.searchParams.get("offset"));
+        // Map token → SQL column name safely (or leave undefined to let the DB choose a default)
+        const sortColumn: string | undefined = sortToken !== null ? TOKEN_TO_SQL[sortToken] : undefined;
 
         const { data, error } = await supabaseAdmin.rpc("song_list", {
-            p_sort_column: sort,
+            p_sort_column: sortColumn,
             p_sort_direction: dir,
             p_limit: limit,
             p_offset: offset,
         });
 
         if (error) {
-            return new Response(JSON.stringify({ error: error.message }), {
-                status: 500,
-                headers: { "Content-Type": "application/json" },
-            });
+            return NextResponse.json({ error: error.message }, { status: 500 });
         }
 
-        // Minimal type guard: ensure array before returning
-        const itemsUnknown = data as unknown;
-        const items: SongListItemFull[] = Array.isArray(itemsUnknown)
-            ? (itemsUnknown as SongListItemFull[])
-            : [];
+        // Trust the DB function to return the correct shape. Cast to our API type for the client.
+        const items = (Array.isArray(data) ? data : []) as SongListItem[];
 
-        return new Response(JSON.stringify({ items }), {
-            status: 200,
-            headers: {
-                "Content-Type": "application/json",
-                "Cache-Control": "no-store",
-            },
-        });
+        return NextResponse.json({ items }, { status: 200, headers: { "Cache-Control": "no-store" } });
     } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
-        return new Response(JSON.stringify({ error: msg }), {
-            status: 500,
-            headers: { "Content-Type": "application/json" },
-        });
+        return NextResponse.json({ error: msg }, { status: 500 });
     }
 }
