@@ -9,7 +9,7 @@ const ROW_COUNT = 20;
 const TABLE_BODY_PX = ROW_PX * ROW_COUNT
 const TABLE_WIDTH_PX = 820;
 // Composer Last | Composer First | Song Title | Skill Level
-const GRID_COLS = "1fr 1fr 2fr 140px" as const;
+const GRID_COLS = "170px 170px 380px 90px" as const;
 
 type SongListItem = {
     song_id: number;
