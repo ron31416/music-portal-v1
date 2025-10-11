@@ -56,6 +56,39 @@ export default function SongListPanel(): React.ReactElement {
     const [sortToken, setSortToken] = React.useState<SongColToken | null>(SONG_COL.composerLastName);
     const [sortDir, setSortDir] = React.useState<SortDir>("asc");
 
+    // — Scrollbar measurement (for header alignment) —
+    const scrollRef = React.useRef<HTMLDivElement | null>(null);
+    const [scrollbarPx, setScrollbarPx] = React.useState<number>(0);
+
+    React.useEffect(() => {
+        function measure(): void {
+            const el = scrollRef.current;
+            if (el === null) { return; }
+            // scrollbars only appear on the inner scroller; offsetWidth - clientWidth = scrollbar width (if present)
+            const width = Math.max(0, el.offsetWidth - el.clientWidth);
+            setScrollbarPx(width);
+        }
+
+        // Measure now (after rows render), and on window resize.
+        // Using rAF to ensure layout has settled.
+        const raf = requestAnimationFrame(() => { measure(); });
+        window.addEventListener("resize", measure);
+
+        // Also observe size changes on the scroll container itself (safer across browsers)
+        let ro: ResizeObserver | null = null;
+        if (typeof ResizeObserver !== "undefined") {
+            ro = new ResizeObserver(() => { measure(); });
+            if (scrollRef.current !== null) { ro.observe(scrollRef.current); }
+        }
+
+        return () => {
+            cancelAnimationFrame(raf);
+            window.removeEventListener("resize", measure);
+            if (ro !== null) { ro.disconnect(); }
+        };
+        // Re-measure whenever row content changes (can add/remove the vertical scrollbar)
+    }, [rows]);
+
     const fetchList = React.useCallback(async (token: SongColToken | null, dir: SortDir) => {
         try {
             const params = new URLSearchParams();
@@ -135,7 +168,9 @@ export default function SongListPanel(): React.ReactElement {
                         gridTemplateColumns: GRID_COLS,
                         height: ROW_PX,
                         lineHeight: `${ROW_PX}px`,     // ← match row line-height
-                        padding: "0 10px",             // ← match row horizontal padding
+                        // Keep left padding fixed at 10; expand right padding by measured scrollbar width
+                        paddingLeft: 10,
+                        paddingRight: 10 + scrollbarPx,
                         background: "#f3f3f3",
                         borderBottom: "1px solid #ddd",
                         boxSizing: "border-box",
@@ -146,14 +181,24 @@ export default function SongListPanel(): React.ReactElement {
                         alignItems: "center",          // ok to keep; ensures non-text children center too
                     }}
                 >
-                    <HeaderButton label="Composer Last" token={SONG_COL.composerLastName} curToken={sortToken} dir={sortDir} onClick={toggleSort} />
-                    <HeaderButton label="Composer First" token={SONG_COL.composerFirstName} curToken={sortToken} dir={sortDir} onClick={toggleSort} />
+                    <HeaderButton label="Composer Last Name" token={SONG_COL.composerLastName} curToken={sortToken} dir={sortDir} onClick={toggleSort} />
+                    <HeaderButton label="Composer First Name" token={SONG_COL.composerFirstName} curToken={sortToken} dir={sortDir} onClick={toggleSort} />
                     <HeaderButton label="Song Title" token={SONG_COL.songTitle} curToken={sortToken} dir={sortDir} onClick={toggleSort} />
                     <HeaderButton label="Skill Level" token={SONG_COL.skillLevelNumber} curToken={sortToken} dir={sortDir} onClick={toggleSort} />
                 </div>
 
-                {/* Fixed-height scroll area (10 inches ~= 960px) */}
-                <div style={{ height: TABLE_BODY_PX, overflow: "auto", background: "#fff" }}>
+                {/* Fixed-height scroll area (body) */}
+                <div
+                    ref={scrollRef}
+                    style={{
+                        height: TABLE_BODY_PX,
+                        overflow: "auto",
+                        background: "#fff",
+                        // Helps some browsers keep space for the vertical scrollbar (prevents column drift)
+                        scrollbarGutter: "stable",
+                        boxSizing: "border-box",
+                    }}
+                >
                     {rows.map((r) => {
                         return (
                             <div
