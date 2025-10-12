@@ -18,7 +18,7 @@ const TABLE_ROW_COUNT = 10;              // fixed number of visible rows
 const TABLE_BODY_PX = TABLE_ROW_PX * TABLE_ROW_COUNT;
 
 // Fixed grid column widths (Admin list: Last | First | Title | Level | File)
-const GRID_COLS = "140px 140px 300px 100px 340px" as const;
+const GRID_COLS = "140px 140px 300px 100px 360px" as const;
 
 type SaveResponse = {
     ok?: boolean;
