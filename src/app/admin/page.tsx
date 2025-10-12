@@ -734,10 +734,6 @@ export default function AdminPage(): React.ReactElement {
     const saveLabel = saving ? "Saving…" : (isUpdate ? "Update Song" : "Add Song");
     const canView = songId !== null;
 
-    // Typed constants for the scoped CSS override — no `any`
-    const INPUT_BG: string = isDark ? "#121212" : "#ffffff";
-    const INPUT_FG: string = isDark ? "#ffffff" : "#111111";
-
     return (
         <main style={{ maxWidth: 1100, margin: "24px auto", padding: "0 16px" }}>
             {/* ===== SONG LIST (TOP) ===== */}
@@ -881,7 +877,8 @@ export default function AdminPage(): React.ReactElement {
                 </h2>
 
                 <div
-                    key={isDark ? "dark" : "light"}  // force remount when theme flips
+                    id="edit-card"
+                    key={isDark ? "dark" : "light"}
                     data-theme={isDark ? "dark" : "light"}
                     style={{
                         padding: 16,
@@ -891,17 +888,16 @@ export default function AdminPage(): React.ReactElement {
                         backgroundColor: T.bgCard,
                         color: T.fgCard,
                     }}
+                >                    <div
+                    style={{
+                        marginTop: 0,
+                        display: "grid",
+                        gridTemplateColumns: "120px 1fr",
+                        rowGap: 10,
+                        columnGap: 12,
+                        background: "transparent",
+                    }}
                 >
-                    <div
-                        style={{
-                            marginTop: 0,
-                            display: "grid",
-                            gridTemplateColumns: "120px 1fr",
-                            rowGap: 10,
-                            columnGap: 12,
-                            background: "transparent",
-                        }}
-                    >
                         <label style={{ alignSelf: "center", fontWeight: 600 }}>Song Title</label>
                         <input
                             type="text"
@@ -1083,30 +1079,33 @@ export default function AdminPage(): React.ReactElement {
             </section>
 
             {/* Scoped guardrails against stray global CSS (no `any`) */}
-            <style jsx>{`
-        /* Lock the edit card to token colors even if a global stylesheet tries to override */
-        [aria-labelledby="edit-song-h"] > div:first-of-type {
-          background: ${T.bgCard} !important;
-          color: ${T.fgCard} !important;
-          border-color: ${T.border} !important;
-        }
+            <style jsx global>{`
+  /* Highest-specificity, page-local override: wins even against .card {...}!important */
+  section[aria-labelledby="edit-song-h"] > #edit-card {
+    background: ${T.bgCard} !important;
+    color: ${T.fgCard} !important;
+    border: 1px solid ${T.border} !important;
+    border-radius: 8px !important;
+    padding: 16px !important;
+  }
 
-        /* Ensure form controls stay readable in dark mode even under aggressive global CSS */
-        [aria-labelledby="edit-song-h"] input,
-        [aria-labelledby="edit-song-h"] select,
-        [aria-labelledby="edit-song-h"] textarea {
-          background: ${INPUT_BG} !important;
-          color: ${INPUT_FG} !important;
-          border-color: ${T.border} !important;
-        }
+  /* Keep inputs readable in dark mode inside the edit card */
+  #edit-card input,
+  #edit-card select,
+  #edit-card textarea {
+    background: ${isDark ? "#121212" : "#ffffff"} !important;
+    color: ${isDark ? "#ffffff" : "#111111"} !important;
+    border: 1px solid ${T.border} !important;
+  }
 
-        /* Make sure section headers are never hidden by resets */
-        [aria-labelledby="songs-h"] > h2,
-        [aria-labelledby="edit-song-h"] > h2 {
-          display: block !important;
-          visibility: visible !important;
-        }
-      `}</style>
+  /* Titles must always be visible */
+  [aria-labelledby="songs-h"] > h2,
+  [aria-labelledby="edit-song-h"] > h2 {
+    display: block !important;
+    visibility: visible !important;
+    color: ${isDark ? "#fff" : "#111"} !important;
+  }
+`}</style>
         </main>
     );
 }
