@@ -4,7 +4,6 @@
 import React from "react";
 import { SONG_COL, type SongColToken } from "@/lib/songCols";
 import { usePrefersDark, themeTokens, fieldStyle } from "@/lib/theme";
-import SortHeaderButton from "@/components/common/SortHeaderButton";
 
 // --- Config ---
 
@@ -189,6 +188,41 @@ function isLevel(x: unknown): x is Level {
     return typeof r.number === "number" && Number.isFinite(r.number) && typeof r.name === "string";
 }
 
+// --- UI Helpers ---
+
+function HeaderButton(props: {
+    label: string;
+    sortToken: SongColToken;
+    curSort: SongColToken | null;
+    dir: SortDir;
+    onClick: (k: SongColToken) => void;
+    color?: string;
+}) {
+    const active = props.curSort === props.sortToken;
+    const caret = active ? (props.dir === "asc" ? "▲" : "▼") : "";
+    return (
+        <button
+            type="button"
+            onClick={() => {
+                props.onClick(props.sortToken);
+            }}
+            title={`Sort by ${props.label}`}
+            style={{
+                textAlign: "left",
+                fontWeight: 600,
+                fontSize: 13,
+                background: "transparent",
+                border: "none",
+                padding: 0,
+                cursor: "pointer",
+                color: props.color ?? "#111",
+            }}
+        >
+            {props.label} {caret}
+        </button>
+    );
+}
+
 // --- Component ---
 
 export default function AdminPage(): React.ReactElement {
@@ -334,10 +368,7 @@ export default function AdminPage(): React.ReactElement {
                 params.set("dir", effDir);
             }
 
-            const url = `${SONG_LIST_ENDPOINT}?${params.toString()}`;
-
-            console.warn("[songlist] fetch", { effSort, effDir, url });
-            const res = await fetch(url, {
+            const res = await fetch(`${SONG_LIST_ENDPOINT}?${params.toString()}`, {
                 cache: "no-store",
                 signal: controller.signal,
             });
@@ -776,46 +807,11 @@ export default function AdminPage(): React.ReactElement {
                             transition: "opacity 120ms linear",
                         }}
                     >
-                        <SortHeaderButton<SongColToken>
-                            col={SONG_COL.composerLastName}
-                            curSort={sort}
-                            dir={sortDir}
-                            onToggle={toggleSort}
-                            label="Composer Last Name"
-                            className="songs-header-btn"
-                        />
-                        <SortHeaderButton<SongColToken>
-                            col={SONG_COL.composerFirstName}
-                            curSort={sort}
-                            dir={sortDir}
-                            onToggle={toggleSort}
-                            label="Composer First Name"
-                            className="songs-header-btn"
-                        />
-                        <SortHeaderButton<SongColToken>
-                            col={SONG_COL.songTitle}
-                            curSort={sort}
-                            dir={sortDir}
-                            onToggle={toggleSort}
-                            label="Song Title"
-                            className="songs-header-btn"
-                        />
-                        <SortHeaderButton<SongColToken>
-                            col={SONG_COL.skillLevelNumber}
-                            curSort={sort}
-                            dir={sortDir}
-                            onToggle={toggleSort}
-                            label="Skill Level"
-                            className="songs-header-btn"
-                        />
-                        <SortHeaderButton<SongColToken>
-                            col={SONG_COL.fileName}
-                            curSort={sort}
-                            dir={sortDir}
-                            onToggle={toggleSort}
-                            label="File Name"
-                            className="songs-header-btn"
-                        />
+                        <HeaderButton label="Composer Last" sortToken={SONG_COL.composerLastName} curSort={sort} dir={sortDir} onClick={toggleSort} color={T.headerFg} />
+                        <HeaderButton label="Composer First" sortToken={SONG_COL.composerFirstName} curSort={sort} dir={sortDir} onClick={toggleSort} color={T.headerFg} />
+                        <HeaderButton label="Song Title" sortToken={SONG_COL.songTitle} curSort={sort} dir={sortDir} onClick={toggleSort} color={T.headerFg} />
+                        <HeaderButton label="Skill Level" sortToken={SONG_COL.skillLevelNumber} curSort={sort} dir={sortDir} onClick={toggleSort} color={T.headerFg} />
+                        <HeaderButton label="File Name" sortToken={SONG_COL.fileName} curSort={sort} dir={sortDir} onClick={toggleSort} color={T.headerFg} />
                     </div>
 
                     {/* Body: scrollbar only when needed */}
