@@ -13,7 +13,7 @@ const SONG_LIST_ENDPOINT = "/api/songlist";
 const XML_PREVIEW_HEIGHT = 200;
 
 // Fixed grid column widths (px): Last | First | Title | Level | File
-const GRID_COLS_PX = [140, 140, 300, 100, 400] as const; // <-- tweak only these numbers
+const GRID_COLS_PX = [140, 140, 300, 100, 440] as const; // <-- tweak only these numbers
 const GRID_COLS: React.CSSProperties["gridTemplateColumns"] =
     GRID_COLS_PX.map(n => `${n}px`).join(" ");
 const TABLE_MIN_PX = GRID_COLS_PX.reduce((a, b) => a + b, 0);
