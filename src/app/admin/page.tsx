@@ -504,6 +504,14 @@ export default function AdminPage(): React.ReactElement {
         }
     };
 
+    const openViewer = React.useCallback(() => {
+        if (songId !== null) {
+            // open in a new tab, safely
+            window.open(`/viewer?id=${songId}`, "_blank", "noopener,noreferrer");
+        }
+    }, [songId]);
+
+
     const onPick: React.ChangeEventHandler<HTMLInputElement> = async (e) => {
         setError("");
         setSaveOk("");
@@ -692,11 +700,13 @@ export default function AdminPage(): React.ReactElement {
                 return;
             }
 
+            const wasUpdate = songId !== null;
+
             if (json && typeof json.song_id === "number" && Number.isFinite(json.song_id)) {
                 setSongId(json.song_id);
             }
 
-            setSaveOk("Saved");
+            setSaveOk(wasUpdate ? "Updated" : "Added");
 
             // Reset input so the same file selection can trigger again if needed
             if (fileInputRef.current) {
@@ -715,11 +725,15 @@ export default function AdminPage(): React.ReactElement {
     // Decide overflow deterministically: scrolling only when we have more than TABLE_VISIBLE_ROWS real rows
     const needsScroll: boolean = songs.length > TABLE_ROW_COUNT;
 
+    const isUpdate = songId !== null;
+    const saveLabel = saving ? "Saving…" : (isUpdate ? "Update Song" : "Add Song");
+    const canView = songId !== null;
+
     return (
         <main style={{ maxWidth: 1100, margin: "24px auto", padding: "0 16px" }}>
             {/* ===== SONG LIST (TOP) ===== */}
             <section className="space-y-2" aria-labelledby="songs-h" style={{ marginTop: 0 }}>
-                <h2 id="songs-h" style={{ marginTop: 0, fontSize: 18, fontWeight: 600, color: "#fff" }}>Songs</h2>
+                <h2 id="songs-h" style={{ marginTop: 0, fontSize: 18, fontWeight: 600, color: T.fgCard }}>Songs</h2>
 
                 {listLoading && <p style={{ color: "#ddd" }}>Loading…</p>}
                 {listError && <p style={{ color: "#ff6b6b" }}>Error: {listError}</p>}
@@ -754,7 +768,7 @@ export default function AdminPage(): React.ReactElement {
                             <HeaderButton label="File Name" sortToken={SONG_COL.fileName} curSort={sort} dir={sortDir} onClick={toggleSort} color={T.headerFg} />
                         </div>
 
-                        {/* Body: fixed 15 rows; scrollbar only when needed */}
+                        {/* Body: scrollbar only when needed */}
                         <div
                             style={{
                                 minHeight: TABLE_BODY_PX,
@@ -846,10 +860,6 @@ export default function AdminPage(): React.ReactElement {
                 >
                     Edit Song
                 </h2>
-
-                <div style={{ fontSize: 12, margin: "4px 0 8px", color: "#9aa0a6" }}>
-                    debug → isDark: {String(isDark)} | T.bgCard: {T.bgCard} | T.border: {T.border}
-                </div>
 
                 <div
                     key={isDark ? "dark" : "light"}  // force remount when theme flips
@@ -962,7 +972,6 @@ export default function AdminPage(): React.ReactElement {
                             style={{ display: "none" }}
                         />
 
-                        {/* Left: Load File */}
                         <button
                             type="button"
                             onClick={() => { if (fileInputRef.current) { fileInputRef.current.click(); } }}
@@ -975,7 +984,7 @@ export default function AdminPage(): React.ReactElement {
                                 cursor: "pointer",
                             }}
                         >
-                            Load File
+                            Load New Song
                         </button>
 
                         {/* Center: status */}
@@ -990,14 +999,33 @@ export default function AdminPage(): React.ReactElement {
                                 overflow: "hidden",
                                 textOverflow: "ellipsis",
                                 textAlign: "center",
-                                color: error ? "#ff6b6b" : T.fgCard,
+                                color: parsing ? (isDark ? "#ccc" : "#555") : (error ? "#ff6b6b" : T.fgCard),
                                 fontWeight: 500,
                                 margin: 0,
-                                visibility: (error || saveOk) ? "visible" : "hidden",
+                                visibility: (parsing || error || saveOk) ? "visible" : "hidden",
                             }}
                         >
-                            {error || saveOk || ""}
+                            {parsing ? "Parsing…" : (error || saveOk || "")}
                         </span>
+
+                        {/* View Song (enabled only when in DB) */}
+                        <button
+                            type="button"
+                            onClick={openViewer}
+                            disabled={!canView}
+                            title={canView ? "Open in viewer" : "Save or select a song first"}
+                            style={{
+                                padding: "8px 12px",
+                                border: `1px solid ${T.border}`,
+                                borderRadius: 6,
+                                background: isDark ? "#1f1f1f" : "#fafafa",
+                                color: isDark ? "#fff" : "#111",
+                                cursor: canView ? "pointer" : "not-allowed",
+                                opacity: canView ? 1 : 0.5,
+                            }}
+                        >
+                            View Song
+                        </button>
 
                         {/* Right: Save Song */}
                         <button
@@ -1014,7 +1042,7 @@ export default function AdminPage(): React.ReactElement {
                                 opacity: saving ? 0.7 : 1,
                             }}
                         >
-                            {saving ? "Saving…" : "Save Song"}
+                            {saveLabel}
                         </button>
                     </div>
                 </div>
