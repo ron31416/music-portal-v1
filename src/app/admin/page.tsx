@@ -12,13 +12,16 @@ const SAVE_ENDPOINT = "/api/song";
 const SONG_LIST_ENDPOINT = "/api/songlist";
 const XML_PREVIEW_HEIGHT = 200;
 
-// --- Table Config (admin list) ---
+// Fixed grid column widths (px): Last | First | Title | Level | File
+const GRID_COLS_PX = [140, 140, 300, 100, 400] as const; // <-- tweak only these numbers
+const GRID_COLS: React.CSSProperties["gridTemplateColumns"] =
+    GRID_COLS_PX.map(n => `${n}px`).join(" ");
+const TABLE_MIN_PX = GRID_COLS_PX.reduce((a, b) => a + b, 0);
 const TABLE_ROW_PX = 28;                 // height of a single row
 const TABLE_ROW_COUNT = 10;              // fixed number of visible rows
 const TABLE_BODY_PX = TABLE_ROW_PX * TABLE_ROW_COUNT;
 
-// Fixed grid column widths (Admin list: Last | First | Title | Level | File)
-const GRID_COLS = "140px 140px 300px 100px 400px" as const;
+
 
 type SaveResponse = {
     ok?: boolean;
@@ -720,7 +723,7 @@ export default function AdminPage(): React.ReactElement {
     const canView = songId !== null;
 
     return (
-        <main style={{ maxWidth: 1100, margin: "24px auto", padding: "0 16px" }}>
+        <main style={{ maxWidth: TABLE_MIN_PX + 32, margin: "24px auto", padding: "0 16px" }}>
             {/* ===== SONG LIST (TOP) ===== */}
             <section aria-label="Songs" style={{ marginTop: 0 }}>
                 {/* Inline status line, but DO NOT hide the table wrapper */}
@@ -735,7 +738,7 @@ export default function AdminPage(): React.ReactElement {
                         position: "relative",            // for overlay positioning
                         border: `1px solid ${T.border}`,
                         borderRadius: 6,
-                        overflowX: "hidden",
+                        overflowX: "auto",
                         overflowY: "hidden",
                         background: T.bgCard,
                     }}
@@ -764,6 +767,7 @@ export default function AdminPage(): React.ReactElement {
                         style={{
                             display: "grid",
                             gridTemplateColumns: GRID_COLS,
+                            width: TABLE_MIN_PX,
                             padding: "8px 10px",
                             background: T.headerBg,
                             color: T.headerFg,
@@ -839,6 +843,7 @@ export default function AdminPage(): React.ReactElement {
                                     style={{
                                         display: "grid",
                                         gridTemplateColumns: GRID_COLS,
+                                        width: TABLE_MIN_PX,
                                         padding: "8px 10px",
                                         borderBottom: `1px solid ${T.border}`,
                                         fontSize: 13,
@@ -870,6 +875,7 @@ export default function AdminPage(): React.ReactElement {
                                     style={{
                                         display: "grid",
                                         gridTemplateColumns: GRID_COLS,
+                                        width: TABLE_MIN_PX,
                                         padding: "8px 10px",
                                         borderBottom: `1px solid ${T.border}`,
                                         fontSize: 13,
