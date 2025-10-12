@@ -726,6 +726,9 @@ export default function AdminPage(): React.ReactElement {
     const needsScroll: boolean = songs.length > TABLE_ROW_COUNT;
 
     const isUpdate = songId !== null;
+    const canAdd = !isUpdate && !!fileName && !parsing && !saving;
+    const canUpdate = isUpdate && !saving;
+    const canSave = isUpdate ? canUpdate : canAdd;
     const saveLabel = saving ? "Saving…" : (isUpdate ? "Update Song" : "Add Song");
     const canView = songId !== null;
 
@@ -962,7 +965,7 @@ export default function AdminPage(): React.ReactElement {
                             gap: 12,
                         }}
                     >
-                        {/* Hidden file input lives inside the card now */}
+                        {/* Hidden file input lives inside the card */}
                         <input
                             ref={fileInputRef}
                             id="song-file-input"
@@ -972,6 +975,7 @@ export default function AdminPage(): React.ReactElement {
                             style={{ display: "none" }}
                         />
 
+                        {/* Left-side button: Load */}
                         <button
                             type="button"
                             onClick={() => { if (fileInputRef.current) { fileInputRef.current.click(); } }}
@@ -987,18 +991,18 @@ export default function AdminPage(): React.ReactElement {
                             Load New Song
                         </button>
 
-                        {/* Center: status */}
+                        {/* Middle: status message fills available space */}
                         <span
                             aria-live="polite"
-                            role={parsing ? "status" : error ? "alert" : saveOk ? "status" : undefined}
+                            role={parsing ? "status" : (error ? "alert" : saveOk ? "status" : undefined)}
                             title={parsing ? "Parsing…" : (error || saveOk || "")}
                             style={{
-                                flex: 1,
+                                flex: 1,                     // <-- this gives it the whole middle area
                                 minWidth: 0,
                                 whiteSpace: "nowrap",
                                 overflow: "hidden",
                                 textOverflow: "ellipsis",
-                                textAlign: "center",
+                                textAlign: "left",
                                 color: parsing ? (isDark ? "#ccc" : "#555") : (error ? "#ff6b6b" : T.fgCard),
                                 fontWeight: 500,
                                 margin: 0,
@@ -1008,12 +1012,28 @@ export default function AdminPage(): React.ReactElement {
                             {parsing ? "Parsing…" : (error || saveOk || "")}
                         </span>
 
-                        {/* View Song (enabled only when in DB) */}
+                        {/* Right-side buttons: Save then View */}
+                        <button
+                            type="button"
+                            onClick={onSave}
+                            disabled={!canSave}
+                            style={{
+                                padding: "8px 12px",
+                                border: `1px solid ${T.border}`,
+                                borderRadius: 6,
+                                background: isDark ? "#1f1f1f" : "#fafafa",
+                                color: isDark ? "#fff" : "#111",
+                                cursor: canSave ? "pointer" : "not-allowed",
+                                opacity: canSave ? 1 : 0.5,
+                            }}
+                        >
+                            {saveLabel}
+                        </button>
+
                         <button
                             type="button"
                             onClick={openViewer}
                             disabled={!canView}
-                            title={canView ? "Open in viewer" : "Save or select a song first"}
                             style={{
                                 padding: "8px 12px",
                                 border: `1px solid ${T.border}`,
@@ -1025,24 +1045,6 @@ export default function AdminPage(): React.ReactElement {
                             }}
                         >
                             View Song
-                        </button>
-
-                        {/* Right: Save Song */}
-                        <button
-                            type="button"
-                            onClick={onSave}
-                            disabled={saving}
-                            style={{
-                                padding: "8px 12px",
-                                border: `1px solid ${T.border}`,
-                                borderRadius: 6,
-                                background: isDark ? "#1f1f1f" : "#fafafa",
-                                color: isDark ? "#fff" : "#111",
-                                cursor: saving ? "default" : "pointer",
-                                opacity: saving ? 0.7 : 1,
-                            }}
-                        >
-                            {saveLabel}
                         </button>
                     </div>
                 </div>
