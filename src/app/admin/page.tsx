@@ -757,7 +757,7 @@ export default function AdminPage(): React.ReactElement {
                         </div>
                     )}
 
-/* Header */
+                    {/* Header */}
                     <div
                         id="songs-header"
                         style={{
