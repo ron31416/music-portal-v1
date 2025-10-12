@@ -262,8 +262,8 @@ export default function AdminPage(): React.ReactElement {
     const mxlSeqRef = React.useRef(0);
 
     const isDark = usePrefersDark();
-    const T = themeTokens(isDark);        // card/bg/rows/header/border colors
-    const fieldCss = fieldStyle(isDark);  // inputs + textarea base style
+    const T = React.useMemo(() => themeTokens(isDark), [isDark]);        // memoize tokens
+    const fieldCss = React.useMemo(() => fieldStyle(isDark), [isDark]);  // memoize field styles
 
     // Fast lookup for duplicates: file_name -> song_id (exact, case-sensitive)
     const fileNameToIdRef = React.useRef<Map<string, number>>(new Map());
@@ -841,7 +841,7 @@ export default function AdminPage(): React.ReactElement {
                         marginTop: 0,
                         fontSize: 18,
                         fontWeight: 600,
-                        color: "#fff",
+                        color: T.fgCard,
                     }}
                 >
                     Edit Song
@@ -852,15 +852,13 @@ export default function AdminPage(): React.ReactElement {
                 </div>
 
                 <div
+                    key={isDark ? "dark" : "light"}  // force remount when theme flips
                     style={{
                         padding: 16,
-                        //border: `1px solid ${T.border}`,
-                        border: `1px solid ${isDark ? "#2a2a2a" : "#dddddd"}`,
+                        border: `1px solid ${T.border}`,
                         borderRadius: 8,
                         background: T.bgCard,
-                        backgroundColor: T.bgCard, // ensures no CSS reset overrides
                         color: T.fgCard,
-                        boxShadow: "0 0 0 1px transparent", // harmless; helps confirm layer
                     }}
                 >
                     <div
