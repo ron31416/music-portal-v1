@@ -334,7 +334,10 @@ export default function AdminPage(): React.ReactElement {
                 params.set("dir", effDir);
             }
 
-            const res = await fetch(`${SONG_LIST_ENDPOINT}?${params.toString()}`, {
+            const url = `${SONG_LIST_ENDPOINT}?${params.toString()}`;
+
+            console.warn("[songlist] fetch", { effSort, effDir, url });
+            const res = await fetch(url, {
                 cache: "no-store",
                 signal: controller.signal,
             });
