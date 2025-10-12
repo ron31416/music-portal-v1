@@ -90,7 +90,7 @@ export default function SongListPanel(): React.ReactElement {
     const fetchList = React.useCallback(async (token: SongColToken | null, dir: SortDir) => {
         try {
             const params = new URLSearchParams();
-            params.set("limit", "1000");
+            //params.set("limit", "1000");
             if (token !== null) {
                 params.set("sort", token);
                 params.set("dir", dir);
