@@ -255,6 +255,8 @@ export default function AdminPage(): React.ReactElement {
 
     const [songId, setSongId] = React.useState<number | null>(null);
 
+    const [statusTick, setStatusTick] = React.useState(0);
+
     const fileInputRef = React.useRef<HTMLInputElement>(null);
     const listAbortRef = React.useRef<AbortController | null>(null);
     const listSeqRef = React.useRef(0);
@@ -732,6 +734,7 @@ export default function AdminPage(): React.ReactElement {
             // Clear any prior error, then set the final success message **last**
             setError("");
             setSaveOk(wasUpdate ? "Updated" : "Added");
+            setStatusTick((t) => t + 1);
         } catch (err) {
             setError(err instanceof Error ? err.message : String(err));
         } finally {
@@ -1025,6 +1028,7 @@ export default function AdminPage(): React.ReactElement {
 
                         {/* Middle: status message fills available space */}
                         <span
+                            key={`status-${statusTick}`}
                             aria-live="polite"
                             role={parsing ? "status" : (error ? "alert" : saveOk ? "status" : undefined)}
                             title={parsing ? "Parsing…" : (error || saveOk || "")}
