@@ -738,7 +738,7 @@ export default function AdminPage(): React.ReactElement {
                         position: "relative",            // for overlay positioning
                         border: `1px solid ${T.border}`,
                         borderRadius: 6,
-                        overflowX: "auto",
+                        overflowX: "hidden",
                         overflowY: "hidden",
                         background: T.bgCard,
                     }}
