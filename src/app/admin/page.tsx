@@ -611,6 +611,9 @@ export default function AdminPage(): React.ReactElement {
         const titleTrimmed = rtrimSpaces(title);
         const firstTrimmed = rtrimSpaces(composerFirst);
         const lastTrimmed = rtrimSpaces(composerLast);
+        if (title !== titleTrimmed) { setTitle(titleTrimmed); }
+        if (composerFirst !== firstTrimmed) { setComposerFirst(firstTrimmed); }
+        if (composerLast !== lastTrimmed) { setComposerLast(lastTrimmed); }
 
         // Required: title and explicit level selection (no default)
         if (titleTrimmed.length === 0) {
@@ -715,15 +718,20 @@ export default function AdminPage(): React.ReactElement {
                 setSongId(json.song_id);
             }
 
-            setSaveOk(wasUpdate ? "Updated" : "Added");
-
-            // Reset input so the same file selection can trigger again if needed
+            // Reset the hidden file input so the same file can be picked again if needed
             if (fileInputRef.current) {
                 fileInputRef.current.value = "";
             }
 
-            // Refresh list so the new row appears and the duplicate map is updated
+            // Refresh the list **silently** (no spinner, no layout dim)
             await refreshSongList(undefined, undefined, false);
+
+            // Make sure saving state is cleared before we show the success text
+            setSaving(false);
+
+            // Clear any prior error, then set the final success message **last**
+            setError("");
+            setSaveOk(wasUpdate ? "Updated" : "Added");
         } catch (err) {
             setError(err instanceof Error ? err.message : String(err));
         } finally {
@@ -738,7 +746,7 @@ export default function AdminPage(): React.ReactElement {
     const canAdd = !isUpdate && !!fileName && !parsing && !saving;
     const canUpdate = isUpdate && !saving;
     const canSave = isUpdate ? canUpdate : canAdd;
-    const saveLabel = saving ? "Saving…" : (isUpdate ? "Update Song" : "Add Song");
+    const saveLabel = isUpdate ? "Update Song" : "Add Song";
     const canView = songId !== null;
 
     return (
@@ -789,6 +797,7 @@ export default function AdminPage(): React.ReactElement {
 
                     {/* Header */}
                     <div
+                        id="songs-header"
                         style={{
                             display: "grid",
                             gridTemplateColumns: GRID_COLS,
@@ -798,7 +807,7 @@ export default function AdminPage(): React.ReactElement {
                             borderBottom: `1px solid ${T.border}`,
                             fontWeight: 600,
                             fontSize: 13,
-                            opacity: listLoading ? 0.7 : 1,     // soften during fetch; keep mounted
+                            opacity: listLoading ? 0.7 : 1,
                             transition: "opacity 120ms linear",
                         }}
                     >
@@ -1107,7 +1116,7 @@ export default function AdminPage(): React.ReactElement {
 
             {/* Scoped guardrails against stray global CSS (no `any`) */}
             <style jsx global>{`
-  /* Highest-specificity, page-local override: wins even against .card {...}!important */
+  /* Edit card: win even against global .card {...}!important */
   section[aria-labelledby="edit-song-h"] > #edit-card {
     background: ${T.bgCard} !important;
     color: ${T.fgCard} !important;
@@ -1116,7 +1125,7 @@ export default function AdminPage(): React.ReactElement {
     padding: 16px !important;
   }
 
-  /* Keep inputs readable in dark mode inside the edit card */
+  /* Inputs inside the edit card stay readable in dark mode */
   #edit-card input,
   #edit-card select,
   #edit-card textarea {
@@ -1125,13 +1134,26 @@ export default function AdminPage(): React.ReactElement {
     border: 1px solid ${T.border} !important;
   }
 
-  /* Titles must always be visible */
+  /* Section titles must always be visible (and themed) */
   [aria-labelledby="songs-h"] > h2,
   [aria-labelledby="edit-song-h"] > h2 {
     display: block !important;
     visibility: visible !important;
     color: ${isDark ? "#fff" : "#111"} !important;
-  }`}
+  }
+
+  /* ---- Songs table header (ensure dark bg/fg) ---- */
+  #songs-header {
+    background: ${T.headerBg} !important;
+    color: ${T.headerFg} !important;
+  }
+
+  /* Ensure header buttons/text use header fg color */
+  #songs-header button,
+  #songs-header * {
+    color: ${T.headerFg} !important;
+  }
+`}
             </style>
         </main>
     );
