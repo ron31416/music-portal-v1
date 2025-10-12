@@ -752,14 +752,7 @@ export default function AdminPage(): React.ReactElement {
     return (
         <main style={{ maxWidth: 1100, margin: "24px auto", padding: "0 16px" }}>
             {/* ===== SONG LIST (TOP) ===== */}
-            <section className="space-y-2" aria-labelledby="songs-h" style={{ marginTop: 0 }}>
-                <h2
-                    id="songs-h"
-                    style={{ marginTop: 0, fontSize: 18, fontWeight: 600, color: isDark ? "#fff" : "#111" }}
-                >
-                    Songs
-                </h2>
-
+            <section aria-label="Songs" style={{ marginTop: 0 }}>
                 {/* Inline status line, but DO NOT hide the table wrapper */}
                 {listError && (
                     <p style={{ color: "#ff6b6b", margin: "4px 0 8px" }}>
@@ -807,7 +800,7 @@ export default function AdminPage(): React.ReactElement {
                             borderBottom: `1px solid ${T.border}`,
                             fontWeight: 600,
                             fontSize: 13,
-                            opacity: listLoading ? 0.7 : 1,
+                            opacity: listLoading ? 0.7 : 1,     // soften during fetch; keep mounted
                             transition: "opacity 120ms linear",
                         }}
                     >
@@ -899,22 +892,10 @@ export default function AdminPage(): React.ReactElement {
             </section>
 
             {/* ===== EDIT PANEL (ALWAYS VISIBLE, BELOW GRID) ===== */}
-            <section aria-labelledby="edit-song-h" style={{ marginTop: 8, background: "transparent" }}>
-                <h2
-                    id="edit-song-h"
-                    style={{
-                        marginTop: 0,
-                        fontSize: 18,
-                        fontWeight: 600,
-                        color: isDark ? "#fff" : "#111",
-                    }}
-                >
-                    Edit Song
-                </h2>
-
+            <section aria-label="Edit panel" style={{ marginTop: 8, background: "transparent" }}>
                 <div
                     id="edit-card"
-                    key={isDark ? "dark" : "light"}
+                    key={isDark ? "dark" : "light"}  // force remount when theme flips
                     data-theme={isDark ? "dark" : "light"}
                     style={{
                         padding: 16,
@@ -924,23 +905,22 @@ export default function AdminPage(): React.ReactElement {
                         backgroundColor: T.bgCard,
                         color: T.fgCard,
                     }}
-                >                    <div
-                    style={{
-                        marginTop: 0,
-                        display: "grid",
-                        gridTemplateColumns: "120px 1fr",
-                        rowGap: 10,
-                        columnGap: 12,
-                        background: "transparent",
-                    }}
                 >
+                    <div
+                        style={{
+                            marginTop: 0,
+                            display: "grid",
+                            gridTemplateColumns: "120px 1fr",
+                            rowGap: 10,
+                            columnGap: 12,
+                            background: "transparent",
+                        }}
+                    >
                         <label style={{ alignSelf: "center", fontWeight: 600 }}>Song Title</label>
                         <input
                             type="text"
                             value={title}
-                            onChange={(e) => {
-                                setTitle(e.target.value);
-                            }}
+                            onChange={(e) => { setTitle(e.target.value); }}
                             style={fieldCss}
                         />
 
@@ -949,18 +929,14 @@ export default function AdminPage(): React.ReactElement {
                             <input
                                 type="text"
                                 value={composerFirst}
-                                onChange={(e) => {
-                                    setComposerFirst(e.target.value);
-                                }}
+                                onChange={(e) => { setComposerFirst(e.target.value); }}
                                 placeholder="First"
                                 style={fieldCss}
                             />
                             <input
                                 type="text"
                                 value={composerLast}
-                                onChange={(e) => {
-                                    setComposerLast(e.target.value);
-                                }}
+                                onChange={(e) => { setComposerLast(e.target.value); }}
                                 placeholder="Last"
                                 style={fieldCss}
                             />
@@ -969,9 +945,7 @@ export default function AdminPage(): React.ReactElement {
                         <label style={{ alignSelf: "center", fontWeight: 600 }}>Skill Level</label>
                         <select
                             value={level}
-                            onChange={(e) => {
-                                setLevel(e.target.value);
-                            }}
+                            onChange={(e) => { setLevel(e.target.value); }}
                             disabled={levelsLoading || !!levelsError || levels.length === 0}
                             style={{ ...fieldCss, appearance: "auto" as const }}
                         >
@@ -998,9 +972,7 @@ export default function AdminPage(): React.ReactElement {
                         <textarea
                             aria-label="XML"
                             value={xmlPreview}
-                            onChange={(e) => {
-                                setXmlPreview(e.target.value);
-                            }}
+                            onChange={(e) => { setXmlPreview(e.target.value); }}
                             spellCheck={false}
                             style={{
                                 ...fieldCss,
@@ -1038,11 +1010,7 @@ export default function AdminPage(): React.ReactElement {
                         {/* Left-side button: Load */}
                         <button
                             type="button"
-                            onClick={() => {
-                                if (fileInputRef.current) {
-                                    fileInputRef.current.click();
-                                }
-                            }}
+                            onClick={() => { if (fileInputRef.current) { fileInputRef.current.click(); } }}
                             style={{
                                 padding: "8px 12px",
                                 border: `1px solid ${T.border}`,
@@ -1066,8 +1034,8 @@ export default function AdminPage(): React.ReactElement {
                                 whiteSpace: "nowrap",
                                 overflow: "hidden",
                                 textOverflow: "ellipsis",
-                                textAlign: "right",           // <-- AFTER: right-justify next to Save/Update
-                                color: parsing ? (isDark ? "#ccc" : "#555") : (error ? "#ff6b6b" : T.fgCard),
+                                textAlign: "right",
+                                color: parsing ? (isDark ? "#ccc" : "#555") : (error ? "#ff6b6b" : T.headerFg),
                                 fontWeight: 500,
                                 margin: 0,
                                 visibility: (parsing || error || saveOk) ? "visible" : "hidden",
@@ -1117,7 +1085,7 @@ export default function AdminPage(): React.ReactElement {
             {/* Scoped guardrails against stray global CSS (no `any`) */}
             <style jsx global>{`
   /* Edit card: win even against global .card {...}!important */
-  section[aria-labelledby="edit-song-h"] > #edit-card {
+  #edit-card {
     background: ${T.bgCard} !important;
     color: ${T.fgCard} !important;
     border: 1px solid ${T.border} !important;
@@ -1132,14 +1100,6 @@ export default function AdminPage(): React.ReactElement {
     background: ${isDark ? "#121212" : "#ffffff"} !important;
     color: ${isDark ? "#ffffff" : "#111111"} !important;
     border: 1px solid ${T.border} !important;
-  }
-
-  /* Section titles must always be visible (and themed) */
-  [aria-labelledby="songs-h"] > h2,
-  [aria-labelledby="edit-song-h"] > h2 {
-    display: block !important;
-    visibility: visible !important;
-    color: ${isDark ? "#fff" : "#111"} !important;
   }
 
   /* ---- Songs table header (ensure dark bg/fg) ---- */
