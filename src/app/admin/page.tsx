@@ -737,10 +737,10 @@ export default function AdminPage(): React.ReactElement {
             {/* ===== SONG LIST (TOP) ===== */}
             <section className="space-y-2" aria-labelledby="songs-h" style={{ marginTop: 0 }}>
                 <h2
-                    id="edit-song-h"
+                    id="songs-h"
                     style={{ marginTop: 0, fontSize: 18, fontWeight: 600, color: isDark ? "#fff" : "#111" }}
                 >
-                    Edit Song
+                    Songs
                 </h2>
                 {listLoading && <p style={{ color: "#ddd" }}>Loading…</p>}
                 {listError && <p style={{ color: "#ff6b6b" }}>Error: {listError}</p>}
