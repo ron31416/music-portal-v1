@@ -18,7 +18,7 @@ const TABLE_ROW_COUNT = 10;              // fixed number of visible rows
 const TABLE_BODY_PX = TABLE_ROW_PX * TABLE_ROW_COUNT;
 
 // Fixed grid column widths (Admin list: Last | First | Title | Level | File)
-const GRID_COLS = "160px 160px 300px 100px 300px" as const;
+const GRID_COLS = "140px 140px 300px 100px 340px" as const;
 
 type SaveResponse = {
     ok?: boolean;
@@ -775,18 +775,18 @@ export default function AdminPage(): React.ReactElement {
                         }}
                     >
                         <SortHeaderButton<SongColToken>
-                            col={SONG_COL.composerLastName}
-                            curSort={sort}
-                            dir={sortDir}
-                            onToggle={toggleSort}
-                            label="Composer Last"
-                        />
-                        <SortHeaderButton<SongColToken>
                             col={SONG_COL.composerFirstName}
                             curSort={sort}
                             dir={sortDir}
                             onToggle={toggleSort}
-                            label="Composer First"
+                            label="Composer First Name"
+                        />
+                        <SortHeaderButton<SongColToken>
+                            col={SONG_COL.composerLastName}
+                            curSort={sort}
+                            dir={sortDir}
+                            onToggle={toggleSort}
+                            label="Composer Last Name"
                         />
                         <SortHeaderButton<SongColToken>
                             col={SONG_COL.songTitle}
@@ -850,8 +850,8 @@ export default function AdminPage(): React.ReactElement {
                                         lineHeight: `${TABLE_ROW_PX - 10}px`,
                                     }}
                                 >
-                                    <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.composer_last_name || "\u2014"}</div>
                                     <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.composer_first_name || "\u2014"}</div>
+                                    <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.composer_last_name || "\u2014"}</div>
                                     <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.song_title}</div>
                                     <div>{r.skill_level_name}</div>
                                     <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.file_name || "\u2014"}</div>
