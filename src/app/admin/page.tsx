@@ -13,7 +13,7 @@ const XML_PREVIEW_HEIGHT = 200;
 
 // --- Table Config (admin list) ---
 const TABLE_ROW_PX = 28;                 // height of a single row
-const TABLE_ROW_COUNT = 10;           // fixed number of visible rows
+const TABLE_ROW_COUNT = 10;              // fixed number of visible rows
 const TABLE_BODY_PX = TABLE_ROW_PX * TABLE_ROW_COUNT;
 
 // Fixed grid column widths (Admin list: Last | First | Title | Level | File)
@@ -263,7 +263,11 @@ export default function AdminPage(): React.ReactElement {
 
     const isDark = usePrefersDark();
     const T = React.useMemo(() => themeTokens(isDark), [isDark]);        // memoize tokens
-    const fieldCss = React.useMemo(() => fieldStyle(isDark), [isDark]);  // memoize field styles
+
+    // Type-safe: ensure we expose a React.CSSProperties
+    const fieldCss: React.CSSProperties = React.useMemo(() => {
+        return fieldStyle(isDark) as React.CSSProperties;
+    }, [isDark]);
 
     // Fast lookup for duplicates: file_name -> song_id (exact, case-sensitive)
     const fileNameToIdRef = React.useRef<Map<string, number>>(new Map());
@@ -506,11 +510,9 @@ export default function AdminPage(): React.ReactElement {
 
     const openViewer = React.useCallback(() => {
         if (songId !== null) {
-            // open in a new tab, safely
             window.open(`/viewer?id=${songId}`, "_blank", "noopener,noreferrer");
         }
     }, [songId]);
-
 
     const onPick: React.ChangeEventHandler<HTMLInputElement> = async (e) => {
         setError("");
@@ -732,6 +734,10 @@ export default function AdminPage(): React.ReactElement {
     const saveLabel = saving ? "Saving…" : (isUpdate ? "Update Song" : "Add Song");
     const canView = songId !== null;
 
+    // Typed constants for the scoped CSS override — no `any`
+    const INPUT_BG: string = isDark ? "#121212" : "#ffffff";
+    const INPUT_FG: string = isDark ? "#ffffff" : "#111111";
+
     return (
         <main style={{ maxWidth: 1100, margin: "24px auto", padding: "0 16px" }}>
             {/* ===== SONG LIST (TOP) ===== */}
@@ -792,9 +798,14 @@ export default function AdminPage(): React.ReactElement {
                                 return (
                                     <div
                                         key={r.song_id}
-                                        onClick={() => { void loadSongRow(r); }}
+                                        onClick={() => {
+                                            void loadSongRow(r);
+                                        }}
                                         onKeyDown={(e: React.KeyboardEvent<HTMLDivElement>) => {
-                                            if (e.key === "Enter" || e.key === " ") { e.preventDefault(); void loadSongRow(r); }
+                                            if (e.key === "Enter" || e.key === " ") {
+                                                e.preventDefault();
+                                                void loadSongRow(r);
+                                            }
                                         }}
                                         role="button"
                                         tabIndex={0}
@@ -821,34 +832,35 @@ export default function AdminPage(): React.ReactElement {
                                 );
                             })}
 
-                            {/* Padding rows up to 15 */}
-                            {songs.length < TABLE_ROW_COUNT && Array.from({ length: TABLE_ROW_COUNT - songs.length }).map((_, i) => {
-                                const idx = songs.length + i;
-                                const bg = (idx % 2 === 0) ? T.rowEven : T.rowOdd;
-                                return (
-                                    <div
-                                        key={`pad-${i}`}
-                                        aria-hidden="true"
-                                        style={{
-                                            display: "grid",
-                                            gridTemplateColumns: GRID_COLS,
-                                            padding: "8px 10px",
-                                            borderBottom: `1px solid ${T.border}`,
-                                            fontSize: 13,
-                                            alignItems: "center",
-                                            background: bg,
-                                            color: T.rowFg,
-                                            height: TABLE_ROW_PX,
-                                        }}
-                                    >
-                                        <div>&nbsp;</div>
-                                        <div>&nbsp;</div>
-                                        <div>&nbsp;</div>
-                                        <div>&nbsp;</div>
-                                        <div>&nbsp;</div>
-                                    </div>
-                                );
-                            })}
+                            {/* Padding rows up to TABLE_ROW_COUNT */}
+                            {songs.length < TABLE_ROW_COUNT &&
+                                Array.from({ length: TABLE_ROW_COUNT - songs.length }).map((_, i) => {
+                                    const idx = songs.length + i;
+                                    const bg = (idx % 2 === 0) ? T.rowEven : T.rowOdd;
+                                    return (
+                                        <div
+                                            key={`pad-${i}`}
+                                            aria-hidden="true"
+                                            style={{
+                                                display: "grid",
+                                                gridTemplateColumns: GRID_COLS,
+                                                padding: "8px 10px",
+                                                borderBottom: `1px solid ${T.border}`,
+                                                fontSize: 13,
+                                                alignItems: "center",
+                                                background: bg,
+                                                color: T.rowFg,
+                                                height: TABLE_ROW_PX,
+                                            }}
+                                        >
+                                            <div>&nbsp;</div>
+                                            <div>&nbsp;</div>
+                                            <div>&nbsp;</div>
+                                            <div>&nbsp;</div>
+                                            <div>&nbsp;</div>
+                                        </div>
+                                    );
+                                })}
                         </div>
                     </div>
                 )}
@@ -862,7 +874,7 @@ export default function AdminPage(): React.ReactElement {
                         marginTop: 0,
                         fontSize: 18,
                         fontWeight: 600,
-                        color: T.fgCard,
+                        color: isDark ? "#fff" : "#111",
                     }}
                 >
                     Edit Song
@@ -870,6 +882,7 @@ export default function AdminPage(): React.ReactElement {
 
                 <div
                     key={isDark ? "dark" : "light"}  // force remount when theme flips
+                    data-theme={isDark ? "dark" : "light"}
                     style={{
                         padding: 16,
                         border: `1px solid ${T.border}`,
@@ -893,7 +906,9 @@ export default function AdminPage(): React.ReactElement {
                         <input
                             type="text"
                             value={title}
-                            onChange={(e) => { setTitle(e.target.value); }}
+                            onChange={(e) => {
+                                setTitle(e.target.value);
+                            }}
                             style={fieldCss}
                         />
 
@@ -902,14 +917,18 @@ export default function AdminPage(): React.ReactElement {
                             <input
                                 type="text"
                                 value={composerFirst}
-                                onChange={(e) => { setComposerFirst(e.target.value); }}
+                                onChange={(e) => {
+                                    setComposerFirst(e.target.value);
+                                }}
                                 placeholder="First"
                                 style={fieldCss}
                             />
                             <input
                                 type="text"
                                 value={composerLast}
-                                onChange={(e) => { setComposerLast(e.target.value); }}
+                                onChange={(e) => {
+                                    setComposerLast(e.target.value);
+                                }}
                                 placeholder="Last"
                                 style={fieldCss}
                             />
@@ -918,7 +937,9 @@ export default function AdminPage(): React.ReactElement {
                         <label style={{ alignSelf: "center", fontWeight: 600 }}>Skill Level</label>
                         <select
                             value={level}
-                            onChange={(e) => { setLevel(e.target.value); }}
+                            onChange={(e) => {
+                                setLevel(e.target.value);
+                            }}
                             disabled={levelsLoading || !!levelsError || levels.length === 0}
                             style={{ ...fieldCss, appearance: "auto" as const }}
                         >
@@ -945,7 +966,9 @@ export default function AdminPage(): React.ReactElement {
                         <textarea
                             aria-label="XML"
                             value={xmlPreview}
-                            onChange={(e) => { setXmlPreview(e.target.value); }}
+                            onChange={(e) => {
+                                setXmlPreview(e.target.value);
+                            }}
                             spellCheck={false}
                             style={{
                                 ...fieldCss,
@@ -983,7 +1006,11 @@ export default function AdminPage(): React.ReactElement {
                         {/* Left-side button: Load */}
                         <button
                             type="button"
-                            onClick={() => { if (fileInputRef.current) { fileInputRef.current.click(); } }}
+                            onClick={() => {
+                                if (fileInputRef.current) {
+                                    fileInputRef.current.click();
+                                }
+                            }}
                             style={{
                                 padding: "8px 12px",
                                 border: `1px solid ${T.border}`,
@@ -1002,7 +1029,7 @@ export default function AdminPage(): React.ReactElement {
                             role={parsing ? "status" : (error ? "alert" : saveOk ? "status" : undefined)}
                             title={parsing ? "Parsing…" : (error || saveOk || "")}
                             style={{
-                                flex: 1,                     // <-- this gives it the whole middle area
+                                flex: 1,
                                 minWidth: 0,
                                 whiteSpace: "nowrap",
                                 overflow: "hidden",
@@ -1054,6 +1081,32 @@ export default function AdminPage(): React.ReactElement {
                     </div>
                 </div>
             </section>
+
+            {/* Scoped guardrails against stray global CSS (no `any`) */}
+            <style jsx>{`
+        /* Lock the edit card to token colors even if a global stylesheet tries to override */
+        [aria-labelledby="edit-song-h"] > div:first-of-type {
+          background: ${T.bgCard} !important;
+          color: ${T.fgCard} !important;
+          border-color: ${T.border} !important;
+        }
+
+        /* Ensure form controls stay readable in dark mode even under aggressive global CSS */
+        [aria-labelledby="edit-song-h"] input,
+        [aria-labelledby="edit-song-h"] select,
+        [aria-labelledby="edit-song-h"] textarea {
+          background: ${INPUT_BG} !important;
+          color: ${INPUT_FG} !important;
+          border-color: ${T.border} !important;
+        }
+
+        /* Make sure section headers are never hidden by resets */
+        [aria-labelledby="songs-h"] > h2,
+        [aria-labelledby="edit-song-h"] > h2 {
+          display: block !important;
+          visibility: visible !important;
+        }
+      `}</style>
         </main>
     );
 }
