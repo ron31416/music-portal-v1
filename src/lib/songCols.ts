@@ -43,11 +43,13 @@ export function isSongColToken(v: unknown): v is SongColToken {
    ============================================================ */
 
 export const SORTABLE_TOKENS = [
-    SONG_COL.songId,
     SONG_COL.songTitle,
     SONG_COL.composerFirstName,
     SONG_COL.composerLastName,
     SONG_COL.skillLevelNumber,
+    SONG_COL.fileName,
+    SONG_COL.insertedDatetime,
+    SONG_COL.updatedDatetime
 ] as const;
 
 export type SortableSongColToken = (typeof SORTABLE_TOKENS)[number];
@@ -64,11 +66,13 @@ export function isSortableSongColToken(v: unknown): v is SortableSongColToken {
    ============================================================ */
 
 export const tokenToSql: Readonly<Record<SortableSongColToken, string>> = {
-    [SONG_COL.songId]: "song_id",
     [SONG_COL.songTitle]: "song_title",
     [SONG_COL.composerFirstName]: "composer_first_name",
     [SONG_COL.composerLastName]: "composer_last_name",
     [SONG_COL.skillLevelNumber]: "skill_level_number",
+    [SONG_COL.fileName]: "file_name",
+    [SONG_COL.insertedDatetime]: "inserted_datetime",
+    [SONG_COL.updatedDatetime]: "updated_datetime",
 } as const;
 
 /* ============================================================
@@ -79,5 +83,3 @@ export type SortDir = "asc" | "desc";
 
 export const DEFAULT_SORT: SortableSongColToken = SONG_COL.composerLastName;
 export const DEFAULT_DIR: SortDir = "asc";
-export const MAX_LIMIT = 2000;
-export const DEFAULT_LIMIT = 1000;
