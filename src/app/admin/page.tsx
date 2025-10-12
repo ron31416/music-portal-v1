@@ -871,6 +871,7 @@ export default function AdminPage(): React.ReactElement {
                         border: `1px solid ${T.border}`,
                         borderRadius: 8,
                         background: T.bgCard,
+                        backgroundColor: T.bgCard,
                         color: T.fgCard,
                     }}
                 >
