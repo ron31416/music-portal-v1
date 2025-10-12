@@ -779,14 +779,14 @@ export default function AdminPage(): React.ReactElement {
                             curSort={sort}
                             dir={sortDir}
                             onToggle={toggleSort}
-                            label="Composer First Name"
+                            label="Composer First"
                         />
                         <SortHeaderButton<SongColToken>
                             col={SONG_COL.composerLastName}
                             curSort={sort}
                             dir={sortDir}
                             onToggle={toggleSort}
-                            label="Composer Last Name"
+                            label="Composer Last"
                         />
                         <SortHeaderButton<SongColToken>
                             col={SONG_COL.songTitle}
