@@ -13,7 +13,7 @@ const SONG_LIST_ENDPOINT = "/api/songlist";
 const XML_PREVIEW_HEIGHT = 200;
 
 // Fixed grid column widths (px): Last | First | Title | Level | File
-const GRID_COLS_PX = [140, 140, 300, 100, 440] as const; // <-- tweak only these numbers
+const GRID_COLS_PX = [140, 140, 260, 100, 440] as const; // <-- tweak only these numbers
 const GRID_COLS: React.CSSProperties["gridTemplateColumns"] =
     GRID_COLS_PX.map(n => `${n}px`).join(" ");
 const TABLE_MIN_PX = GRID_COLS_PX.reduce((a, b) => a + b, 0);
@@ -222,6 +222,7 @@ export default function AdminPage(): React.ReactElement {
     const [levelsError, setLevelsError] = React.useState("");
     const [fileName, setFileName] = React.useState("");
     const [xmlPreview, setXmlPreview] = React.useState("");
+    const [xmlLoading, setXmlLoading] = React.useState(false);
 
     const [songId, setSongId] = React.useState<number | null>(null);
 
@@ -407,17 +408,24 @@ export default function AdminPage(): React.ReactElement {
     };
 
     const loadSongRow = async (item: SongListItem): Promise<void> => {
+
+        let seq = 0;
         try {
             setError("");
             setSaveOk("");
             setSongId(item.song_id);
 
+            setFile(null);
+            setXmlPreview("");
+            setXmlLoading(true);
+
             if (mxlAbortRef.current !== null) {
                 mxlAbortRef.current.abort();
             }
+
             const controller = new AbortController();
             mxlAbortRef.current = controller;
-            const seq = mxlSeqRef.current + 1;
+            seq = mxlSeqRef.current + 1;
             mxlSeqRef.current = seq;
 
             setTitle(item.song_title || "");
@@ -455,7 +463,7 @@ export default function AdminPage(): React.ReactElement {
 
             const blob = await res.blob();
             if (seq !== mxlSeqRef.current) {
-                return; // ignore stale
+                return; // ignore stale (xmlLoading will be cleared by the latest call)
             }
 
             const ct = res.headers.get("content-type") || "";
@@ -478,12 +486,23 @@ export default function AdminPage(): React.ReactElement {
                 return; // ignore stale
             }
             setXmlPreview(meta.xmlText || "");
+
+            // mark loading complete if this is the latest request
+            if (mxlSeqRef.current === seq) {
+                setXmlLoading(false);
+            }
         } catch (e: unknown) {
             const name = (e as { name?: string } | null)?.name ?? "";
             if (name === "AbortError") {
+                // do NOT clear here; a newer request is in flight and will clear
                 return;
             }
             setError(e instanceof Error ? e.message : String(e));
+
+            // on real error, clear loading only if this is still the latest request
+            if (mxlSeqRef.current === seq) {
+                setXmlLoading(false);
+            }
         }
     };
 
@@ -717,10 +736,10 @@ export default function AdminPage(): React.ReactElement {
 
     const isUpdate = songId !== null;
     const canAdd = !isUpdate && !!fileName && !parsing && !saving;
-    const canUpdate = isUpdate && !saving;
+    const canUpdate = isUpdate && !saving && !xmlLoading;
     const canSave = isUpdate ? canUpdate : canAdd;
     const saveLabel = isUpdate ? "Update Song" : "Add Song";
-    const canView = songId !== null;
+    const canView = songId !== null && !xmlLoading;
 
     return (
         <main style={{ maxWidth: TABLE_MIN_PX + 32, margin: "24px auto", padding: "0 16px" }}>
