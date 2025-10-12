@@ -359,7 +359,7 @@ export default function AdminPage(): React.ReactElement {
 
         try {
             const params = new URLSearchParams();
-            params.set("limit", "5000"); // generous ceiling
+            //params.set("limit", "5000"); // generous ceiling
             const effSort = overrideSort ?? sort;
             const effDir: SortDir = overrideDir ?? sortDir;
 
