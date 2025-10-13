@@ -12,11 +12,15 @@ export type ApiErr = Readonly<{ ok: false; error: string; message?: string }>;
    ============================================================ */
 
 export type SongListItem = Readonly<{
-    song_id: number;
-    song_title: string;
-    composer_first_name: string;
-    composer_last_name: string;
-    skill_level_name: string;
+   song_id: number;
+   song_title: string;
+   composer_first_name: string;
+   composer_last_name: string;
+   skill_level_name: string;
+   skill_level_number: number;
+   file_name: string;
+   inserted_datetime: string;
+   updated_datetime: string;
 }>;
 
 /* ============================================================
@@ -34,6 +38,6 @@ export type SongListResponse = Readonly<{ items: SongListItem[] }>;
    ============================================================ */
 
 export type SongMxlRow = Readonly<{
-    song_mxl: unknown;
-    song_title: string | null;
+   song_mxl: unknown;
+   song_title: string | null;
 }>;
