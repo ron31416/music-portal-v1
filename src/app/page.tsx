@@ -4,20 +4,28 @@
 import React from "react";
 import Link from "next/link";
 
-import SongListPanel from "@/components/SongListPanel";
 import { usePrefersDark, themeTokens } from "@/lib/theme";
-import { type SongColToken, DEFAULT_SORT, DEFAULT_DIR } from "@/lib/songCols";
+import SongListPanel from "@/components/SongListPanel";
 import type { SongListItem } from "@/lib/types";
+import { type SongColToken, DEFAULT_SORT, DEFAULT_DIR } from "@/lib/songCols";
+
+// --- Config ---
 
 //                   Last First Title Level
 const GRID_COLS_PX = [140, 140, 260, 120] as const;
 const GRID_COLS: React.CSSProperties["gridTemplateColumns"] =
   GRID_COLS_PX.map((n) => `${n}px`).join(" ");
 const TABLE_MIN_PX = GRID_COLS_PX.reduce((a, b) => a + b, 0);
-const ROW_PX = 40;
-const ROW_COUNT = 15;
+const TABLE_ROW_PX = 40;
+const TABLE_ROW_COUNT = 15;
+
+
+// --- Types ---
 
 type SortDir = "asc" | "desc";
+
+
+// --- Component ---
 
 export default function HomePage(): React.ReactElement {
   // Theme
@@ -192,8 +200,8 @@ export default function HomePage(): React.ReactElement {
           onRowClick={(row) => { openInNewTab(row.song_id); }}
           gridCols={GRID_COLS}
           tableMinPx={TABLE_MIN_PX}
-          rowPx={ROW_PX}
-          visibleRowCount={ROW_COUNT}
+          rowPx={TABLE_ROW_PX}
+          visibleRowCount={TABLE_ROW_COUNT}
           T={T}
         />
       </section>
