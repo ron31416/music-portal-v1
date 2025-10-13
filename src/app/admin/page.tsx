@@ -4,6 +4,7 @@
 import React from "react";
 import { SONG_COL, type SongColToken } from "@/lib/songCols";
 import AdminSongListPanel from "@/components/AdminSongListPanel";
+import AdminSongEditPanel from "@/components/AdminSongEditPanel";
 import { usePrefersDark, themeTokens, fieldStyle } from "@/lib/theme";
 
 
@@ -13,13 +14,13 @@ const SAVE_ENDPOINT = "/api/song";
 const SONG_LIST_ENDPOINT = "/api/songlist";
 const XML_PREVIEW_HEIGHT = 200;
 
-// Fixed grid column widths (px): Last | First | Title | Level | File
-const GRID_COLS_PX = [140, 140, 260, 100, 440] as const; // <-- tweak only these numbers
+//              px:   Last First Title Level File
+const GRID_COLS_PX = [140, 140, 260, 100, 440] as const;
 const GRID_COLS: React.CSSProperties["gridTemplateColumns"] =
     GRID_COLS_PX.map(n => `${n}px`).join(" ");
 const TABLE_MIN_PX = GRID_COLS_PX.reduce((a, b) => a + b, 0);
-const TABLE_ROW_PX = 28;                 // height of a single row
-const TABLE_ROW_COUNT = 10;              // fixed number of visible rows
+const TABLE_ROW_PX = 28;
+const TABLE_ROW_COUNT = 10;
 
 type SaveResponse = {
     ok?: boolean;
@@ -755,196 +756,47 @@ export default function AdminPage(): React.ReactElement {
             />
 
             {/* ===== EDIT PANEL (ALWAYS VISIBLE, BELOW GRID) ===== */}
-            <section aria-label="Edit panel" style={{ marginTop: 8, background: "transparent" }}>
-                <div
-                    id="edit-card"
-                    key={isDark ? "dark" : "light"}  // force remount when theme flips
-                    data-theme={isDark ? "dark" : "light"}
-                    style={{
-                        padding: 16,
-                        border: `1px solid ${T.border}`,
-                        borderRadius: 8,
-                        background: T.bgCard,
-                        backgroundColor: T.bgCard,
-                        color: T.fgCard,
-                    }}
-                >
-                    <div
-                        style={{
-                            marginTop: 0,
-                            display: "grid",
-                            gridTemplateColumns: "120px 1fr",
-                            rowGap: 10,
-                            columnGap: 12,
-                            background: "transparent",
-                        }}
-                    >
-                        <label style={{ alignSelf: "center", fontWeight: 600 }}>Song Title</label>
-                        <input
-                            type="text"
-                            value={title}
-                            onChange={(e) => { setTitle(e.target.value); }}
-                            style={fieldCss}
-                        />
+            <AdminSongEditPanel
+                /* controlled values */
+                title={title}
+                composerFirst={composerFirst}
+                composerLast={composerLast}
+                level={level}
+                levels={levels}
+                levelsLoading={levelsLoading}
+                levelsError={levelsError}
+                fileName={fileName}
+                xml={xmlPreview}
+                xmlLoading={xmlLoading}
+                parsing={parsing}
+                errorText={error}
+                saveOkText={saveOk}
+                statusTick={statusTick}
 
-                        <label style={{ alignSelf: "center", fontWeight: 600 }}>Composer</label>
-                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                            <input
-                                type="text"
-                                value={composerFirst}
-                                onChange={(e) => { setComposerFirst(e.target.value); }}
-                                placeholder="First"
-                                style={fieldCss}
-                            />
-                            <input
-                                type="text"
-                                value={composerLast}
-                                onChange={(e) => { setComposerLast(e.target.value); }}
-                                placeholder="Last"
-                                style={fieldCss}
-                            />
-                        </div>
+                /* computed enables/labels */
+                canSave={canSave}
+                saveLabel={saveLabel}
+                canView={canView}
 
-                        <label style={{ alignSelf: "center", fontWeight: 600 }}>Skill Level</label>
-                        <select
-                            value={level}
-                            onChange={(e) => { setLevel(e.target.value); }}
-                            disabled={levelsLoading || !!levelsError || levels.length === 0}
-                            style={{ ...fieldCss, appearance: "auto" as const }}
-                        >
-                            <option value="" disabled>— Select a level —</option>
-                            {levels.map((lvl) => {
-                                return (
-                                    <option key={lvl.number} value={String(lvl.number)}>
-                                        {lvl.name}
-                                    </option>
-                                );
-                            })}
-                        </select>
+                /* handlers */
+                onChangeTitle={(v) => { setTitle(v); }}
+                onChangeComposerFirst={(v) => { setComposerFirst(v); }}
+                onChangeComposerLast={(v) => { setComposerLast(v); }}
+                onChangeLevel={(v) => { setLevel(v); }}
+                onChangeXml={(v) => { setXmlPreview(v); }}
+                onPick={onPick}
+                onSave={onSave}
+                onOpenViewer={openViewer}
 
-                        {levelsError && (
-                            <div style={{ gridColumn: "1 / span 2", color: "#b00020" }}>
-                                Failed to load skill levels: {levelsError}
-                            </div>
-                        )}
+                /* refs */
+                fileInputRef={fileInputRef}
 
-                        <label style={{ alignSelf: "center", fontWeight: 600 }}>File Name</label>
-                        <input type="text" value={fileName} readOnly style={fieldCss} />
-
-                        <label style={{ alignSelf: "start", fontWeight: 600, paddingTop: 6 }}>MusicXML</label>
-                        <textarea
-                            aria-label="XML"
-                            value={xmlPreview}
-                            onChange={(e) => { setXmlPreview(e.target.value); }}
-                            spellCheck={false}
-                            style={{
-                                ...fieldCss,
-                                width: "100%",
-                                margin: 0,
-                                minHeight: XML_PREVIEW_HEIGHT,
-                                maxHeight: XML_PREVIEW_HEIGHT,
-                                overflow: "auto",
-                                resize: "vertical",
-                                fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
-                                fontSize: 13,
-                                lineHeight: 1.4,
-                            }}
-                        />
-                    </div>
-
-                    <div
-                        style={{
-                            marginTop: 16,
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 12,
-                        }}
-                    >
-                        {/* Hidden file input lives inside the card */}
-                        <input
-                            ref={fileInputRef}
-                            id="song-file-input"
-                            type="file"
-                            accept=".mxl,.musicxml,application/vnd.recordare.musicxml+xml,application/vnd.recordare.musicxml,application/zip"
-                            onChange={onPick}
-                            style={{ display: "none" }}
-                        />
-
-                        {/* Left-side button: Load */}
-                        <button
-                            type="button"
-                            onClick={() => { if (fileInputRef.current) { fileInputRef.current.click(); } }}
-                            style={{
-                                padding: "8px 12px",
-                                border: `1px solid ${T.border}`,
-                                borderRadius: 6,
-                                background: isDark ? "#1f1f1f" : "#fafafa",
-                                color: isDark ? "#fff" : "#111",
-                                cursor: "pointer",
-                            }}
-                        >
-                            Load New Song
-                        </button>
-
-                        {/* Middle: status message fills available space */}
-                        <span
-                            key={`status-${statusTick}`}
-                            aria-live="polite"
-                            role={parsing ? "status" : (error ? "alert" : saveOk ? "status" : undefined)}
-                            title={parsing ? "Parsing…" : (error || saveOk || "")}
-                            style={{
-                                flex: 1,
-                                minWidth: 0,
-                                whiteSpace: "nowrap",
-                                overflow: "hidden",
-                                textOverflow: "ellipsis",
-                                textAlign: "right",
-                                color: parsing ? (isDark ? "#ccc" : "#555") : (error ? "#ff6b6b" : T.headerFg),
-                                fontWeight: 500,
-                                margin: 0,
-                                visibility: (parsing || error || saveOk) ? "visible" : "hidden",
-                            }}
-                        >
-                            {parsing ? "Parsing…" : (error || saveOk || "")}
-                        </span>
-
-                        {/* Right-side buttons: Save then View */}
-                        <button
-                            type="button"
-                            onClick={onSave}
-                            disabled={!canSave}
-                            style={{
-                                padding: "8px 12px",
-                                border: `1px solid ${T.border}`,
-                                borderRadius: 6,
-                                background: isDark ? "#1f1f1f" : "#fafafa",
-                                color: isDark ? "#fff" : "#111",
-                                cursor: canSave ? "pointer" : "not-allowed",
-                                opacity: canSave ? 1 : 0.5,
-                            }}
-                        >
-                            {saveLabel}
-                        </button>
-
-                        <button
-                            type="button"
-                            onClick={openViewer}
-                            disabled={!canView}
-                            style={{
-                                padding: "8px 12px",
-                                border: `1px solid ${T.border}`,
-                                borderRadius: 6,
-                                background: isDark ? "#1f1f1f" : "#fafafa",
-                                color: isDark ? "#fff" : "#111",
-                                cursor: canView ? "pointer" : "not-allowed",
-                                opacity: canView ? 1 : 0.5,
-                            }}
-                        >
-                            View Song
-                        </button>
-                    </div>
-                </div>
-            </section>
+                /* theming/layout */
+                T={T}
+                fieldCss={fieldCss}
+                isDark={isDark}
+                xmlPreviewHeight={XML_PREVIEW_HEIGHT}
+            />
 
             {/* Scoped guardrails against stray global CSS (no `any`) */}
             <style jsx global>{`
