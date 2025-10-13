@@ -200,38 +200,6 @@ export default function AdminSongListPanel(props: Props): React.ReactElement {
                             </div>
                         );
                     })}
-
-                    {/* Padding rows up to visibleRowCount */}
-                    {songs.length < visibleRowCount &&
-                        Array.from({ length: visibleRowCount - songs.length }).map((_, i) => {
-                            const idx = songs.length + i;
-                            const bg =
-                                idx % 2 === 0 ? (T.rowEven as string) : (T.rowOdd as string);
-                            return (
-                                <div
-                                    key={`pad-${i}`}
-                                    aria-hidden="true"
-                                    style={{
-                                        display: "grid",
-                                        gridTemplateColumns: gridCols,
-                                        width: tableMinPx,
-                                        padding: "8px 10px",
-                                        borderBottom: `1px solid ${T.border}`,
-                                        fontSize: 13,
-                                        alignItems: "center",
-                                        background: bg,
-                                        color: T.rowFg as string,
-                                        height: rowPx,
-                                    }}
-                                >
-                                    <div>&nbsp;</div>
-                                    <div>&nbsp;</div>
-                                    <div>&nbsp;</div>
-                                    <div>&nbsp;</div>
-                                    <div>&nbsp;</div>
-                                </div>
-                            );
-                        })}
                 </div>
             </div>
         </section>
