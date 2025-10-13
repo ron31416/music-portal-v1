@@ -8,6 +8,8 @@ import { usePrefersDark, themeTokens } from "@/lib/theme";
 import SongListPanel from "@/components/SongListPanel";
 import type { SongListItem } from "@/lib/types";
 import { type SongColToken, DEFAULT_SORT, DEFAULT_DIR } from "@/lib/songCols";
+import { fetchSongList } from "@/lib/songListFetch";
+
 
 // --- Config ---
 
@@ -52,70 +54,43 @@ export default function HomePage(): React.ReactElement {
       overrideDir?: SortDir,
       showSpinner: boolean = true
     ): Promise<void> => {
+      // reset error + optionally show spinner
       setListError("");
       if (showSpinner) {
         setListLoading(true);
       }
 
+      // cancel any in-flight request
       if (listAbortRef.current !== null) {
         listAbortRef.current.abort();
       }
 
+      // set up new request + sequence
       const controller = new AbortController();
       listAbortRef.current = controller;
       const seq = listSeqRef.current + 1;
       listSeqRef.current = seq;
 
       try {
-        const params = new URLSearchParams();
         const effSort = overrideSort ?? sort;
         const effDir: SortDir = overrideDir ?? sortDir;
 
-        if (effSort !== null) {
-          params.set("sort", effSort);
-          params.set("dir", effDir);
-        }
+        // shared fetch + normalize
+        const data = await fetchSongList(
+          SONG_LIST_ENDPOINT,
+          effSort,            // SongColToken | null is compatible with string | null
+          effDir,             // "asc" | "desc"
+          controller.signal
+        );
 
-        const res = await fetch(`${SONG_LIST_ENDPOINT}?${params.toString()}`, {
-          cache: "no-store",
-          signal: controller.signal,
-        });
-        if (!res.ok) {
-          throw new Error(`HTTP ${res.status}`);
-        }
-
-        const json = (await res.json()) as unknown;
+        // ignore stale responses
         if (seq !== listSeqRef.current) {
-          return; // stale
+          return;
         }
 
-        const items = (json && typeof json === "object" ? (json as Record<string, unknown>).items : []) as unknown;
-
-        const cast: SongListItem[] = [];
-        if (Array.isArray(items)) {
-          for (const it of items) {
-            if (it && typeof it === "object") {
-              const r = it as Record<string, unknown>;
-              const id = r.song_id;
-              if (typeof id === "number" && Number.isFinite(id)) {
-                cast.push({
-                  song_id: id,
-                  song_title: String(r.song_title ?? ""),
-                  composer_first_name: String(r.composer_first_name ?? ""),
-                  composer_last_name: String(r.composer_last_name ?? ""),
-                  skill_level_name: String(r.skill_level_name ?? ""),
-                  skill_level_number: Number(r.skill_level_number ?? 0),
-                  file_name: String(r.file_name ?? ""),
-                  inserted_datetime: String(r.inserted_datetime ?? ""),
-                  updated_datetime: String(r.updated_datetime ?? ""),
-                });
-              }
-            }
-          }
-        }
-
-        setRows(cast);
+        setRows(data);
       } catch (e: unknown) {
+        // swallow aborts; surface other errors
         const name = (e as { name?: string } | null)?.name ?? "";
         if (name === "AbortError") {
           return;
@@ -123,6 +98,7 @@ export default function HomePage(): React.ReactElement {
         setListError(e instanceof Error ? e.message : String(e));
         setRows([]);
       } finally {
+        // only clear spinner if this is the latest request
         if (seq === listSeqRef.current) {
           setListLoading(false);
         }

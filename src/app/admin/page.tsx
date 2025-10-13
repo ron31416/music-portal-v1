@@ -8,6 +8,7 @@ import AdminSongListPanel from "@/components/AdminSongListPanel";
 import AdminSongEditPanel from "@/components/AdminSongEditPanel";
 import type { SongListItem } from "@/lib/types";
 import { SONG_COL, type SongColToken, DEFAULT_SORT, DEFAULT_DIR } from "@/lib/songCols";
+import { fetchSongList } from "@/lib/songListFetch";
 
 
 // --- Config ---
@@ -302,75 +303,46 @@ export default function AdminPage(): React.ReactElement {
         overrideDir?: SortDir,
         showSpinner: boolean = true
     ): Promise<void> {
-
         setListError("");
         if (showSpinner) {
             setListLoading(true);
         }
 
+        // cancel any in-flight request
         if (listAbortRef.current !== null) {
             listAbortRef.current.abort();
         }
 
+        // set up new request + sequence
         const controller = new AbortController();
         listAbortRef.current = controller;
         const seq = listSeqRef.current + 1;
         listSeqRef.current = seq;
 
         try {
-            const params = new URLSearchParams();
-            //params.set("limit", "5000"); // generous ceiling
             const effSort = overrideSort ?? sort;
             const effDir: SortDir = overrideDir ?? sortDir;
 
-            if (effSort !== null) {
-                params.set("sort", effSort);
-                params.set("dir", effDir);
-            }
+            // shared fetch + normalize
+            const data = await fetchSongList(
+                SONG_LIST_ENDPOINT,
+                effSort,            // SongColToken | null → string | null OK
+                effDir,             // "asc" | "desc"
+                controller.signal
+            );
 
-            const res = await fetch(`${SONG_LIST_ENDPOINT}?${params.toString()}`, {
-                cache: "no-store",
-                signal: controller.signal,
-            });
-            if (!res.ok) {
-                throw new Error(`HTTP ${res.status}`);
-            }
-            const json = (await res.json()) as unknown;
-
+            // ignore stale responses
             if (seq !== listSeqRef.current) {
-                return; // stale
+                return;
             }
 
-            const items = (json && typeof json === "object" ? (json as Record<string, unknown>).items : []) as unknown;
+            // set table rows
+            setRows(data);
 
-            const cast: SongListItem[] = [];
-            if (Array.isArray(items)) {
-                for (const it of items) {
-                    if (it && typeof it === "object") {
-                        const r = it as Record<string, unknown>;
-                        const id = r.song_id;
-                        if (typeof id === "number" && Number.isFinite(id)) {
-                            cast.push({
-                                song_id: id,
-                                song_title: String(r.song_title ?? ""),
-                                composer_first_name: String(r.composer_first_name ?? ""),
-                                composer_last_name: String(r.composer_last_name ?? ""),
-                                skill_level_name: String(r.skill_level_name ?? ""),
-                                skill_level_number: Number(r.skill_level_number ?? 0),
-                                file_name: String(r.file_name ?? ""),
-                                inserted_datetime: String(r.inserted_datetime ?? ""),
-                                updated_datetime: String(r.updated_datetime ?? ""),
-                            });
-                        }
-                    }
-                }
-            }
-            setRows(cast);
-
-            // rebuild exact filename map
+            // rebuild duplicate-check map (file_name → song_id)
             const m = new Map<string, number>();
-            for (const row of cast) {
-                if (row.file_name && typeof row.song_id === "number") {
+            for (const row of data) {
+                if (row.file_name) {
                     m.set(row.file_name, row.song_id);
                 }
             }
