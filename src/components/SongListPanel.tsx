@@ -108,18 +108,18 @@ export default function SongListPanel(props: Props): React.ReactElement {
                         }}
                     >
                         <SortHeaderButton<SongColToken>
-                            col={SONG_COL.composerLastName}
-                            curSort={sort}
-                            dir={sortDir}
-                            onToggle={onToggleSort}
-                            label="Composer Last Name"
-                        />
-                        <SortHeaderButton<SongColToken>
                             col={SONG_COL.composerFirstName}
                             curSort={sort}
                             dir={sortDir}
                             onToggle={onToggleSort}
                             label="Composer First Name"
+                        />
+                        <SortHeaderButton<SongColToken>
+                            col={SONG_COL.composerLastName}
+                            curSort={sort}
+                            dir={sortDir}
+                            onToggle={onToggleSort}
+                            label="Composer Last Name"
                         />
                         <SortHeaderButton<SongColToken>
                             col={SONG_COL.songTitle}
@@ -181,10 +181,10 @@ export default function SongListPanel(props: Props): React.ReactElement {
                                     title="Open in a new tab"
                                 >
                                     <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                                        {r.composer_last_name || "\u2014"}
+                                        {r.composer_first_name || "\u2014"}
                                     </div>
                                     <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                                        {r.composer_first_name || "\u2014"}
+                                        {r.composer_last_name || "\u2014"}
                                     </div>
                                     <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                                         {r.song_title}
