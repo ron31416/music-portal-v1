@@ -16,8 +16,8 @@ const GRID_COLS_PX = [140, 140, 260, 120] as const;
 const GRID_COLS: React.CSSProperties["gridTemplateColumns"] =
   GRID_COLS_PX.map((n) => `${n}px`).join(" ");
 const TABLE_MIN_PX = GRID_COLS_PX.reduce((a, b) => a + b, 0);
-const ROW_PX = 28;
-const ROW_COUNT = 25;
+const ROW_PX = 40;
+const ROW_COUNT = 20;
 
 export default function HomePage(): React.ReactElement {
   // Theme

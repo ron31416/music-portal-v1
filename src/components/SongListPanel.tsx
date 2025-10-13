@@ -112,14 +112,14 @@ export default function SongListPanel(props: Props): React.ReactElement {
                             curSort={sort}
                             dir={sortDir}
                             onToggle={onToggleSort}
-                            label="Composer First Name"
+                            label="Composer First"
                         />
                         <SortHeaderButton<SongColToken>
                             col={SONG_COL.composerLastName}
                             curSort={sort}
                             dir={sortDir}
                             onToggle={onToggleSort}
-                            label="Composer Last Name"
+                            label="Composer Last"
                         />
                         <SortHeaderButton<SongColToken>
                             col={SONG_COL.songTitle}
