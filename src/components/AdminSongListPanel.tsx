@@ -10,7 +10,7 @@ type SortDir = "asc" | "desc";
 
 type Props = {
     // Data & status
-    songs: ReadonlyArray<SongListItem>;
+    rows: ReadonlyArray<SongListItem>;
     listLoading: boolean;
     listError: string;
 
@@ -32,7 +32,7 @@ type Props = {
 
 export default function AdminSongListPanel(props: Props): React.ReactElement {
     const {
-        songs,
+        rows,
         listLoading,
         listError,
         sort,
@@ -88,7 +88,7 @@ export default function AdminSongListPanel(props: Props): React.ReactElement {
 
                     {/* Header row */}
                     <div
-                        id="songs-header"
+                        id="rows-header"
                         style={{
                             display: "grid",
                             gridTemplateColumns: gridCols,
@@ -144,7 +144,7 @@ export default function AdminSongListPanel(props: Props): React.ReactElement {
                     <div
                         style={{
                             height: rowPx * visibleRowCount,
-                            overflowY: songs.length > visibleRowCount ? "auto" : "hidden",
+                            overflowY: rows.length > visibleRowCount ? "auto" : "hidden",
                             overflowX: "hidden",
                             borderTop: `1px solid ${T.border}`,
                             opacity: listLoading ? 0.7 : 1,
@@ -152,7 +152,7 @@ export default function AdminSongListPanel(props: Props): React.ReactElement {
                         }}
                         aria-busy={listLoading}
                     >
-                        {songs.map((r, idx) => {
+                        {rows.map((r, idx) => {
                             const bg = (idx % 2 === 0)
                                 ? (T.rowEven as string)
                                 : (T.rowOdd as string);
