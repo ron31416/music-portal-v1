@@ -5,6 +5,7 @@ import React from "react";
 import { SONG_COL, type SongColToken } from "@/lib/songCols";
 import type { SongListItem } from "@/lib/types";
 import SortHeaderButton from "@/components/common/SortHeaderButton";
+import type { ThemeTokens } from "@/lib/theme";
 
 type SortDir = "asc" | "desc";
 
@@ -27,7 +28,7 @@ type Props = {
     tableMinPx: number;                                    // sum of column widths
     rowPx: number;                                         // e.g., 28
     visibleRowCount: number;                               // e.g., 25
-    T: Readonly<Record<string, string | number>>;
+    T: ThemeTokens;
 };
 
 export default function SongListPanel(props: Props): React.ReactElement {
@@ -69,7 +70,7 @@ export default function SongListPanel(props: Props): React.ReactElement {
                         borderRadius: 6,
                         overflowX: "hidden",
                         overflowY: "hidden",
-                        background: T.bgCard as string,
+                        background: T.bgCard,
                     }}
                 >
                     {/* Loader overlay that does not collapse layout */}
@@ -86,7 +87,7 @@ export default function SongListPanel(props: Props): React.ReactElement {
                                 pointerEvents: "none",
                             }}
                         >
-                            <p style={{ color: T.headerFg as string, opacity: 0.85 }}>Loading…</p>
+                            <p style={{ color: T.headerFg, opacity: 0.85 }}>Loading…</p>
                         </div>
                     )}
 
@@ -98,8 +99,8 @@ export default function SongListPanel(props: Props): React.ReactElement {
                             gridTemplateColumns: gridCols,
                             width: tableMinPx,
                             padding: "8px 10px",
-                            background: T.headerBg as string,
-                            color: T.headerFg as string,
+                            background: T.headerBg,
+                            color: T.headerFg,
                             borderBottom: `1px solid ${T.border}`,
                             fontWeight: 600,
                             fontSize: 13,
@@ -151,7 +152,7 @@ export default function SongListPanel(props: Props): React.ReactElement {
                     >
                         {/* Data rows */}
                         {rows.map((r, idx) => {
-                            const bg = idx % 2 === 0 ? (T.rowEven as string) : (T.rowOdd as string);
+                            const bg = idx % 2 === 0 ? (T.rowEven) : (T.rowOdd);
                             return (
                                 <div
                                     key={r.song_id}
@@ -174,7 +175,7 @@ export default function SongListPanel(props: Props): React.ReactElement {
                                         alignItems: "center",
                                         cursor: "pointer",
                                         background: bg,
-                                        color: T.rowFg as string,
+                                        color: T.rowFg,
                                         height: rowPx,
                                         lineHeight: `${rowPx - 10}px`,
                                     }}

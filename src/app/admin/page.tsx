@@ -14,8 +14,7 @@ import { SONG_COL, type SongColToken, DEFAULT_SORT, DEFAULT_DIR } from "@/lib/so
 
 //                  Last First Title Level File
 const GRID_COLS_PX = [140, 140, 260, 100, 440] as const;
-const GRID_COLS: React.CSSProperties["gridTemplateColumns"] =
-    GRID_COLS_PX.map(n => `${n}px`).join(" ");
+const GRID_COLS: React.CSSProperties["gridTemplateColumns"] = GRID_COLS_PX.map(n => `${n}px`).join(" ");
 const TABLE_MIN_PX = GRID_COLS_PX.reduce((a, b) => a + b, 0);
 const TABLE_ROW_PX = 28;
 const TABLE_ROW_COUNT = 10;

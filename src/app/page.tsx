@@ -13,8 +13,7 @@ import { type SongColToken, DEFAULT_SORT, DEFAULT_DIR } from "@/lib/songCols";
 
 //                   Last First Title Level
 const GRID_COLS_PX = [140, 140, 260, 120] as const;
-const GRID_COLS: React.CSSProperties["gridTemplateColumns"] =
-  GRID_COLS_PX.map((n) => `${n}px`).join(" ");
+const GRID_COLS: React.CSSProperties["gridTemplateColumns"] = GRID_COLS_PX.map((n) => `${n}px`).join(" ");
 const TABLE_MIN_PX = GRID_COLS_PX.reduce((a, b) => a + b, 0);
 const TABLE_ROW_PX = 40;
 const TABLE_ROW_COUNT = 15;
@@ -175,8 +174,8 @@ export default function HomePage(): React.ReactElement {
           padding: "8px 12px",
           border: `1px solid ${T.border}`,
           borderRadius: 6,
-          background: T.bgCard as string,
-          color: T.fgCard as string,
+          background: T.bgCard,
+          color: T.fgCard,
           textDecoration: "none",
           fontSize: 13,
           fontWeight: 600,
@@ -187,7 +186,7 @@ export default function HomePage(): React.ReactElement {
         Admin
       </Link>
 
-      <h1 className="text-3xl font-semibold" style={{ color: T.fgCard as string }}>
+      <h1 className="text-3xl font-semibold" style={{ color: T.fgCard }}>
         Music Portal
       </h1>
 

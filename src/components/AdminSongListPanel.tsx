@@ -5,6 +5,7 @@ import React from "react";
 import { SONG_COL, type SongColToken } from "@/lib/songCols";
 import type { SongListItem } from "@/lib/types";
 import SortHeaderButton from "@/components/common/SortHeaderButton";
+import type { ThemeTokens } from "@/lib/theme";
 
 type SortDir = "asc" | "desc";
 
@@ -23,11 +24,11 @@ type Props = {
     onRowClick(row: SongListItem): void;
 
     // Layout / theming (kept identical to AdminPage constants)
-    gridCols: React.CSSProperties["gridTemplateColumns"]; // e.g., GRID_COLS
-    tableMinPx: number;                                   // e.g., TABLE_MIN_PX
-    rowPx: number;                                        // e.g., TABLE_ROW_PX
-    visibleRowCount: number;                              // e.g., TABLE_ROW_COUNT
-    T: Readonly<Record<string, string | number>>;
+    gridCols: React.CSSProperties["gridTemplateColumns"];
+    tableMinPx: number;
+    rowPx: number;
+    visibleRowCount: number;
+    T: ThemeTokens;
 };
 
 export default function AdminSongListPanel(props: Props): React.ReactElement {
@@ -66,7 +67,7 @@ export default function AdminSongListPanel(props: Props): React.ReactElement {
                         borderRadius: 6,
                         overflowX: "hidden",
                         overflowY: "hidden",
-                        background: T.bgCard as string,
+                        background: T.bgCard,
                     }}
                 >
                     {listLoading && (
@@ -82,20 +83,20 @@ export default function AdminSongListPanel(props: Props): React.ReactElement {
                                 pointerEvents: "none",
                             }}
                         >
-                            <p style={{ color: T.headerFg as string, opacity: 0.85 }}>Loading…</p>
+                            <p style={{ color: T.headerFg, opacity: 0.85 }}>Loading…</p>
                         </div>
                     )}
 
                     {/* Header row */}
                     <div
-                        id="rows-header"
+                        id="songs-header"
                         style={{
                             display: "grid",
                             gridTemplateColumns: gridCols,
                             width: tableMinPx,
                             padding: "8px 10px",
-                            background: T.headerBg as string,
-                            color: T.headerFg as string,
+                            background: T.headerBg,
+                            color: T.headerFg,
                             borderBottom: `1px solid ${T.border}`,
                             fontWeight: 600,
                             fontSize: 13,
@@ -153,9 +154,7 @@ export default function AdminSongListPanel(props: Props): React.ReactElement {
                         aria-busy={listLoading}
                     >
                         {rows.map((r, idx) => {
-                            const bg = (idx % 2 === 0)
-                                ? (T.rowEven as string)
-                                : (T.rowOdd as string);
+                            const bg = (idx % 2 === 0) ? T.rowEven : T.rowOdd;
                             return (
                                 <div
                                     key={r.song_id}
@@ -178,7 +177,7 @@ export default function AdminSongListPanel(props: Props): React.ReactElement {
                                         alignItems: "center",
                                         cursor: "pointer",
                                         background: bg,
-                                        color: T.rowFg as string,
+                                        color: T.rowFg,
                                         height: rowPx,
                                         lineHeight: `${rowPx - 10}px`,
                                     }}
