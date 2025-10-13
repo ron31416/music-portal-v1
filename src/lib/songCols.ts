@@ -79,7 +79,5 @@ export const tokenToSql: Readonly<Record<SortableSongColToken, string>> = {
    Optional helpers / defaults
    ============================================================ */
 
-export type SortDir = "asc" | "desc";
-
 export const DEFAULT_SORT: SortableSongColToken = SONG_COL.composerLastName;
-export const DEFAULT_DIR: SortDir = "asc";
+export const DEFAULT_DIR = "asc" as const;

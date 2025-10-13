@@ -2,7 +2,7 @@
 "use client";
 
 import React from "react";
-import { SONG_COL, type SongColToken } from "@/lib/songCols";
+import { SONG_COL, type SongColToken, DEFAULT_SORT, DEFAULT_DIR } from "@/lib/songCols";
 import type { SongListItem } from "@/lib/types";
 import AdminSongListPanel from "@/components/AdminSongListPanel";
 import AdminSongEditPanel from "@/components/AdminSongEditPanel";
@@ -197,8 +197,8 @@ export default function AdminPage(): React.ReactElement {
     const [listError, setListError] = React.useState("");
 
     // Server sorting only
-    const [sort, setSort] = React.useState<SongColToken | null>(null);
-    const [sortDir, setSortDir] = React.useState<SortDir>("asc");
+    const [sort, setSort] = React.useState<SongColToken | null>(DEFAULT_SORT);
+    const [sortDir, setSortDir] = React.useState<SortDir>(DEFAULT_DIR);
 
     // fields
     const [title, setTitle] = React.useState("");

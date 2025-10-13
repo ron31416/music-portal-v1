@@ -9,15 +9,15 @@ import { usePrefersDark, themeTokens } from "@/lib/theme";
 import { type SongColToken, DEFAULT_SORT, DEFAULT_DIR } from "@/lib/songCols";
 import type { SongListItem } from "@/lib/types";
 
-type SortDir = "asc" | "desc";
-
 //                   Last First Title Level
 const GRID_COLS_PX = [140, 140, 260, 120] as const;
 const GRID_COLS: React.CSSProperties["gridTemplateColumns"] =
   GRID_COLS_PX.map((n) => `${n}px`).join(" ");
 const TABLE_MIN_PX = GRID_COLS_PX.reduce((a, b) => a + b, 0);
 const ROW_PX = 40;
-const ROW_COUNT = 20;
+const ROW_COUNT = 15;
+
+type SortDir = "asc" | "desc";
 
 export default function HomePage(): React.ReactElement {
   // Theme
