@@ -11,7 +11,7 @@ import { type SongColToken, DEFAULT_SORT, DEFAULT_DIR } from "@/lib/songCols";
 
 // --- Config ---
 
-//                   Last First Title Level
+//                  First Last Title Level
 const GRID_COLS_PX = [140, 140, 260, 120] as const;
 const GRID_COLS: React.CSSProperties["gridTemplateColumns"] = GRID_COLS_PX.map((n) => `${n}px`).join(" ");
 const TABLE_MIN_PX = GRID_COLS_PX.reduce((a, b) => a + b, 0);
@@ -89,9 +89,7 @@ export default function HomePage(): React.ReactElement {
           return; // stale
         }
 
-        const items = (json && typeof json === "object"
-          ? (json as Record<string, unknown>).items
-          : []) as unknown;
+        const items = (json && typeof json === "object" ? (json as Record<string, unknown>).items : []) as unknown;
 
         const cast: SongListItem[] = [];
         if (Array.isArray(items)) {

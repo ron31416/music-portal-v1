@@ -12,7 +12,7 @@ import { SONG_COL, type SongColToken, DEFAULT_SORT, DEFAULT_DIR } from "@/lib/so
 
 // --- Config ---
 
-//                  Last First Title Level File
+//                  First Last Title Level File
 const GRID_COLS_PX = [140, 140, 260, 100, 440] as const;
 const GRID_COLS: React.CSSProperties["gridTemplateColumns"] = GRID_COLS_PX.map(n => `${n}px`).join(" ");
 const TABLE_MIN_PX = GRID_COLS_PX.reduce((a, b) => a + b, 0);
@@ -228,7 +228,7 @@ export default function AdminPage(): React.ReactElement {
 
     // Type-safe: ensure we expose a React.CSSProperties
     const fieldCss: React.CSSProperties = React.useMemo(() => {
-        return fieldStyle(isDark) as React.CSSProperties;
+        return fieldStyle(isDark);
     }, [isDark]);
 
     // Fast lookup for duplicates: file_name -> song_id (exact, case-sensitive)
@@ -497,7 +497,8 @@ export default function AdminPage(): React.ReactElement {
 
     const openViewer = React.useCallback(() => {
         if (songId !== null) {
-            window.open(`/viewer?id=${songId}`, "_blank", "noopener,noreferrer");
+            const tabId = Date.now().toString(36);
+            window.open(`/viewer?tab=${tabId}&id=${songId}`, "_blank", "noopener,noreferrer");
         }
     }, [songId]);
 
