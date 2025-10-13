@@ -15,7 +15,7 @@ const SAVE_ENDPOINT = "/api/song";
 const SONG_LIST_ENDPOINT = "/api/songlist";
 const XML_PREVIEW_HEIGHT = 200;
 
-//              px:   Last First Title Level File
+//                  Last First Title Level File
 const GRID_COLS_PX = [140, 140, 260, 100, 440] as const;
 const GRID_COLS: React.CSSProperties["gridTemplateColumns"] =
     GRID_COLS_PX.map(n => `${n}px`).join(" ");

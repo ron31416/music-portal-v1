@@ -11,9 +11,8 @@ import type { SongListItem } from "@/lib/types";
 
 type SortDir = "asc" | "desc";
 
-// ---- Layout constants for the public/user list (4 columns) ----
-// Column order: Last | First | Title | Level
-const GRID_COLS_PX = [170, 170, 380, 90] as const;
+//                   Last First Title Level
+const GRID_COLS_PX = [140, 140, 260, 100] as const;
 const GRID_COLS: React.CSSProperties["gridTemplateColumns"] =
   GRID_COLS_PX.map((n) => `${n}px`).join(" ");
 const TABLE_MIN_PX = GRID_COLS_PX.reduce((a, b) => a + b, 0);

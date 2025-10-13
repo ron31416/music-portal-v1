@@ -46,6 +46,8 @@ export default function SongListPanel(props: Props): React.ReactElement {
         T,
     } = props;
 
+    const bodyPx = rowPx * visibleRowCount;
+
     return (
         <section aria-label="Songs" style={{ marginTop: 0 }}>
             {/* Inline status line, but keep the table mounted */}
@@ -138,8 +140,7 @@ export default function SongListPanel(props: Props): React.ReactElement {
                     {/* Body: fixed height, scrollbar only when needed */}
                     <div
                         style={{
-                            minHeight: rowPx * visibleRowCount,
-                            maxHeight: rowPx * visibleRowCount,
+                            height: bodyPx,
                             overflowY: rows.length > visibleRowCount ? "auto" : "hidden",
                             overflowX: "hidden",
                             borderTop: `1px solid ${T.border}`,
