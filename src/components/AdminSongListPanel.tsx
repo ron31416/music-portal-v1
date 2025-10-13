@@ -1,0 +1,250 @@
+// src/components/admin/AdminSongListPanel.tsx
+"use client";
+
+import React from "react";
+import { SONG_COL, type SongColToken } from "@/lib/songCols";
+import SortHeaderButton from "@/components/common/SortHeaderButton";
+
+type SongListItem = {
+    song_id: number;
+    song_title: string;
+    composer_first_name: string;
+    composer_last_name: string;
+    skill_level_name: string;
+    skill_level_number: number;
+    file_name: string;
+    inserted_datetime: string;
+    updated_datetime: string;
+};
+
+type SortDir = "asc" | "desc";
+
+type Props = {
+    // Data & status
+    songs: ReadonlyArray<SongListItem>;
+    listLoading: boolean;
+    listError: string;
+
+    // Sorting (server-side only)
+    sort: SongColToken | null;
+    sortDir: SortDir;
+    onToggleSort(col: SongColToken): void;
+
+    // Row selection
+    onRowClick(row: SongListItem): void;
+
+    // Layout / theming (kept identical to AdminPage constants)
+    gridCols: React.CSSProperties["gridTemplateColumns"]; // e.g., GRID_COLS
+    tableMinPx: number;                                   // e.g., TABLE_MIN_PX
+    rowPx: number;                                        // e.g., TABLE_ROW_PX
+    visibleRowCount: number;                              // e.g., TABLE_ROW_COUNT
+    T: Readonly<Record<string, string | number>>;
+};
+
+export default function AdminSongListPanel(props: Props): React.ReactElement {
+    const {
+        songs,
+        listLoading,
+        listError,
+        sort,
+        sortDir,
+        onToggleSort,
+        onRowClick,
+        gridCols,
+        tableMinPx,
+        rowPx,
+        visibleRowCount,
+        T,
+    } = props;
+
+    const needsScroll: boolean = songs.length > visibleRowCount;
+    const tableBodyPx = rowPx * visibleRowCount;
+
+    return (
+        <section aria-label="Songs" style={{ marginTop: 0 }}>
+            {/* Inline status line, but DO NOT hide the table wrapper */}
+            {listError && (
+                <p style={{ color: "#ff6b6b", margin: "4px 0 8px" }}>
+                    Error: {listError}
+                </p>
+            )}
+
+            <div
+                style={{
+                    position: "relative",
+                    border: `1px solid ${T.border}`,
+                    borderRadius: 6,
+                    overflowX: "hidden",
+                    overflowY: "hidden",
+                    background: T.bgCard as string,
+                }}
+            >
+                {/* Loader overlay that does not collapse layout */}
+                {listLoading && (
+                    <div
+                        aria-hidden="true"
+                        style={{
+                            position: "absolute",
+                            inset: 0,
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            backdropFilter: "blur(1px)",
+                            pointerEvents: "none",
+                        }}
+                    >
+                        <p style={{ color: T.headerFg as string, opacity: 0.85 }}>Loading…</p>
+                    </div>
+                )}
+
+                {/* Header */}
+                <div
+                    id="songs-header"
+                    style={{
+                        display: "grid",
+                        gridTemplateColumns: gridCols,
+                        width: tableMinPx,
+                        padding: "8px 10px",
+                        background: T.headerBg as string,
+                        color: T.headerFg as string,
+                        borderBottom: `1px solid ${T.border}`,
+                        fontWeight: 600,
+                        fontSize: 13,
+                        opacity: listLoading ? 0.7 : 1,
+                        transition: "opacity 120ms linear",
+                    }}
+                >
+                    <SortHeaderButton<SongColToken>
+                        col={SONG_COL.composerFirstName}
+                        curSort={sort}
+                        dir={sortDir}
+                        onToggle={onToggleSort}
+                        label="Composer First"
+                    />
+                    <SortHeaderButton<SongColToken>
+                        col={SONG_COL.composerLastName}
+                        curSort={sort}
+                        dir={sortDir}
+                        onToggle={onToggleSort}
+                        label="Composer Last"
+                    />
+                    <SortHeaderButton<SongColToken>
+                        col={SONG_COL.songTitle}
+                        curSort={sort}
+                        dir={sortDir}
+                        onToggle={onToggleSort}
+                        label="Song Title"
+                    />
+                    <SortHeaderButton<SongColToken>
+                        col={SONG_COL.skillLevelNumber}
+                        curSort={sort}
+                        dir={sortDir}
+                        onToggle={onToggleSort}
+                        label="Skill Level"
+                    />
+                    <SortHeaderButton<SongColToken>
+                        col={SONG_COL.fileName}
+                        curSort={sort}
+                        dir={sortDir}
+                        onToggle={onToggleSort}
+                        label="File Name"
+                    />
+                </div>
+
+                {/* Body: scrollbar only when needed */}
+                <div
+                    style={{
+                        minHeight: tableBodyPx,
+                        maxHeight: tableBodyPx,
+                        overflowY: needsScroll ? "auto" : "hidden",
+                        overflowX: "hidden",
+                        borderTop: `1px solid ${T.border}`,
+                        opacity: listLoading ? 0.7 : 1,
+                        transition: "opacity 120ms linear",
+                    }}
+                    aria-busy={listLoading}
+                >
+                    {/* Data rows */}
+                    {songs.map((r, idx) => {
+                        const bg =
+                            idx % 2 === 0 ? (T.rowEven as string) : (T.rowOdd as string);
+                        return (
+                            <div
+                                key={r.song_id}
+                                onClick={() => { onRowClick(r); }}
+                                onKeyDown={(e: React.KeyboardEvent<HTMLDivElement>) => {
+                                    if (e.key === "Enter" || e.key === " ") {
+                                        e.preventDefault();
+                                        onRowClick(r);
+                                    }
+                                }}
+                                role="button"
+                                tabIndex={0}
+                                style={{
+                                    display: "grid",
+                                    gridTemplateColumns: gridCols,
+                                    width: tableMinPx,
+                                    padding: "8px 10px",
+                                    borderBottom: `1px solid ${T.border}`,
+                                    fontSize: 13,
+                                    alignItems: "center",
+                                    cursor: "pointer",
+                                    background: bg,
+                                    color: T.rowFg as string,
+                                    height: rowPx,
+                                    lineHeight: `${rowPx - 10}px`,
+                                }}
+                            >
+                                <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                    {r.composer_first_name || "\u2014"}
+                                </div>
+                                <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                    {r.composer_last_name || "\u2014"}
+                                </div>
+                                <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                    {r.song_title}
+                                </div>
+                                <div>{r.skill_level_name}</div>
+                                <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                    {r.file_name || "\u2014"}
+                                </div>
+                            </div>
+                        );
+                    })}
+
+                    {/* Padding rows up to visibleRowCount */}
+                    {songs.length < visibleRowCount &&
+                        Array.from({ length: visibleRowCount - songs.length }).map((_, i) => {
+                            const idx = songs.length + i;
+                            const bg =
+                                idx % 2 === 0 ? (T.rowEven as string) : (T.rowOdd as string);
+                            return (
+                                <div
+                                    key={`pad-${i}`}
+                                    aria-hidden="true"
+                                    style={{
+                                        display: "grid",
+                                        gridTemplateColumns: gridCols,
+                                        width: tableMinPx,
+                                        padding: "8px 10px",
+                                        borderBottom: `1px solid ${T.border}`,
+                                        fontSize: 13,
+                                        alignItems: "center",
+                                        background: bg,
+                                        color: T.rowFg as string,
+                                        height: rowPx,
+                                    }}
+                                >
+                                    <div>&nbsp;</div>
+                                    <div>&nbsp;</div>
+                                    <div>&nbsp;</div>
+                                    <div>&nbsp;</div>
+                                    <div>&nbsp;</div>
+                                </div>
+                            );
+                        })}
+                </div>
+            </div>
+        </section>
+    );
+}
