@@ -3,6 +3,7 @@
 
 import React from "react";
 import { SONG_COL, type SongColToken } from "@/lib/songCols";
+import type { SongListItem } from "@/lib/types";
 import AdminSongListPanel from "@/components/AdminSongListPanel";
 import AdminSongEditPanel from "@/components/AdminSongEditPanel";
 import { usePrefersDark, themeTokens, fieldStyle } from "@/lib/theme";
@@ -30,18 +31,6 @@ type SaveResponse = {
 };
 
 // --- Types ---
-
-type SongListItem = {
-    song_id: number;
-    song_title: string;
-    composer_first_name: string;
-    composer_last_name: string;
-    skill_level_name: string;
-    skill_level_number: number;
-    file_name: string;
-    inserted_datetime: string;
-    updated_datetime: string;
-};
 
 type Level = { number: number; name: string };
 
