@@ -20,8 +20,8 @@ const TABLE_MIN_PX = GRID_COLS_PX.reduce((a, b) => a + b, 0);
 const TABLE_ROW_PX = 28;
 const TABLE_ROW_COUNT = 10;
 
-const SAVE_ENDPOINT = "/api/song";
 const SONG_LIST_ENDPOINT = "/api/songlist";
+const SAVE_ENDPOINT = "/api/song";
 const XML_PREVIEW_HEIGHT = 200;
 
 
@@ -194,7 +194,7 @@ export default function AdminPage(): React.ReactElement {
     const [saveOk, setSaveOk] = React.useState("");
 
     // Song list state (inline, always visible)
-    const [songs, setSongs] = React.useState<SongListItem[]>([]);
+    const [rows, setRows] = React.useState<SongListItem[]>([]);
     const [listLoading, setListLoading] = React.useState(false);
     const [listError, setListError] = React.useState("");
 
@@ -366,7 +366,7 @@ export default function AdminPage(): React.ReactElement {
                     }
                 }
             }
-            setSongs(cast);
+            setRows(cast);
 
             // rebuild exact filename map
             const m = new Map<string, number>();
@@ -732,7 +732,7 @@ export default function AdminPage(): React.ReactElement {
         <main style={{ maxWidth: TABLE_MIN_PX + 32, margin: "24px auto", padding: "0 16px" }}>
             {/* ===== SONG LIST (TOP) ===== */}
             <AdminSongListPanel
-                songs={songs}
+                rows={rows}
                 listLoading={listLoading}
                 listError={listError}
                 sort={sort}

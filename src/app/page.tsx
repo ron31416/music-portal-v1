@@ -19,6 +19,8 @@ const TABLE_MIN_PX = GRID_COLS_PX.reduce((a, b) => a + b, 0);
 const TABLE_ROW_PX = 40;
 const TABLE_ROW_COUNT = 15;
 
+const SONG_LIST_ENDPOINT = "/api/songlist";
+
 
 // --- Types ---
 
@@ -75,7 +77,7 @@ export default function HomePage(): React.ReactElement {
           params.set("dir", effDir);
         }
 
-        const res = await fetch(`/api/songlist?${params.toString()}`, {
+        const res = await fetch(`${SONG_LIST_ENDPOINT}?${params.toString()}`, {
           cache: "no-store",
           signal: controller.signal,
         });
