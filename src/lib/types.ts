@@ -41,3 +41,15 @@ export type SongMxlRow = Readonly<{
    song_mxl: unknown;
    song_title: string | null;
 }>;
+
+
+export type UserListItem = Readonly<{
+   user_id: number;
+   user_name: string;
+   user_email: string;
+   user_first_name: string;
+   user_last_name: string;
+   user_role_id: number;
+   inserted_datetime: string;
+   updated_datetime: string;
+}>;

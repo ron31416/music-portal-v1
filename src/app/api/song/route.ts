@@ -171,8 +171,8 @@ export async function GET(req: NextRequest): Promise<Response> {
         const { data, error } = await supabaseAdmin.rpc("song_list", {
             p_sort_column: sort ?? undefined,
             p_sort_direction: dir,
-            p_limit: limit,
-            p_offset: offset,
+            //p_limit: limit,
+            //p_offset: offset,
         });
 
         if (error) {
