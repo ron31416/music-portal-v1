@@ -26,6 +26,9 @@ type Props = {
     canSave: boolean;
     saveLabel: string;
     canView: boolean;
+    canDelete: boolean;
+    deleting: boolean;
+
 
     // Handlers (controlled updates)
     onChangeTitle(value: string): void;
@@ -36,6 +39,7 @@ type Props = {
     onPick: React.ChangeEventHandler<HTMLInputElement>;
     onSave(): void;
     onOpenViewer(): void;
+    onDelete(): void;
 
     // Refs
     fileInputRef: React.RefObject<HTMLInputElement | null>;
@@ -67,6 +71,8 @@ export default function AdminSongEditPanel(props: Props): React.ReactElement {
         canSave,
         saveLabel,
         canView,
+        canDelete,
+        deleting,
 
         onChangeTitle,
         onChangeComposerFirst,
@@ -76,6 +82,7 @@ export default function AdminSongEditPanel(props: Props): React.ReactElement {
         onPick,
         onSave,
         onOpenViewer,
+        onDelete,
 
         fileInputRef,
 
@@ -260,6 +267,18 @@ export default function AdminSongEditPanel(props: Props): React.ReactElement {
                     >
                         {saveLabel}
                     </button>
+
+                    <button
+                        type="button"
+                        onClick={onDelete}
+                        disabled={!canDelete}
+                        className="btn btn-danger"
+                        aria-disabled={!canDelete}
+                        title={canDelete ? "Delete this song permanently" : "Delete unavailable"}
+                    >
+                        {deleting ? "Deleting…" : "Delete"}
+                    </button>
+
 
                     <button
                         type="button"

@@ -194,3 +194,47 @@ export async function GET(req: NextRequest): Promise<Response> {
         });
     }
 }
+
+/* =========================
+   DELETE /api/song?id=<song_id>
+   Hard-delete via RPC: song_delete(p_song_id)
+   ========================= */
+
+export async function DELETE(req: NextRequest): Promise<NextResponse<OkResponse | ErrResponse>> {
+    try {
+        const url = new URL(req.url);
+        const idRaw = url.searchParams.get("id");
+        if (!idRaw) {
+            return err("missing_id", 400, { message: "Provide ?id=<song_id> in the query string." });
+        }
+
+        const idNum = Number(idRaw);
+        if (!Number.isInteger(idNum) || idNum <= 0) {
+            return err("invalid_id", 400, { message: "song_id must be a positive integer." });
+        }
+
+        const { data, error } = await supabaseAdmin.rpc("song_delete", {
+            p_song_id: idNum,
+        });
+
+        if (error) {
+            // If you don't have ON DELETE CASCADE on child tables, FK violations may surface as 23503
+            if (error.code === "23503") {
+                return err("constraint_violation", 409, {
+                    message: "Cannot delete: this song is referenced by other records.",
+                });
+            }
+            return err(error.message ?? "RPC song_delete failed", 500);
+        }
+
+        const deletedCount = typeof data === "number" ? data : Number(data ?? 0);
+        if (deletedCount < 1) {
+            return err("not_found", 404, { message: "song_id not found." });
+        }
+
+        return ok({ ok: true, song_id: idNum }, 200);
+    } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        return err(msg, 500);
+    }
+}

@@ -18,7 +18,7 @@ const GRID_COLS_PX = [140, 140, 260, 120] as const;
 const GRID_COLS: React.CSSProperties["gridTemplateColumns"] = GRID_COLS_PX.map((n) => `${n}px`).join(" ");
 const TABLE_MIN_PX = GRID_COLS_PX.reduce((a, b) => a + b, 0);
 const TABLE_ROW_PX = 40;
-const TABLE_ROW_COUNT = 15;
+const TABLE_ROW_COUNT = 12;
 
 const SONG_LIST_ENDPOINT = "/api/songlist";
 

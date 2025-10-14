@@ -192,6 +192,7 @@ export default function AdminPage(): React.ReactElement {
     const [error, setError] = React.useState("");
     const [saving, setSaving] = React.useState(false);
     const [saveOk, setSaveOk] = React.useState("");
+    const [deleting, setDeleting] = React.useState(false);
 
     // Song list state (inline, always visible)
     const [rows, setRows] = React.useState<SongListItem[]>([]);
@@ -690,12 +691,82 @@ export default function AdminPage(): React.ReactElement {
         }
     };
 
+    const onDelete = async (): Promise<void> => {
+        setError("");
+        setSaveOk("");
+
+        if (songId === null) {
+            setError("No song selected.");
+            return;
+        }
+
+        const confirmed = window.confirm("Delete this song? This cannot be undone.");
+        if (!confirmed) { return; }
+
+        try {
+            setDeleting(true);
+
+            // Abort any in-flight XML fetch for this song
+            if (mxlAbortRef.current !== null) {
+                mxlAbortRef.current.abort();
+            }
+
+            const res = await fetch(`/api/song?id=${songId}`, { method: "DELETE" });
+            if (!res.ok) {
+                const ct = res.headers.get("content-type") ?? "";
+                let detail = `HTTP ${res.status}`;
+
+                if (ct.includes("application/json")) {
+                    try {
+                        const j = await res.json();
+                        const msg = (j && typeof j === "object" ? (j as Record<string, unknown>).message : "") as unknown;
+                        if (typeof msg === "string" && msg.trim()) { detail = msg; }
+                    } catch { /* ignore */ }
+                } else if (ct.startsWith("text/")) {
+                    try {
+                        const t = await res.text();
+                        if (t) { detail = t.slice(0, 200); }
+                    } catch { /* ignore */ }
+                }
+
+                setError(detail || "Delete failed.");
+                return;
+            }
+
+            // Success: clear form & input
+            setSongId(null);
+            setTitle("");
+            setComposerFirst("");
+            setComposerLast("");
+            setLevel("");
+            setFileName("");
+            setXmlPreview("");
+            if (fileInputRef.current) {
+                fileInputRef.current.value = "";
+            }
+
+            // Silent list refresh (also rebuilds dup map)
+            await refreshSongList(undefined, undefined, false);
+
+            // Feedback
+            setError("");
+            setSaveOk("Deleted");
+            setStatusTick((t) => t + 1);
+        } catch (e) {
+            setError(e instanceof Error ? e.message : String(e));
+        } finally {
+            setDeleting(false);
+        }
+    };
+
+
     const isUpdate = songId !== null;
     const canAdd = !isUpdate && !!fileName && !parsing && !saving;
     const canUpdate = isUpdate && !saving && !xmlLoading;
     const canSave = isUpdate ? canUpdate : canAdd;
     const saveLabel = isUpdate ? "Update Song" : "Add Song";
     const canView = songId !== null && !xmlLoading;
+    const canDelete = songId !== null && !saving && !xmlLoading && !parsing && !deleting;
 
     return (
         <main style={{ maxWidth: TABLE_MIN_PX + 32, margin: "24px auto", padding: "0 16px" }}>
@@ -737,6 +808,10 @@ export default function AdminPage(): React.ReactElement {
                 canSave={canSave}
                 saveLabel={saveLabel}
                 canView={canView}
+                canDelete={canDelete}
+                deleting={deleting}
+                onDelete={onDelete}
+
 
                 /* handlers */
                 onChangeTitle={(v) => { setTitle(v); }}
