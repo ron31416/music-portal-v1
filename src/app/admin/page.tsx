@@ -227,10 +227,7 @@ export default function AdminPage(): React.ReactElement {
     const isDark = usePrefersDark();
     const T = React.useMemo(() => themeTokens(isDark), [isDark]);        // memoize tokens
 
-    // Type-safe: ensure we expose a React.CSSProperties
-    const fieldCss: React.CSSProperties = React.useMemo(() => {
-        return fieldStyle(isDark);
-    }, [isDark]);
+    const fieldCss = React.useMemo(() => fieldStyle(isDark), [isDark]);
 
     // Fast lookup for duplicates: file_name -> song_id (exact, case-sensitive)
     const fileNameToIdRef = React.useRef<Map<string, number>>(new Map());
