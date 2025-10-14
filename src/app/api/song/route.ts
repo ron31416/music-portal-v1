@@ -160,19 +160,9 @@ export async function GET(req: NextRequest): Promise<Response> {
         const dirRaw = (url.searchParams.get("dir") ?? "").toLowerCase();
         const dir = dirRaw === "desc" ? "desc" : "asc";
 
-        const limitParam = url.searchParams.get("limit");
-        const limitNum = Number(limitParam);
-        const limit = Number.isFinite(limitNum) ? Math.min(Math.max(limitNum, 1), 2000) : 1000;
-
-        const offsetParam = url.searchParams.get("offset");
-        const offsetNum = Number(offsetParam);
-        const offset = Number.isFinite(offsetNum) ? Math.max(offsetNum, 0) : 0;
-
         const { data, error } = await supabaseAdmin.rpc("song_list", {
             p_sort_column: sort ?? undefined,
             p_sort_direction: dir,
-            //p_limit: limit,
-            //p_offset: offset,
         });
 
         if (error) {

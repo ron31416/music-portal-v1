@@ -2,17 +2,19 @@
 "use client";
 
 import React from "react";
-import { useRouter } from "next/navigation";
 import { usePrefersDark, themeTokens } from "@/lib/theme";
 
 export default function AdminHubPage(): React.ReactElement {
-    const router = useRouter();
     const isDark = usePrefersDark();
     const T = themeTokens(isDark);
 
     function goSongs(): void {
-        router.push("/admin/songs");
+        window.open("/admin/songs", "_blank", "noopener,noreferrer");
     }
+
+    //function goUsers(): void {
+    //    window.open("/admin/users", "_blank", "noopener,noreferrer");
+    //}
 
     return (
         <main
