@@ -1,2 +1,1 @@
-export const DB_SCHEMA =
-    process.env.NEXT_PUBLIC_DB_SCHEMA?.trim() || "public";
+export const DB_SCHEMA: string = (process.env.NEXT_PUBLIC_DB_SCHEMA || "public").trim();

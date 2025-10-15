@@ -3,11 +3,13 @@ export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
+import { DB_SCHEMA } from '@/lib/dbSchema';
 
 export async function GET() {
     try {
         const { data, error } = await supabaseAdmin
-            .from('user_role') // table name
+            .schema(DB_SCHEMA)
+            .from('user_role')
             .select('user_role_number, user_role_name')
             .order('user_role_number');
 
