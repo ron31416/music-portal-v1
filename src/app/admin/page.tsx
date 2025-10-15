@@ -5,41 +5,41 @@ import React from "react";
 import { usePrefersDark, themeTokens } from "@/lib/theme";
 
 export default function AdminHubPage(): React.ReactElement {
-    const isDark = usePrefersDark();
-    const T = themeTokens(isDark);
+  const isDark = usePrefersDark();
+  const T = themeTokens(isDark);
 
-    function goSongs(): void {
-        window.open("/admin/songs", "_blank", "noopener,noreferrer");
-    }
+  function goSongs(): void {
+    window.open("/admin/songs", "_blank", "noopener,noreferrer");
+  }
 
-    //function goUsers(): void {
-    //    window.open("/admin/users", "_blank", "noopener,noreferrer");
-    //}
+  function goUsers(): void {
+    window.open("/admin/users", "_blank", "noopener,noreferrer");
+  }
 
-    return (
-        <main
-            id="admin-hub"
-            style={{
-                minHeight: "100vh",
-                width: "100%",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: 16,
-                background: T.bg,
-                color: T.fg,
-            }}
-        >
-            <button id="hub-songs-btn" type="button" onClick={goSongs}>
-                Songs
-            </button>
+  return (
+    <main
+      id="admin-hub"
+      style={{
+        minHeight: "100vh",
+        width: "100%",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 16,
+        background: T.bg,
+        color: T.fg,
+      }}
+    >
+      <button id="hub-songs-btn" type="button" onClick={goSongs}>
+        Songs
+      </button>
 
-            <button id="hub-users-btn" type="button" disabled={true} aria-disabled="true" title="Coming soon">
-                Users
-            </button>
+      <button id="hub-users-btn" type="button" onClick={goUsers}>
+        Users
+      </button>
 
-            {/* Scoped guardrails against stray global CSS (use !important to beat resets) */}
-            <style jsx global>{`
+      {/* Scoped guardrails against stray global CSS (use !important to beat resets) */}
+      <style jsx global>{`
         #admin-hub {
           background: ${T.bg} !important;
           color: ${T.fg} !important;
@@ -75,6 +75,6 @@ export default function AdminHubPage(): React.ReactElement {
           box-shadow: 0 1px 6px rgba(0, 0, 0, ${isDark ? "0.4" : "0.15"}) !important;
         }
       `}</style>
-        </main>
-    );
+    </main>
+  );
 }
