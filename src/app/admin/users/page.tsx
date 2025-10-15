@@ -156,15 +156,15 @@ export default function AdminUsersPage(): React.ReactElement {
     border: 1px solid ${T.border} !important;
   }
 
-  /* ---- Songs table header (ensure dark bg/fg) ---- */
-  #songs-header {
+  /* ---- Users table header (ensure dark bg/fg) ---- */
+  #users-header {
     background: ${T.headerBg} !important;
     color: ${T.headerFg} !important;
   }
 
   /* Ensure header buttons/text use header fg color */
-  #songs-header button,
-  #songs-header * {
+  #users-header button,
+  #users-header * {
     color: ${T.headerFg} !important;
   }
 `}
