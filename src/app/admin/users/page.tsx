@@ -9,6 +9,7 @@ import AdminUserEditPanel from "@/components/AdminUserEditPanel";
 import type { UserListItem } from "@/lib/types";
 import { USER_COL, type UserColToken, DEFAULT_SORT, DEFAULT_DIR } from "@/lib/userCols";
 import { fetchUserList } from "@/lib/userListFetch";
+import { fetchUserRoles, type UserRole } from "@/lib/userRoleFetch";
 
 // --- Config ---
 
@@ -32,6 +33,7 @@ type SaveResponse = {
 };
 
 type SortDir = "asc" | "desc";
+
 
 // --- Component ---
 
@@ -59,6 +61,11 @@ export default function AdminUsersPage(): React.ReactElement {
     const [deleting, setDeleting] = React.useState(false);
     const [statusTick, setStatusTick] = React.useState(0);
 
+    // User roles state
+    const [roles, setRoles] = React.useState<ReadonlyArray<UserRole>>([]);
+    const [rolesLoading, setRolesLoading] = React.useState(false);
+    const [rolesError, setRolesError] = React.useState("");
+
     // Abort/seq guards (match Songs page pattern)
     const listAbortRef = React.useRef<AbortController | null>(null);
     const listSeqRef = React.useRef(0);
@@ -76,6 +83,18 @@ export default function AdminUsersPage(): React.ReactElement {
             }
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    // fetch roles on mount
+    React.useEffect(() => {
+        let ignore = false;
+        setRolesLoading(true);
+        setRolesError("");
+        fetchUserRoles()
+            .then((data) => { if (!ignore) { setRoles(data); } })
+            .catch((e) => { if (!ignore) { setRolesError(e instanceof Error ? e.message : String(e)); } })
+            .finally(() => { if (!ignore) { setRolesLoading(false); } });
+        return () => { ignore = true; };
     }, []);
 
     async function refreshUserList(
@@ -366,6 +385,9 @@ export default function AdminUsersPage(): React.ReactElement {
                 userFirst={userFirst}
                 userLast={userLast}
                 roleNumber={roleNumber}
+                roles={roles}
+                rolesLoading={rolesLoading}
+                rolesError={rolesError}
                 errorText={error}
                 saveOkText={saveOk}
                 statusTick={statusTick}
