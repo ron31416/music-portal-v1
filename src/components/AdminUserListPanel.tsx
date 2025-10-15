@@ -133,7 +133,7 @@ export default function AdminUserListPanel(props: Props): React.ReactElement {
               label="User Last"
             />
             <SortHeaderButton<UserColToken>
-              col={USER_COL.userRoleId}
+              col={USER_COL.userRoleNumber}
               curSort={sort}
               dir={sortDir}
               onToggle={onToggleSort}
