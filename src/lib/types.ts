@@ -49,6 +49,7 @@ export type UserListItem = Readonly<{
    user_email: string;
    user_first_name: string;
    user_last_name: string;
+   user_role_name: string;
    user_role_id: number;
    inserted_datetime: string;
    updated_datetime: string;

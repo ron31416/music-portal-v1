@@ -6,23 +6,14 @@
    ============================================================ */
 
 export const SONG_COL = {
-    // Primary key
     songId: "song_id",
-
-    // Displayed attributes
     songTitle: "song_title",
     composerFirstName: "composer_first_name",
     composerLastName: "composer_last_name",
-
-    // Skill level (both number & name exist in DB; UI usually shows name)
     skillLevelNumber: "skill_level_number",
     skillLevelName: "skill_level_name",
-
-    // File info
     fileName: "file_name",
     songMxl: "song_mxl",
-
-    // Auditing / metadata
     insertedDatetime: "inserted_datetime",
     updatedDatetime: "updated_datetime",
 } as const;

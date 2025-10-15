@@ -1,27 +1,34 @@
+// src/components/admin/AdminUserListPanel.tsx
 "use client";
 
 import React from "react";
+import { USER_COL, type UserColToken } from "@/lib/userCols";
 import type { UserListItem } from "@/lib/types";
-import { USER_COL_LABEL, type UserColToken, colToServerKey } from "@/lib/userCols";
-import { themeTokens } from "@/lib/theme";
+import SortHeaderButton from "@/components/common/SortHeaderButton";
+import type { ThemeTokens } from "@/lib/theme";
 
 type SortDir = "asc" | "desc";
 
 type Props = {
-  rows: UserListItem[];
+  // Data & status
+  rows: ReadonlyArray<UserListItem>;
   listLoading: boolean;
   listError: string;
+
+  // Sorting (server-side only)
   sort: UserColToken | null;
   sortDir: SortDir;
-  onToggleSort: (key: UserColToken) => void;
-  onRowClick: (row: UserListItem) => void;
+  onToggleSort(col: UserColToken): void;
 
-  // layout/theming (match AdminSongListPanel props)
+  // Row selection
+  onRowClick(row: UserListItem): void;
+
+  // Layout / theming (kept identical to AdminPage constants)
   gridCols: React.CSSProperties["gridTemplateColumns"];
   tableMinPx: number;
   rowPx: number;
   visibleRowCount: number;
-  T: ReturnType<typeof themeTokens>;
+  T: ThemeTokens;
 };
 
 export default function AdminUserListPanel(props: Props): React.ReactElement {
@@ -40,142 +47,171 @@ export default function AdminUserListPanel(props: Props): React.ReactElement {
     T,
   } = props;
 
-  // Columns to display in order — adjust to your taste/widths provided by parent
-  const columns: UserColToken[] = [
-    "userFirstName",
-    "userLastName",
-    "userName",
-    "userEmail",
-    "userRoleId",
-  ];
-
-  const arrow = (k: UserColToken): string =>
-    sort === k ? (sortDir === "asc" ? "▲" : "▼") : "";
-
-  const headerButton = (k: UserColToken) => (
-    <button
-      key={k}
-      type="button"
-      onClick={() => onToggleSort(k)}
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 6,
-        background: "transparent",
-        border: "none",
-        padding: 0,
-        margin: 0,
-        fontWeight: 600,
-        cursor: "pointer",
-      }}
-      title={`Sort by ${USER_COL_LABEL[k]} (${colToServerKey(k)})`}
-    >
-      <span>{USER_COL_LABEL[k]}</span>
-      <span aria-hidden="true" style={{ opacity: sort === k ? 1 : 0.3 }}>
-        {arrow(k)}
-      </span>
-    </button>
-  );
-
   return (
-    <section aria-label="Users list">
-      {/* Header */}
-      <div
-        id="users-header"
-        style={{
-          minWidth: tableMinPx,
-          display: "grid",
-          gridTemplateColumns: gridCols,
-          background: T.headerBg as string,
-          color: T.headerFg as string,
-          padding: "8px 10px",
-          border: `1px solid ${T.border}`,
-          borderRadius: "8px 8px 0 0",
-        }}
-      >
-        {columns.map((k) => (
-          <div key={k} style={{ display: "flex", alignItems: "center" }}>
-            {headerButton(k)}
-          </div>
-        ))}
-      </div>
+    <section aria-label="Users" style={{ marginTop: 0 }}>
+      {listError && (
+        <p style={{ color: "#ff6b6b", margin: "4px 0 8px" }}>
+          Error: {listError}
+        </p>
+      )}
 
-      {/* Body */}
-      <div
-        style={{
-          minWidth: tableMinPx,
-          maxHeight: visibleRowCount * rowPx,
-          overflow: "auto",
-          borderLeft: `1px solid ${T.border}`,
-          borderRight: `1px solid ${T.border}`,
-          borderBottom: `1px solid ${T.border}`,
-          borderRadius: "0 0 8px 8px",
-          background: T.bgCard as string,
-          color: T.fgCard as string,
-        }}
-      >
-        {listError && (
-          <div
-            role="alert"
-            style={{
-              padding: "12px",
-              color: "#ff6b6b",
-              borderBottom: `1px solid ${T.border}`,
-            }}
-          >
-            {listError}
-          </div>
-        )}
-
-        {listLoading && rows.length === 0 ? (
-          <div style={{ padding: "12px", opacity: 0.8 }}>Loading…</div>
-        ) : rows.length === 0 ? (
-          <div style={{ padding: "12px", opacity: 0.8 }}>No users found.</div>
-        ) : (
-          rows.map((r) => (
+      {/* Outer wrapper keeps layout tidy on narrow screens */}
+      <div style={{ width: "100%", overflowX: "auto" }}>
+        <div
+          style={{
+            position: "relative",
+            width: tableMinPx,
+            maxWidth: "100%",
+            margin: "0 auto",
+            border: `1px solid ${T.border}`,
+            borderRadius: 6,
+            overflowX: "hidden",
+            overflowY: "hidden",
+            background: T.bgCard,
+          }}
+        >
+          {listLoading && (
             <div
-              key={r.user_id}
-              onClick={() => onRowClick(r)}
-              role="button"
-              tabIndex={0}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  onRowClick(r);
-                }
-              }}
+              aria-hidden="true"
               style={{
-                display: "grid",
-                gridTemplateColumns: gridCols,
-                height: rowPx,
+                position: "absolute",
+                inset: 0,
+                display: "flex",
                 alignItems: "center",
-                padding: "0 10px",
-                borderBottom: `1px solid ${T.border}`,
-                cursor: "pointer",
+                justifyContent: "center",
+                backdropFilter: "blur(1px)",
+                pointerEvents: "none",
               }}
             >
-              <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {r.user_first_name}
-              </div>
-              <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {r.user_last_name}
-              </div>
-              <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {r.user_name}
-              </div>
-              <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {r.user_email}
-              </div>
-              <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {String(r.user_role_id)}
-              </div>
+              <p style={{ color: T.headerFg, opacity: 0.85 }}>Loading…</p>
             </div>
-          ))
-        )}
+          )}
 
-        {listLoading && rows.length > 0 && (
-          <div style={{ padding: "8px 10px", opacity: 0.7 }}>Refreshing…</div>
-        )}
+          {/* Header row */}
+          <div
+            id="users-header"
+            style={{
+              display: "grid",
+              gridTemplateColumns: gridCols,
+              width: tableMinPx,
+              padding: "8px 10px",
+              background: T.headerBg,
+              color: T.headerFg,
+              borderBottom: `1px solid ${T.border}`,
+              fontWeight: 600,
+              fontSize: 13,
+              opacity: listLoading ? 0.7 : 1,
+              transition: "opacity 120ms linear",
+            }}
+          >
+            <SortHeaderButton<UserColToken>
+              col={USER_COL.userName}
+              curSort={sort}
+              dir={sortDir}
+              onToggle={onToggleSort}
+              label="User Name"
+            />
+            <SortHeaderButton<UserColToken>
+              col={USER_COL.userEmail}
+              curSort={sort}
+              dir={sortDir}
+              onToggle={onToggleSort}
+              label="Email"
+            />
+            <SortHeaderButton<UserColToken>
+              col={USER_COL.userFirstName}
+              curSort={sort}
+              dir={sortDir}
+              onToggle={onToggleSort}
+              label="User First"
+            />
+            <SortHeaderButton<UserColToken>
+              col={USER_COL.userLastName}
+              curSort={sort}
+              dir={sortDir}
+              onToggle={onToggleSort}
+              label="User Last"
+            />
+            <SortHeaderButton<UserColToken>
+              col={USER_COL.userRoleId}
+              curSort={sort}
+              dir={sortDir}
+              onToggle={onToggleSort}
+              label="User Role"
+            />
+            <SortHeaderButton<UserColToken>
+              col={USER_COL.updatedDatetime}
+              curSort={sort}
+              dir={sortDir}
+              onToggle={onToggleSort}
+              label="Updated"
+            />
+          </div>
+
+          {/* Body section */}
+          <div
+            style={{
+              height: rowPx * visibleRowCount,
+              overflowY: rows.length > visibleRowCount ? "auto" : "hidden",
+              overflowX: "hidden",
+              borderTop: `1px solid ${T.border}`,
+              opacity: listLoading ? 0.7 : 1,
+              transition: "opacity 120ms linear",
+            }}
+            aria-busy={listLoading}
+          >
+            {rows.map((r, idx) => {
+              const bg = (idx % 2 === 0) ? T.rowEven : T.rowOdd;
+              return (
+                <div
+                  key={r.user_id}
+                  onClick={() => { onRowClick(r); }}
+                  onKeyDown={(e: React.KeyboardEvent<HTMLDivElement>) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      onRowClick(r);
+                    }
+                  }}
+                  role="button"
+                  tabIndex={0}
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: gridCols,
+                    width: tableMinPx,
+                    padding: "8px 10px",
+                    borderBottom: `1px solid ${T.border}`,
+                    fontSize: 13,
+                    alignItems: "center",
+                    cursor: "pointer",
+                    background: bg,
+                    color: T.rowFg,
+                    height: rowPx,
+                    lineHeight: `${rowPx - 10}px`,
+                  }}
+                >
+                  <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {r.user_name || "\u2014"}
+                  </div>
+                  <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {r.user_email || "\u2014"}
+                  </div>
+                  <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {r.user_first_name || "\u2014"}
+                  </div>
+                  <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {r.user_last_name || "\u2014"}
+                  </div>
+                  <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {r.user_role_name}
+                  </div>
+                  <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {r.updated_datetime}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
       </div>
     </section>
   );
