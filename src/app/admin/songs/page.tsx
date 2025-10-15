@@ -185,7 +185,7 @@ function isLevel(x: unknown): x is Level {
 
 // --- Component ---
 
-export default function AdminPage(): React.ReactElement {
+export default function AdminSongsPage(): React.ReactElement {
     // File / edit state
     const [file, setFile] = React.useState<File | null>(null);
     const [parsing, setParsing] = React.useState(false);

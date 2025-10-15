@@ -13,8 +13,8 @@ import { fetchUserList } from "@/lib/userListFetch";
 
 // --- Config ---
 
-//                First  Last   Username  Email   Role   Updated
-const GRID_COLS_PX = [100, 150, 150, 150, 100, 150] as const;
+//                First Last Username Email Role Updated
+const GRID_COLS_PX = [100, 150, 150, 150, 100, 170] as const;
 const GRID_COLS: React.CSSProperties["gridTemplateColumns"] = GRID_COLS_PX.map(n => `${n}px`).join(" ");
 const TABLE_MIN_PX = GRID_COLS_PX.reduce((a, b) => a + b, 0);
 const TABLE_ROW_PX = 28;
@@ -134,7 +134,6 @@ export default function AdminUsersPage(): React.ReactElement {
             />
 
             {/* ===== EDIT PANEL (ALWAYS VISIBLE, BELOW GRID) ===== */}
-            <AdminUserEditPanel user={selected} />
 
             {/* Scoped guardrails against stray global CSS (no `any`) */}
             <style jsx global>{`
