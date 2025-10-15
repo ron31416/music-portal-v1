@@ -62,9 +62,8 @@ export async function GET(
             sortToken !== null ? tokenToSql[sortToken] ?? null : null;
 
         const { data, error } = await supabaseAdmin.rpc("song_list", {
-            p_sort_column: sortColumn,        // null => function's default ORDER BY
-            p_sort_direction: dir,            // function handles case-insensitively
-            // NOTE: no limit/offset passed anymore
+            sort_column: sortColumn,
+            sort_direction: dir
         });
 
         if (error) {
