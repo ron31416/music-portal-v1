@@ -11,7 +11,7 @@ export const USER_COL = {
   userEmail: "user_email",
   userFirstName: "user_first_name",
   userLastName: "user_last_name",
-  userRoleId: "user_role_id",
+  userRoleNumber: "user_role_number",
   insertedDatetime: "inserted_datetime",
   updatedDatetime: "updated_datetime",
 } as const;
@@ -34,7 +34,7 @@ export const SORTABLE_USER_TOKENS = [
   USER_COL.userEmail,
   USER_COL.userFirstName,
   USER_COL.userLastName,
-  USER_COL.userRoleId,
+  USER_COL.userRoleNumber,
   USER_COL.updatedDatetime,
 ] as const;
 
@@ -53,7 +53,7 @@ export const userTokenToSql: Readonly<Record<SortableUserColToken, string>> = {
   [USER_COL.userEmail]: "user_email",
   [USER_COL.userFirstName]: "user_first_name",
   [USER_COL.userLastName]: "user_last_name",
-  [USER_COL.userRoleId]: "user_role_id",
+  [USER_COL.userRoleNumber]: "user_role_number",
   [USER_COL.updatedDatetime]: "updated_datetime",
 } as const;
 

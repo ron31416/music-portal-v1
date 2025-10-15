@@ -23,7 +23,7 @@ export function normalizeUserList(json: unknown): UserListItem[] {
                         user_email: String(r.user_email ?? ""),
                         user_first_name: String(r.user_first_name ?? ""),
                         user_last_name: String(r.user_last_name ?? ""),
-                        user_role_id: Number(r.user_role_id ?? 1),
+                        user_role_number: Number(r.user_role_number ?? 1),
                         user_role_name: String(r.user_role_name ?? ""),
                         inserted_datetime: String(r.inserted_datetime ?? ""),
                         updated_datetime: String(r.updated_datetime ?? ""),
