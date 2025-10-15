@@ -167,6 +167,16 @@ export default function AdminUsersPage(): React.ReactElement {
   #users-header * {
     color: ${T.headerFg} !important;
   }
+    /* Fill the empty part of the table body (below the last row) */
+  #users-header + div {
+  background: ${T.rowOdd} !important;  /* or ${T.bg} if you prefer a solid page bg */
+  }
+
+  /* (Optional, modern browsers) Make the bordered wrapper match the page bg */
+  div:has(> #users-header) {
+  background: ${T.bg} !important;
+  }
+
 `}
             </style>
         </main>
