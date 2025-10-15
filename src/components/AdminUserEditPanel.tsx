@@ -3,20 +3,14 @@
 
 import React from "react";
 
-type Role = { number: number; name: string };
-
 type Props = {
     // Values (controlled)
     userName: string;
     userEmail: string;
     userFirst: string;
     userLast: string;
-    roleNumber: string;                 // selected user_role_number as string
-    roles: ReadonlyArray<Role>;
-    rolesLoading: boolean;
-    rolesError: string;
+    roleNumber: string; // selected user_role_number as string
 
-    // Status / feedback
     errorText: string;
     saveOkText: string;
     statusTick: number;
@@ -33,6 +27,9 @@ type Props = {
     onChangeUserFirst(value: string): void;
     onChangeUserLast(value: string): void;
     onChangeRoleNumber(value: string): void;
+
+    // Keep prop names parallel to Songs (onPick here = “Clear Entry”)
+    onPick(): void;
     onSave(): void;
     onDelete(): void;
 
@@ -49,9 +46,6 @@ export default function AdminUserEditPanel(props: Props): React.ReactElement {
         userFirst,
         userLast,
         roleNumber,
-        roles,
-        rolesLoading,
-        rolesError,
 
         errorText,
         saveOkText,
@@ -67,6 +61,8 @@ export default function AdminUserEditPanel(props: Props): React.ReactElement {
         onChangeUserFirst,
         onChangeUserLast,
         onChangeRoleNumber,
+
+        onPick,     // Clear Entry
         onSave,
         onDelete,
 
@@ -134,26 +130,14 @@ export default function AdminUserEditPanel(props: Props): React.ReactElement {
                         />
                     </div>
 
-                    <label style={{ alignSelf: "center", fontWeight: 600 }}>Role</label>
-                    <select
+                    <label style={{ alignSelf: "center", fontWeight: 600 }}>Role Number</label>
+                    <input
+                        type="number"
                         value={roleNumber}
                         onChange={(e) => { onChangeRoleNumber(e.target.value); }}
-                        disabled={rolesLoading || (rolesError.length > 0) || roles.length === 0}
-                        style={{ ...fieldCss, appearance: "auto" as const }}
-                    >
-                        <option value="" disabled>— Select a role —</option>
-                        {roles.map((r) => (
-                            <option key={r.number} value={String(r.number)}>
-                                {r.name}
-                            </option>
-                        ))}
-                    </select>
-
-                    {rolesError && (
-                        <div style={{ gridColumn: "1 / span 2", color: "#b00020" }}>
-                            Failed to load roles: {rolesError}
-                        </div>
-                    )}
+                        placeholder="e.g. 1"
+                        style={fieldCss}
+                    />
                 </div>
 
                 <div
@@ -164,7 +148,23 @@ export default function AdminUserEditPanel(props: Props): React.ReactElement {
                         gap: 12,
                     }}
                 >
-                    {/* Middle: status message fills available space (matches Songs panel behavior) */}
+                    {/* Left-side button: Clear Entry (uses Songs' prop name onPick) */}
+                    <button
+                        type="button"
+                        onClick={onPick}
+                        style={{
+                            padding: "8px 12px",
+                            border: `1px solid ${T.border}`,
+                            borderRadius: 6,
+                            background: isDark ? "#1f1f1f" : "#fafafa",
+                            color: isDark ? "#fff" : "#111",
+                            cursor: "pointer",
+                        }}
+                    >
+                        Clear Entry
+                    </button>
+
+                    {/* Middle: status message fills available space */}
                     <span
                         key={`status-${statusTick}`}
                         aria-live="polite"
@@ -186,7 +186,7 @@ export default function AdminUserEditPanel(props: Props): React.ReactElement {
                         {errorText || saveOkText || ""}
                     </span>
 
-                    {/* Right-side buttons: Save, Delete (mirrors look & feel from Songs) */}
+                    {/* Right-side buttons: Save, Delete */}
                     <button
                         type="button"
                         onClick={onSave}
