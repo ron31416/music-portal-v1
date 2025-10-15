@@ -13,9 +13,9 @@ export default function AdminUserEditPanel(props: Props): React.ReactElement {
 
     return (
         <div id="user-edit-card" className="rounded-xl border p-3">
-            <div className="text-sm opacity-70 mb-2">User Edit</div>
+            <div className="text-sm opacity-70 mb-2"></div>
             {user === null ? (
-                <div className="italic opacity-60">Select a user to edit…</div>
+                <div className="italic opacity-60"></div>
             ) : (
                 <div className="space-y-2">
                     <div><span className="font-medium">User:</span> {user.user_name}</div>
