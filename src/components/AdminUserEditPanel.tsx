@@ -1,39 +1,32 @@
-// src/components/AdminUserEditPanel.tsx
-"use client";
 
+"use client";
 import React from "react";
 
+type Role = { number: number; name: string };
 type Props = {
-    // Values (controlled)
     userName: string;
     userEmail: string;
     userFirst: string;
     userLast: string;
-    roleNumber: string; // selected user_role_number as string
-
+    roleNumber: string;
+    roles: ReadonlyArray<Role>;
+    rolesLoading: boolean;
+    rolesError: string;
     errorText: string;
     saveOkText: string;
     statusTick: number;
-
-    // Computed enables/labels
     canSave: boolean;
     saveLabel: string;
     canDelete: boolean;
     deleting: boolean;
-
-    // Handlers (controlled updates)
     onChangeUserName(value: string): void;
     onChangeUserEmail(value: string): void;
     onChangeUserFirst(value: string): void;
     onChangeUserLast(value: string): void;
     onChangeRoleNumber(value: string): void;
-
-    // Keep prop names parallel to Songs (onPick here = “Clear Entry”)
     onPick(): void;
     onSave(): void;
     onDelete(): void;
-
-    // Theming / layout
     T: Readonly<Record<string, string | number>>;
     fieldCss: React.CSSProperties;
     isDark: boolean;
@@ -46,26 +39,24 @@ export default function AdminUserEditPanel(props: Props): React.ReactElement {
         userFirst,
         userLast,
         roleNumber,
-
+        roles,
+        rolesLoading,
+        rolesError,
         errorText,
         saveOkText,
         statusTick,
-
         canSave,
         saveLabel,
         canDelete,
         deleting,
-
         onChangeUserName,
         onChangeUserEmail,
         onChangeUserFirst,
         onChangeUserLast,
         onChangeRoleNumber,
-
-        onPick,     // Clear Entry
+        onPick,
         onSave,
         onDelete,
-
         T,
         fieldCss,
         isDark,
@@ -75,7 +66,7 @@ export default function AdminUserEditPanel(props: Props): React.ReactElement {
         <section aria-label="Edit panel" style={{ marginTop: 8, background: "transparent" }}>
             <div
                 id="edit-card"
-                key={isDark ? "dark" : "light"} // force remount when theme flips
+                key={isDark ? "dark" : "light"}
                 data-theme={isDark ? "dark" : "light"}
                 style={{
                     padding: 16,
@@ -131,13 +122,25 @@ export default function AdminUserEditPanel(props: Props): React.ReactElement {
                     </div>
 
                     <label style={{ alignSelf: "center", fontWeight: 600 }}>Role Number</label>
-                    <input
-                        type="number"
+                    <select
                         value={roleNumber}
                         onChange={(e) => { onChangeRoleNumber(e.target.value); }}
-                        placeholder="e.g. 1"
-                        style={fieldCss}
-                    />
+                        disabled={rolesLoading || (rolesError.length > 0) || roles.length === 0}
+                        style={{ ...fieldCss, appearance: "auto" as const }}
+                    >
+                        <option value="" disabled>— Select a role —</option>
+                        {roles.map((role) => (
+                            <option key={role.number} value={String(role.number)}>
+                                {role.name}
+                            </option>
+                        ))}
+                    </select>
+
+                    {rolesError && (
+                        <div style={{ gridColumn: "1 / span 2", color: "#b00020" }}>
+                            Failed to load roles: {rolesError}
+                        </div>
+                    )}
                 </div>
 
                 <div
@@ -148,7 +151,6 @@ export default function AdminUserEditPanel(props: Props): React.ReactElement {
                         gap: 12,
                     }}
                 >
-                    {/* Left-side button: Clear Entry (uses Songs' prop name onPick) */}
                     <button
                         type="button"
                         onClick={onPick}
@@ -164,7 +166,6 @@ export default function AdminUserEditPanel(props: Props): React.ReactElement {
                         Clear Entry
                     </button>
 
-                    {/* Middle: status message fills available space */}
                     <span
                         key={`status-${statusTick}`}
                         aria-live="polite"
@@ -186,7 +187,6 @@ export default function AdminUserEditPanel(props: Props): React.ReactElement {
                         {errorText || saveOkText || ""}
                     </span>
 
-                    {/* Right-side buttons: Save, Delete */}
                     <button
                         type="button"
                         onClick={onSave}
