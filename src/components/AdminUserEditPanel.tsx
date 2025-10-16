@@ -163,7 +163,7 @@ export default function AdminUserEditPanel(props: Props): React.ReactElement {
                             cursor: "pointer",
                         }}
                     >
-                        Clear Entry
+                        Clear
                     </button>
 
                     <span
