@@ -169,47 +169,51 @@ export default function AdminSongEditPanel(props: Props): React.ReactElement {
                     <label style={{ alignSelf: "center", fontWeight: 600 }}>File Name</label>
                     <input type="text" value={fileName} readOnly style={fieldCss} />
 
-                    <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", marginBottom: 8 }}>
-                        <label style={{ fontWeight: 600, paddingTop: 0, marginBottom: 4 }}>MusicXML</label>
+                    <div style={{ display: "flex", alignItems: "flex-start", marginBottom: 8 }}>
+                        <button
+                            type="button"
+                            onClick={onOpenViewer}
+                            disabled={!canView || xmlLoading}
+                            style={{
+                                padding: "8px 12px",
+                                border: `1px solid ${T.border}`,
+                                borderRadius: 6,
+                                background: isDark ? "#1f1f1f" : "#fafafa",
+                                color: isDark ? "#fff" : "#111",
+                                cursor: (!canView || xmlLoading) ? "not-allowed" : "pointer",
+                                opacity: (!canView || xmlLoading) ? 0.5 : 1,
+                                marginRight: 12,
+                                whiteSpace: "nowrap",
+                                fontSize: 13,
+                                fontWeight: 500,
+                                height: xmlPreviewHeight,
+                                alignSelf: "stretch",
+                            }}
+                        >
+                            View Song
+                        </button>
+                        <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
+                            <label style={{ fontWeight: 600, paddingTop: 0, marginBottom: 4 }}>MusicXML</label>
+                            <textarea
+                                aria-label="XML"
+                                value={xml}
+                                onChange={(e) => { onChangeXml(e.target.value); }}
+                                spellCheck={false}
+                                style={{
+                                    ...fieldCss,
+                                    width: "100%",
+                                    margin: 0,
+                                    minHeight: xmlPreviewHeight,
+                                    maxHeight: xmlPreviewHeight,
+                                    overflow: "auto",
+                                    resize: "vertical",
+                                    fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+                                    fontSize: 13,
+                                    lineHeight: 1.4,
+                                }}
+                            />
+                        </div>
                     </div>
-                    <textarea
-                        aria-label="XML"
-                        value={xml}
-                        onChange={(e) => { onChangeXml(e.target.value); }}
-                        spellCheck={false}
-                        style={{
-                            ...fieldCss,
-                            width: "100%",
-                            margin: 0,
-                            minHeight: xmlPreviewHeight,
-                            maxHeight: xmlPreviewHeight,
-                            overflow: "auto",
-                            resize: "vertical",
-                            fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
-                            fontSize: 13,
-                            lineHeight: 1.4,
-                        }}
-                    />
-                    <button
-                        type="button"
-                        onClick={onOpenViewer}
-                        disabled={!canView || xmlLoading}
-                        style={{
-                            padding: "8px 12px",
-                            border: `1px solid ${T.border}`,
-                            borderRadius: 6,
-                            background: isDark ? "#1f1f1f" : "#fafafa",
-                            color: isDark ? "#fff" : "#111",
-                            cursor: (!canView || xmlLoading) ? "not-allowed" : "pointer",
-                            opacity: (!canView || xmlLoading) ? 0.5 : 1,
-                            marginTop: 8,
-                            whiteSpace: "nowrap",
-                            fontSize: 13,
-                            fontWeight: 500,
-                        }}
-                    >
-                        View Song
-                    </button>
                 </div>
 
                 <div
