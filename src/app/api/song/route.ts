@@ -7,6 +7,7 @@ import type { NextRequest } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { SONG_COL } from "@/lib/songCols";
 import { Buffer } from "node:buffer";
+import { DB_SCHEMA } from "@/lib/dbSchema";
 import { z } from "zod";
 
 /* =========================
@@ -119,15 +120,17 @@ export async function POST(req: Request): Promise<NextResponse<OkResponse | ErrR
         }
 
         // RPC to your actual function + argument names
-        const { data, error } = await supabaseAdmin.rpc("song_upsert", {
-            p_song_id: input.song_id ?? null,
-            p_song_title: input.song_title,
-            p_composer_first_name: input.composer_first_name,
-            p_composer_last_name: input.composer_last_name,
-            p_skill_level_number: input.skill_level_number,
-            p_file_name: input.file_name,
-            p_song_mxl: mxlHex, // bytea hex literal
-        });
+        const { data, error } = await supabaseAdmin
+            .schema(DB_SCHEMA)
+            .rpc("song_upsert", {
+                p_song_id: input.song_id ?? null,
+                p_song_title: input.song_title,
+                p_composer_first_name: input.composer_first_name,
+                p_composer_last_name: input.composer_last_name,
+                p_skill_level_number: input.skill_level_number,
+                p_file_name: input.file_name,
+                p_song_mxl: mxlHex, // bytea hex literal
+            });
 
         if (error) {
             if (error.code === "23505") {

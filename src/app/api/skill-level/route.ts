@@ -3,11 +3,13 @@ export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
+import { DB_SCHEMA } from '@/lib/dbSchema';
 
 export async function GET() {
     try {
         const { data, error } = await supabaseAdmin
-            .from('skill_level') // table name you created
+            .schema(DB_SCHEMA)
+            .from('skill_level')
             .select('skill_level_number, skill_level_name')
             .order('skill_level_number');
 

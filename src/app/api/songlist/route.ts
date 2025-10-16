@@ -12,6 +12,8 @@ import {
     type SortableSongColToken,
 } from "@/lib/songCols";
 import type { SongListItem, SongListResponse } from "@/lib/types";
+import { DB_SCHEMA } from "@/lib/dbSchema";
+
 
 /* =========================
    Query validation (Zod)
@@ -59,10 +61,12 @@ export async function GET(req: NextRequest): Promise<NextResponse<SongListRespon
         const sortColumn: string | null =
             sortToken !== null ? tokenToSql[sortToken] ?? null : null;
 
-        const { data, error } = await supabaseAdmin.rpc("song_list", {
-            p_sort_column: sortColumn,
-            p_sort_direction: dir
-        });
+        const { data, error } = await supabaseAdmin
+            .schema(DB_SCHEMA)
+            .rpc("song_list", {
+                p_sort_column: sortColumn,
+                p_sort_direction: dir
+            });
 
         if (error) {
             return NextResponse.json({ error: error.message }, { status: 500 });

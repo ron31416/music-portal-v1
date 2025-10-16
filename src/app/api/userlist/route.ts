@@ -17,7 +17,7 @@ export async function GET(req: NextRequest) {
         const dir = dirRaw === "desc" ? "desc" : "asc";
 
         const { data, error } = await supabaseAdmin
-            .schema(DB_SCHEMA)                 // 👈 select schema per request
+            .schema(DB_SCHEMA)
             .rpc("user_list", {
                 p_sort_column: sort ?? undefined,
                 p_sort_direction: dir,
