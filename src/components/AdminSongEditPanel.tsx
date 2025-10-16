@@ -169,46 +169,48 @@ export default function AdminSongEditPanel(props: Props): React.ReactElement {
                     <label style={{ alignSelf: "center", fontWeight: 600 }}>File Name</label>
                     <input type="text" value={fileName} readOnly style={fieldCss} />
 
-                    <label style={{ fontWeight: 600, paddingTop: 6 }}>MusicXML</label>
-                    <div style={{ display: "flex", flexDirection: "row", alignItems: "flex-start", marginBottom: 8 }}>
-                        <button
-                            type="button"
-                            onClick={onOpenViewer}
-                            disabled={!canView || xmlLoading}
-                            style={{
-                                padding: "8px 12px",
-                                border: `1px solid ${T.border}`,
-                                borderRadius: 6,
-                                background: isDark ? "#1f1f1f" : "#fafafa",
-                                color: isDark ? "#fff" : "#111",
-                                cursor: (!canView || xmlLoading) ? "not-allowed" : "pointer",
-                                opacity: (!canView || xmlLoading) ? 0.5 : 1,
-                                marginRight: 12,
-                                whiteSpace: "nowrap",
-                                fontSize: 13,
-                                fontWeight: 500,
-                            }}
-                        >
-                            View Song
-                        </button>
-                        <textarea
-                            aria-label="XML"
-                            value={xml}
-                            onChange={(e) => { onChangeXml(e.target.value); }}
-                            spellCheck={false}
-                            style={{
-                                ...fieldCss,
-                                width: "100%",
-                                margin: 0,
-                                minHeight: xmlPreviewHeight,
-                                maxHeight: xmlPreviewHeight,
-                                overflow: "auto",
-                                resize: "vertical",
-                                fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
-                                fontSize: 13,
-                                lineHeight: 1.4,
-                            }}
-                        />
+                    <div style={{ marginBottom: 8 }}>
+                        <label style={{ fontWeight: 600, paddingTop: 6, marginBottom: 4, display: "block" }}>MusicXML</label>
+                        <div style={{ display: "flex", flexDirection: "row", alignItems: "flex-start" }}>
+                            <button
+                                type="button"
+                                onClick={onOpenViewer}
+                                disabled={!canView || xmlLoading}
+                                style={{
+                                    padding: "8px 12px",
+                                    border: `1px solid ${T.border}`,
+                                    borderRadius: 6,
+                                    background: isDark ? "#1f1f1f" : "#fafafa",
+                                    color: isDark ? "#fff" : "#111",
+                                    cursor: (!canView || xmlLoading) ? "not-allowed" : "pointer",
+                                    opacity: (!canView || xmlLoading) ? 0.5 : 1,
+                                    marginRight: 12,
+                                    whiteSpace: "nowrap",
+                                    fontSize: 13,
+                                    fontWeight: 500,
+                                }}
+                            >
+                                View Song
+                            </button>
+                            <textarea
+                                aria-label="XML"
+                                value={xml}
+                                onChange={(e) => { onChangeXml(e.target.value); }}
+                                spellCheck={false}
+                                style={{
+                                    ...fieldCss,
+                                    width: "100%",
+                                    margin: 0,
+                                    minHeight: xmlPreviewHeight,
+                                    maxHeight: xmlPreviewHeight,
+                                    overflow: "auto",
+                                    resize: "vertical",
+                                    fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+                                    fontSize: 13,
+                                    lineHeight: 1.4,
+                                }}
+                            />
+                        </div>
                     </div>
                 </div>
 
