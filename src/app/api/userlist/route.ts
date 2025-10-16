@@ -5,10 +5,10 @@ export const runtime = "nodejs";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
-import type { UserListItem } from "@/lib/types";
+import type { UserListItem, UserListResponse } from "@/lib/types";
 import { DB_SCHEMA } from "@/lib/dbSchema";
 
-export async function GET(req: NextRequest) {
+export async function GET(req: NextRequest): Promise<NextResponse<UserListResponse | { error: string }>> {
     try {
         const url = new URL(req.url);
 

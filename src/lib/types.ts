@@ -1,3 +1,5 @@
+// ...existing code...
+export type UserListResponse = Readonly<{ items: UserListItem[] }>;
 // src/lib/types.ts
 
 /* ============================================================
