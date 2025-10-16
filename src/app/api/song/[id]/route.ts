@@ -5,6 +5,7 @@ export const runtime = "nodejs";
 import type { NextRequest } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { Buffer } from "node:buffer";
+import { DB_SCHEMA } from "@/lib/dbSchema";
 
 /* =========================
    Shared constants / types
@@ -101,6 +102,7 @@ export async function GET(
         }
 
         const { data, error } = await supabaseAdmin
+            .schema(DB_SCHEMA)
             .rpc("song_mxl_get", { p_song_id: songId });
 
         if (error) {
