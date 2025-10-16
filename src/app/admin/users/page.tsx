@@ -343,8 +343,8 @@ export default function AdminUsersPage(): React.ReactElement {
                 return;
             }
 
-            // Success: clear form
-            onClear();
+            // Success: keep field values, but set userId to null
+            setUserId(null);
 
             // Silent list refresh
             await refreshUserList(undefined, undefined, false);
