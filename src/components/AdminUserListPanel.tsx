@@ -6,6 +6,7 @@ import { USER_COL, type UserColToken } from "@/lib/userCols";
 import type { UserListItem } from "@/lib/types";
 import SortHeaderButton from "@/components/common/SortHeaderButton";
 import type { ThemeTokens } from "@/lib/theme";
+import { formatDateTime } from "@/lib/dateUtils";
 
 type SortDir = "asc" | "desc";
 
@@ -205,9 +206,8 @@ export default function AdminUserListPanel(props: Props): React.ReactElement {
                     {r.user_role_name}
                   </div>
                   <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {r.updated_datetime}
-                  </div>
-                </div>
+                    {formatDateTime(r.updated_datetime)}
+                  </div>                </div>
               );
             })}
           </div>
