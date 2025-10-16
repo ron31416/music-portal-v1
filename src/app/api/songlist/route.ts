@@ -7,7 +7,7 @@ import type { NextRequest } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import type { SongListItem, SongListResponse } from "@/lib/types";
 import { DB_SCHEMA } from "@/lib/dbSchema";
-import { tokenToSql, isSortableSongColToken, type SortableSongColToken } from "@/lib/songCols";
+// ...existing code...
 import { z } from "zod";
 
 
@@ -15,34 +15,27 @@ import { z } from "zod";
    Query validation (Zod)
    ========================= */
 
+// Accept sort and dir as plain strings, no token mapping
 const QuerySchema = z.object({
-    sort: z.string().optional(),              // validated against isSortableSongColToken
-    dir: z.enum(["asc", "desc"]).optional(),  // default asc
+    sort: z.string().optional(),
+    dir: z.enum(["asc", "desc"]).optional(),
 });
 
-function parseQuery(req: NextRequest): {
-    sortToken: SortableSongColToken | null;
-    dir: "asc" | "desc";
-} {
+function parseQuery(req: NextRequest): { sort: string | null; dir: "asc" | "desc" } {
     const url = new URL(req.url);
     const raw = {
-        sort: url.searchParams.get("sort") ?? undefined,
+        sort: url.searchParams.get("sort") ?? null,
         dir: (url.searchParams.get("dir") ?? "asc").toLowerCase(),
     };
-
     const parsed = QuerySchema.safeParse(raw);
-
-    let sortToken: SortableSongColToken | null = null;
+    let sort: string | null = null;
     let dir: "asc" | "desc" = "asc";
-
     if (parsed.success) {
         const q = parsed.data;
-        if (isSortableSongColToken(q.sort)) { sortToken = q.sort; }
+        if (q.sort) { sort = q.sort; }
         if (q.dir === "asc" || q.dir === "desc") { dir = q.dir; }
     }
-    // If validation fails, fall back to defaults without throwing.
-
-    return { sortToken, dir };
+    return { sort, dir };
 }
 
 /* =========================
@@ -51,25 +44,17 @@ function parseQuery(req: NextRequest): {
 
 export async function GET(req: NextRequest): Promise<NextResponse<SongListResponse | { error: string }>> {
     try {
-        const { sortToken, dir } = parseQuery(req);
-
-        // Map token → SQL column safely (or null to use function default)
-        const sortColumn: string | null =
-            sortToken !== null ? tokenToSql[sortToken] ?? null : null;
-
+        const { sort, dir } = parseQuery(req);
         const { data, error } = await supabaseAdmin
             .schema(DB_SCHEMA)
             .rpc("song_list", {
-                p_sort_column: sortColumn,
+                p_sort_column: sort,
                 p_sort_direction: dir
             });
-
         if (error) {
             return NextResponse.json({ error: error.message }, { status: 500 });
         }
-
         const items = (Array.isArray(data) ? data : []) as SongListItem[];
-
         return NextResponse.json(
             { items },
             { status: 200, headers: { "Cache-Control": "no-store" } }
