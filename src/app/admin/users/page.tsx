@@ -11,10 +11,11 @@ import { USER_COL, type UserColToken, DEFAULT_SORT, DEFAULT_DIR } from "@/lib/us
 import { fetchUserList } from "@/lib/userListFetch";
 import { fetchUserRoles, type UserRole } from "@/lib/userRoleFetch";
 
+
 // --- Config ---
 
-//                First   Last    Username  Email    Role   Updated
-const GRID_COLS_PX = [100, 150, 160, 260, 120, 140] as const;
+//                  Name Email FName LName Role Upd
+const GRID_COLS_PX = [100, 200, 150, 150, 100, 150] as const;
 const GRID_COLS: React.CSSProperties["gridTemplateColumns"] = GRID_COLS_PX.map(n => `${n}px`).join(" ");
 const TABLE_MIN_PX = GRID_COLS_PX.reduce((a, b) => a + b, 0);
 const TABLE_ROW_PX = 28;
