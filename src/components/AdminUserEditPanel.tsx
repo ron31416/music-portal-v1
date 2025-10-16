@@ -181,7 +181,7 @@ export default function AdminUserEditPanel(props: Props): React.ReactElement {
                             whiteSpace: "nowrap",
                             overflow: "hidden",
                             textOverflow: "ellipsis",
-                            textAlign: "right",
+                            textAlign: "center",
                             color: errorText ? "#ff6b6b" : (T.headerFg as string),
                             fontWeight: 500,
                             margin: 0,
