@@ -16,7 +16,6 @@ const CACHE_CONTROL_NO_STORE = "no-store" as const;
 
 type Row = {
     song_mxl: unknown;
-    song_title: string | null;
 };
 
 /* =========================
@@ -100,27 +99,15 @@ export async function GET(
         if (!Number.isFinite(songId) || songId <= 0) {
             return badRequest("id must be a positive integer");
         }
-        /*
-                const { data, error } = await supabaseAdmin
-                    .from("song")
-                    .select("song_mxl, song_title")
-                    .eq("song_id", songId)
-                    .single();
-        */
+
         const { data, error } = await supabaseAdmin
-            .rpc("song_get", { p_song_id: songId });
+            .rpc("song_mxl_get", { p_song_id: songId });
 
         if (error) {
             // Database/permission error
             return serverError(error.message);
         }
-        /*        
-                if (!data) {
-                    return notFound("Song not found");
-                }
-        
-                const row = data as Row;
-        */
+
         const row = Array.isArray(data) && data.length > 0 ? data[0] as Row : null;
         if (!row) {
             return notFound("Song not found");
@@ -133,8 +120,6 @@ export async function GET(
             return serverError(message);
         }
 
-        const title = row.song_title ?? "score";
-
         if (req.nextUrl.searchParams.get("debug") === "1") {
             return new Response(
                 JSON.stringify({ ok: true, byteLength: ab.byteLength }),
@@ -146,7 +131,6 @@ export async function GET(
             status: 200,
             headers: {
                 "Content-Type": MXL_MIME,
-                "Content-Disposition": `inline; filename="${encodeURIComponent(title + ".mxl")}"`,
                 "Cache-Control": CACHE_CONTROL_NO_STORE,
             },
         });
