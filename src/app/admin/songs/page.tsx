@@ -393,7 +393,7 @@ export default function AdminSongsPage(): React.ReactElement {
             setLevel(item.skill_level_number ? String(item.skill_level_number) : "");
             setFileName(item.file_name || "");
 
-            const res = await fetch(`/api/song/${item.song_id}/mxl`, { cache: "no-store", signal: controller.signal });
+            const res = await fetch(`/api/song/${item.song_id}`, { cache: "no-store", signal: controller.signal });
             if (!res.ok) {
                 const ct = res.headers.get("content-type") || "";
                 let detail = `HTTP ${res.status}`;

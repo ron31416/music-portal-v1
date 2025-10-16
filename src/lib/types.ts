@@ -33,7 +33,7 @@ export type SongListResponse = Readonly<{ items: SongListItem[] }>;
 // export type SongListOk = ApiOk<{ items: SongListItem[] }>;
 
 /* ============================================================
-   /api/song/[id]/mxl DB row view
+   /api/song/[id] DB row view
    (only the columns that route selects)
    ============================================================ */
 

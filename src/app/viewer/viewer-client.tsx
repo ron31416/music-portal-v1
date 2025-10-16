@@ -13,7 +13,7 @@ export default function ViewerClient(): React.ReactElement {
   const id = isPositiveIntString(params.get("id")) ? params.get("id")! : undefined;
 
   // Build the canonical, same-origin API URL from the id
-  const src = id !== undefined ? `/api/song/${id}/mxl` : undefined;
+  const src = id !== undefined ? `/api/song/${id}` : undefined;
 
   if (src === undefined) {
     return (

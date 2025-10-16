@@ -1,4 +1,4 @@
-// app/api/song/[id]/mxl/route.ts
+// app/api/song/[id]/route.ts
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
@@ -82,7 +82,7 @@ function normalizeToArrayBuffer(raw: unknown): ArrayBuffer {
 }
 
 /* =========================
-   GET /api/song/[id]/mxl
+   GET /api/song/[id]
    ========================= */
 
 export async function GET(
@@ -127,7 +127,6 @@ export async function GET(
 
         const title = row.song_title ?? "score";
 
-        // Optional debug: /api/song/:id/mxl?debug=1
         if (req.nextUrl.searchParams.get("debug") === "1") {
             return new Response(
                 JSON.stringify({ ok: true, byteLength: ab.byteLength }),

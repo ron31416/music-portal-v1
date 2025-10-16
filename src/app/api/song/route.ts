@@ -148,44 +148,6 @@ export async function POST(req: Request): Promise<NextResponse<OkResponse | ErrR
 }
 
 /* =========================
-   GET /api/song  (list songs; DB decides columns/order)
-   (Kept as-is; standardize later if you want)
-   ========================= */
-/*
-export async function GET(req: NextRequest): Promise<Response> {
-    try {
-        const url = new URL(req.url);
-
-        const sort = url.searchParams.get("sort") ?? null;
-        const dirRaw = (url.searchParams.get("dir") ?? "").toLowerCase();
-        const dir = dirRaw === "desc" ? "desc" : "asc";
-
-        const { data, error } = await supabaseAdmin.rpc("song_list", {
-            p_sort_column: sort ?? undefined,
-            p_sort_direction: dir,
-        });
-
-        if (error) {
-            return new Response(JSON.stringify({ error: error.message }), {
-                status: 500,
-                headers: { "Content-Type": "application/json" },
-            });
-        }
-
-        return new Response(JSON.stringify({ items: data ?? [] }), {
-            status: 200,
-            headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
-        });
-    } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        return new Response(JSON.stringify({ error: msg }), {
-            status: 500,
-            headers: { "Content-Type": "application/json" },
-        });
-    }
-}
-*/
-/* =========================
    DELETE /api/song?id=<song_id>
    Hard-delete via RPC: song_delete(p_song_id)
    ========================= */
