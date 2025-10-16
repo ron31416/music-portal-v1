@@ -114,12 +114,17 @@ export async function GET(
             // Database/permission error
             return serverError(error.message);
         }
-        if (!data) {
+        /*        
+                if (!data) {
+                    return notFound("Song not found");
+                }
+        
+                const row = data as Row;
+        */
+        const row = Array.isArray(data) && data.length > 0 ? data[0] as Row : null;
+        if (!row) {
             return notFound("Song not found");
         }
-
-        const row = data as Row;
-
         let ab: ArrayBuffer;
         try {
             ab = normalizeToArrayBuffer(row.song_mxl);
