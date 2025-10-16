@@ -19,8 +19,8 @@ export async function GET(req: NextRequest) {
         const { data, error } = await supabaseAdmin
             .schema(DB_SCHEMA)                 // 👈 select schema per request
             .rpc("user_list", {
-                sort_column: sort ?? undefined,
-                sort_direction: dir,
+                p_sort_column: sort ?? undefined,
+                p_sort_direction: dir,
             });
 
         if (error) {

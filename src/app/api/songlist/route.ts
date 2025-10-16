@@ -51,9 +51,7 @@ function parseQuery(req: NextRequest): {
    GET /api/songlist
    ========================= */
 
-export async function GET(
-    req: NextRequest
-): Promise<NextResponse<SongListResponse | { error: string }>> {
+export async function GET(req: NextRequest): Promise<NextResponse<SongListResponse | { error: string }>> {
     try {
         const { sortToken, dir } = parseQuery(req);
 
@@ -62,8 +60,8 @@ export async function GET(
             sortToken !== null ? tokenToSql[sortToken] ?? null : null;
 
         const { data, error } = await supabaseAdmin.rpc("song_list", {
-            sort_column: sortColumn,
-            sort_direction: dir
+            p_sort_column: sortColumn,
+            p_sort_direction: dir
         });
 
         if (error) {
