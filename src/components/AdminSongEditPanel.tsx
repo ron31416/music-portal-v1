@@ -169,7 +169,26 @@ export default function AdminSongEditPanel(props: Props): React.ReactElement {
                     <label style={{ alignSelf: "center", fontWeight: 600 }}>File Name</label>
                     <input type="text" value={fileName} readOnly style={fieldCss} />
 
-                    <label style={{ alignSelf: "start", fontWeight: 600, paddingTop: 6 }}>MusicXML</label>
+                    <div style={{ display: "flex", alignItems: "center", marginBottom: 24 }}>
+                        <button
+                            type="button"
+                            onClick={onOpenViewer}
+                            disabled={!canView || xmlLoading}
+                            style={{
+                                marginRight: 16,
+                                padding: "8px 12px",
+                                border: `1px solid ${T.border}`,
+                                borderRadius: 6,
+                                background: isDark ? "#1f1f1f" : "#fafafa",
+                                color: isDark ? "#fff" : "#111",
+                                cursor: (!canView || xmlLoading) ? "not-allowed" : "pointer",
+                                opacity: (!canView || xmlLoading) ? 0.5 : 1,
+                            }}
+                        >
+                            View Song
+                        </button>
+                        <label style={{ alignSelf: "start", fontWeight: 600, paddingTop: 6 }}>MusicXML</label>
+                    </div>
                     <textarea
                         aria-label="XML"
                         value={xml}
@@ -225,7 +244,7 @@ export default function AdminSongEditPanel(props: Props): React.ReactElement {
                             cursor: "pointer",
                         }}
                     >
-                        Load New Song
+                        Load Song
                     </button>
 
                     {/* Middle: status message fills available space */}
@@ -240,7 +259,7 @@ export default function AdminSongEditPanel(props: Props): React.ReactElement {
                             whiteSpace: "nowrap",
                             overflow: "hidden",
                             textOverflow: "ellipsis",
-                            textAlign: "right",
+                            textAlign: "center",
                             color: parsing ? (isDark ? "#ccc" : "#555") : (errorText ? "#ff6b6b" : (T.headerFg as string)),
                             fontWeight: 500,
                             margin: 0,
