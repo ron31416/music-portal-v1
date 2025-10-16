@@ -1,17 +1,4 @@
-// ...existing code...
-export type UserListResponse = Readonly<{ items: UserListItem[] }>;
 // src/lib/types.ts
-
-/* ============================================================
-   Canonical API response envelopes
-   ============================================================ */
-
-export type ApiOk<TBody> = Readonly<{ ok: true } & TBody>;
-export type ApiErr = Readonly<{ ok: false; error: string; message?: string }>;
-
-/* ============================================================
-   Song list item (as returned by song_list)
-   ============================================================ */
 
 export type SongListItem = Readonly<{
    song_id: number;
@@ -25,25 +12,7 @@ export type SongListItem = Readonly<{
    updated_datetime: string;
 }>;
 
-/* ============================================================
-   GET /api/songlist response
-   (current contract in your UI: { items: SongListItem[] })
-   ============================================================ */
-
 export type SongListResponse = Readonly<{ items: SongListItem[] }>;
-// If you later standardize to include "ok", you could switch to:
-// export type SongListOk = ApiOk<{ items: SongListItem[] }>;
-
-/* ============================================================
-   /api/song/[id] DB row view
-   (only the columns that route selects)
-   ============================================================ */
-
-export type SongMxlRow = Readonly<{
-   song_mxl: unknown;
-   song_title: string | null;
-}>;
-
 
 export type UserListItem = Readonly<{
    user_id: number;
@@ -56,3 +25,5 @@ export type UserListItem = Readonly<{
    inserted_datetime: string;
    updated_datetime: string;
 }>;
+
+export type UserListResponse = Readonly<{ items: UserListItem[] }>;
