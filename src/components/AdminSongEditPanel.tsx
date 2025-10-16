@@ -169,8 +169,8 @@ export default function AdminSongEditPanel(props: Props): React.ReactElement {
                     <label style={{ alignSelf: "center", fontWeight: 600 }}>File Name</label>
                     <input type="text" value={fileName} readOnly style={fieldCss} />
 
-                    <label style={{ fontWeight: 600, paddingTop: 0, marginBottom: 4 }}>MusicXML</label>
-                    <div style={{ display: "flex", alignItems: "flex-start", marginBottom: 8 }}>
+                    <label style={{ fontWeight: 600, paddingTop: 6 }}>MusicXML</label>
+                    <div style={{ display: "flex", flexDirection: "row", alignItems: "flex-start", marginBottom: 8 }}>
                         <button
                             type="button"
                             onClick={onOpenViewer}
