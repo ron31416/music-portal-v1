@@ -151,7 +151,7 @@ export async function POST(req: Request): Promise<NextResponse<OkResponse | ErrR
    GET /api/song  (list songs; DB decides columns/order)
    (Kept as-is; standardize later if you want)
    ========================= */
-
+/*
 export async function GET(req: NextRequest): Promise<Response> {
     try {
         const url = new URL(req.url);
@@ -184,7 +184,7 @@ export async function GET(req: NextRequest): Promise<Response> {
         });
     }
 }
-
+*/
 /* =========================
    DELETE /api/song?id=<song_id>
    Hard-delete via RPC: song_delete(p_song_id)
