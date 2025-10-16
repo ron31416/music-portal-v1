@@ -169,25 +169,28 @@ export default function AdminSongEditPanel(props: Props): React.ReactElement {
                     <label style={{ alignSelf: "center", fontWeight: 600 }}>File Name</label>
                     <input type="text" value={fileName} readOnly style={fieldCss} />
 
-                    <div style={{ display: "flex", alignItems: "center", marginBottom: 24 }}>
+                    <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", marginBottom: 8 }}>
                         <button
                             type="button"
                             onClick={onOpenViewer}
                             disabled={!canView || xmlLoading}
                             style={{
-                                marginRight: 16,
-                                padding: "8px 12px",
+                                padding: "8px 24px",
                                 border: `1px solid ${T.border}`,
                                 borderRadius: 6,
                                 background: isDark ? "#1f1f1f" : "#fafafa",
                                 color: isDark ? "#fff" : "#111",
                                 cursor: (!canView || xmlLoading) ? "not-allowed" : "pointer",
                                 opacity: (!canView || xmlLoading) ? 0.5 : 1,
+                                marginBottom: 8,
+                                whiteSpace: "nowrap",
+                                fontSize: 14,
+                                fontWeight: 500,
                             }}
                         >
                             View Song
                         </button>
-                        <label style={{ alignSelf: "start", fontWeight: 600, paddingTop: 6 }}>MusicXML</label>
+                        <label style={{ fontWeight: 600, paddingTop: 0, marginBottom: 4 }}>MusicXML</label>
                     </div>
                     <textarea
                         aria-label="XML"
