@@ -170,26 +170,6 @@ export default function AdminSongEditPanel(props: Props): React.ReactElement {
                     <input type="text" value={fileName} readOnly style={fieldCss} />
 
                     <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", marginBottom: 8 }}>
-                        <button
-                            type="button"
-                            onClick={onOpenViewer}
-                            disabled={!canView || xmlLoading}
-                            style={{
-                                padding: "8px 24px",
-                                border: `1px solid ${T.border}`,
-                                borderRadius: 6,
-                                background: isDark ? "#1f1f1f" : "#fafafa",
-                                color: isDark ? "#fff" : "#111",
-                                cursor: (!canView || xmlLoading) ? "not-allowed" : "pointer",
-                                opacity: (!canView || xmlLoading) ? 0.5 : 1,
-                                marginBottom: 8,
-                                whiteSpace: "nowrap",
-                                fontSize: 14,
-                                fontWeight: 500,
-                            }}
-                        >
-                            View Song
-                        </button>
                         <label style={{ fontWeight: 600, paddingTop: 0, marginBottom: 4 }}>MusicXML</label>
                     </div>
                     <textarea
@@ -210,6 +190,26 @@ export default function AdminSongEditPanel(props: Props): React.ReactElement {
                             lineHeight: 1.4,
                         }}
                     />
+                    <button
+                        type="button"
+                        onClick={onOpenViewer}
+                        disabled={!canView || xmlLoading}
+                        style={{
+                            padding: "8px 12px",
+                            border: `1px solid ${T.border}`,
+                            borderRadius: 6,
+                            background: isDark ? "#1f1f1f" : "#fafafa",
+                            color: isDark ? "#fff" : "#111",
+                            cursor: (!canView || xmlLoading) ? "not-allowed" : "pointer",
+                            opacity: (!canView || xmlLoading) ? 0.5 : 1,
+                            marginTop: 8,
+                            whiteSpace: "nowrap",
+                            fontSize: 13,
+                            fontWeight: 500,
+                        }}
+                    >
+                        View Song
+                    </button>
                 </div>
 
                 <div
