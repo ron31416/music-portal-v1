@@ -8,10 +8,13 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import type { UserListItem, UserListResponse } from "@/lib/types";
 import { DB_SCHEMA } from "@/lib/dbSchema";
 import { z } from "zod";
+
+
 /* =========================
    Query validation (Zod)
    ========================= */
 
+// Accept sort and dir as plain strings, no token mapping
 const QuerySchema = z.object({
     sort: z.string().optional(),
     dir: z.enum(["asc", "desc"]).optional(),
