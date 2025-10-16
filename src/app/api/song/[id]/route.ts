@@ -100,12 +100,15 @@ export async function GET(
         if (!Number.isFinite(songId) || songId <= 0) {
             return badRequest("id must be a positive integer");
         }
-
+        /*
+                const { data, error } = await supabaseAdmin
+                    .from("song")
+                    .select("song_mxl, song_title")
+                    .eq("song_id", songId)
+                    .single();
+        */
         const { data, error } = await supabaseAdmin
-            .from("song")
-            .select("song_mxl, song_title")
-            .eq("song_id", songId)
-            .single();
+            .rpc("song_get", { p_song_id: songId });
 
         if (error) {
             // Database/permission error
