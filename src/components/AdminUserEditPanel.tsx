@@ -45,7 +45,6 @@ export default function AdminUserEditPanel(props: Props): React.ReactElement {
         errorText,
         saveOkText,
         statusTick,
-        canSave,
         saveLabel,
         canDelete,
         deleting,
@@ -61,6 +60,11 @@ export default function AdminUserEditPanel(props: Props): React.ReactElement {
         fieldCss,
         isDark,
     } = props;
+
+    // Require all fields to be non-empty for save
+    const canSave = Boolean(
+        userName && userEmail && userFirst && userLast && roleNumber && !rolesLoading && roles.length > 0 && !rolesError
+    );
 
     return (
         <section aria-label="Edit panel" style={{ marginTop: 8, background: "transparent" }}>
