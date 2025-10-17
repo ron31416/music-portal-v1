@@ -337,6 +337,7 @@ grant execute on function production.song_mxl_get(int)
   to service_role;
 
 
+/*
 --drop function production.user_role_list();
 create or replace function production.user_role_list()
 returns table (
@@ -367,3 +368,4 @@ as $$
     order by
       skill_level_number;
 $$ language sql stable;
+*/
