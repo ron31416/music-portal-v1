@@ -168,9 +168,11 @@ export async function DELETE(req: NextRequest): Promise<NextResponse<OkResponse 
             return err("invalid_id", 400, { message: "song_id must be a positive integer." });
         }
 
-        const { data, error } = await supabaseAdmin.rpc("song_delete", {
-            p_song_id: idNum,
-        });
+        const { data, error } = await supabaseAdmin
+            .schema(DB_SCHEMA)
+            .rpc("song_delete", {
+                p_song_id: idNum,
+            });
 
         if (error) {
             // If you don't have ON DELETE CASCADE on child tables, FK violations may surface as 23503
