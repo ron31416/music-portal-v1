@@ -733,6 +733,9 @@ export default function AdminSongsPage(): React.ReactElement {
                 return;
             }
 
+            // Success: keep field values, but set userId to null
+            setSongId(null);
+
             // Silent list refresh (also rebuilds dup map)
             await refreshSongList(undefined, undefined, false);
 
