@@ -240,7 +240,7 @@ export default function AdminSongEditPanel(props: Props): React.ReactElement {
                             whiteSpace: "nowrap",
                             overflow: "hidden",
                             textOverflow: "ellipsis",
-                            textAlign: "right",
+                            textAlign: "center",
                             color: parsing ? (isDark ? "#ccc" : "#555") : (errorText ? "#ff6b6b" : (T.headerFg as string)),
                             fontWeight: 500,
                             margin: 0,
@@ -270,23 +270,6 @@ export default function AdminSongEditPanel(props: Props): React.ReactElement {
 
                     <button
                         type="button"
-                        onClick={onOpenViewer}
-                        disabled={!canView || xmlLoading}
-                        style={{
-                            padding: "8px 12px",
-                            border: `1px solid ${T.border}`,
-                            borderRadius: 6,
-                            background: isDark ? "#1f1f1f" : "#fafafa",
-                            color: isDark ? "#fff" : "#111",
-                            cursor: (!canView || xmlLoading) ? "not-allowed" : "pointer",
-                            opacity: (!canView || xmlLoading) ? 0.5 : 1,
-                        }}
-                    >
-                        View Song
-                    </button>
-
-                    <button
-                        type="button"
                         onClick={onDelete}
                         disabled={!canDelete}
                         style={{
@@ -301,6 +284,23 @@ export default function AdminSongEditPanel(props: Props): React.ReactElement {
                         title={canDelete ? "Delete this song permanently" : "Delete unavailable"}
                     >
                         {deleting ? "Deleting…" : "Delete Song"}
+                    </button>
+
+                    <button
+                        type="button"
+                        onClick={onOpenViewer}
+                        disabled={!canView || xmlLoading}
+                        style={{
+                            padding: "8px 12px",
+                            border: `1px solid ${T.border}`,
+                            borderRadius: 6,
+                            background: isDark ? "#1f1f1f" : "#fafafa",
+                            color: isDark ? "#fff" : "#111",
+                            cursor: (!canView || xmlLoading) ? "not-allowed" : "pointer",
+                            opacity: (!canView || xmlLoading) ? 0.5 : 1,
+                        }}
+                    >
+                        View Song
                     </button>
                 </div>
             </div>
