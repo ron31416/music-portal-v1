@@ -9,9 +9,7 @@ export async function GET() {
     try {
         const { data, error } = await supabaseAdmin
             .schema(DB_SCHEMA)
-            .from('skill_level')
-            .select('skill_level_number, skill_level_name')
-            .order('skill_level_number');
+            .rpc('skill_level_list');
 
         if (error) {
             return new Response(

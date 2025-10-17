@@ -9,9 +9,7 @@ export async function GET() {
     try {
         const { data, error } = await supabaseAdmin
             .schema(DB_SCHEMA)
-            .from('user_role')
-            .select('user_role_number, user_role_name')
-            .order('user_role_number');
+            .rpc('user_role_list');
 
         if (error) {
             return new Response(
