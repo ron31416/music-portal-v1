@@ -733,18 +733,6 @@ export default function AdminSongsPage(): React.ReactElement {
                 return;
             }
 
-            // Success: clear form & input
-            setSongId(null);
-            setTitle("");
-            setComposerFirst("");
-            setComposerLast("");
-            setLevel("");
-            setFileName("");
-            setXmlPreview("");
-            if (fileInputRef.current) {
-                fileInputRef.current.value = "";
-            }
-
             // Silent list refresh (also rebuilds dup map)
             await refreshSongList(undefined, undefined, false);
 
