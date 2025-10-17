@@ -228,6 +228,24 @@ export default function AdminSongEditPanel(props: Props): React.ReactElement {
                         Load Song
                     </button>
 
+                    {/* Right-side buttons arranged: View (left), then status (center flex), then Save & Delete (right) */}
+                    <button
+                        type="button"
+                        onClick={onOpenViewer}
+                        disabled={!canView || xmlLoading}
+                        style={{
+                            padding: "8px 12px",
+                            border: `1px solid ${T.border}`,
+                            borderRadius: 6,
+                            background: isDark ? "#1f1f1f" : "#fafafa",
+                            color: isDark ? "#fff" : "#111",
+                            cursor: (!canView || xmlLoading) ? "not-allowed" : "pointer",
+                            opacity: (!canView || xmlLoading) ? 0.5 : 1,
+                        }}
+                    >
+                        View Song
+                    </button>
+
                     {/* Middle: status message fills available space */}
                     <span
                         key={`status-${statusTick}`}
@@ -249,24 +267,6 @@ export default function AdminSongEditPanel(props: Props): React.ReactElement {
                     >
                         {parsing ? "Parsing…" : (errorText || saveOkText || "")}
                     </span>
-
-                    {/* Right-side buttons: View, Save, Delete (View moved to left) */}
-                    <button
-                        type="button"
-                        onClick={onOpenViewer}
-                        disabled={!canView || xmlLoading}
-                        style={{
-                            padding: "8px 12px",
-                            border: `1px solid ${T.border}`,
-                            borderRadius: 6,
-                            background: isDark ? "#1f1f1f" : "#fafafa",
-                            color: isDark ? "#fff" : "#111",
-                            cursor: (!canView || xmlLoading) ? "not-allowed" : "pointer",
-                            opacity: (!canView || xmlLoading) ? 0.5 : 1,
-                        }}
-                    >
-                        View Song
-                    </button>
 
                     <button
                         type="button"
