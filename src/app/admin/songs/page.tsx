@@ -752,7 +752,7 @@ export default function AdminSongsPage(): React.ReactElement {
 
 
     const isUpdate = songId !== null;
-    const canAdd = !isUpdate && !!fileName && !parsing && !saving;
+    const canAdd = !isUpdate && !!file && !!fileName && !!title.trim() && !!level && !!xmlPreview.trim() && !parsing && !saving;
     const canUpdate = isUpdate && !saving && !xmlLoading;
     const canSave = isUpdate ? canUpdate : canAdd;
     const saveLabel = isUpdate ? "Update Song" : "Add Song";
